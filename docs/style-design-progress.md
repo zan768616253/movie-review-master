@@ -1,14 +1,19 @@
 # Style System Design — Progress Tracker
 
-**Status:** Style A draft complete; Style B not started
-**Last Updated:** 2026-03-31
-**Next Step:** Install Whisper, transcribe audio files, refine style file with real transcript data; then brainstorm Style B
+**Status:** Style A draft complete; Style B not started; Style C research in progress
+**Last Updated:** 2026-04-01
+**Next Step:** Install Whisper, transcribe audio files (Uncle Niu + Xiaodao), refine style files with real transcript data; brainstorm Style B
 
 ---
 
 ## What We're Designing
 
-The style definition files (`styles/niu-shu.md` and `styles/first-person-pov.md`) that tell Claude how to generate movie review scripts in specific narrative styles. This session focused on **Style A: Uncle Niu (牛叔说电影)**.
+The style definition files that tell Claude how to generate movie review scripts in specific narrative styles:
+- `styles/niu-shu.md` — **Style A: Uncle Niu (牛叔说电影)** — third-person omniscient, deadpan, sarcastic
+- `styles/first-person-pov.md` — **Style B: First-Person Protagonist POV** — emotional, immersive (not started)
+- `styles/xiaodao.md` — **Style C: Xiaodao (小岛电影)** — warm narrator, sentimental, philosophical (research phase)
+
+Previous session focused on Style A. This session began research on Style C.
 
 ---
 
@@ -115,6 +120,24 @@ This is the key differentiator that transcript analysis will reveal — how Uncl
 
 ---
 
+## Completed This Session (2026-04-01)
+
+1. **Style C candidate identified:** YouTube channel "小岛电影" (@Vithun51) — emotional/sentimental movie review style, distinct from both Uncle Niu (sarcastic) and first-person POV (immersive).
+
+2. **Target video analyzed:** "8.9高分经典电影！善良的好人被误解，是人间最痛心的事！" (14:02, about The Green Mile). No subtitles available.
+
+3. **Audio downloaded:** `transcripts/xiaodao_greenline.mp3` (13.4MB) — ready for Whisper transcription.
+
+4. **Channel catalog analyzed:** 40 video titles scraped via yt-dlp. Two content formats identified:
+   - Long-form reviews (10-34 min) tagged #我的观影报告 — the core style to emulate
+   - Short promos (2-7 min) for new releases — not the target style
+
+5. **Style analysis documented:** Key differentiators vs Style A and B mapped out across 8 dimensions (perspective, tone, pacing, characters, commentary, hook style, film selection, closing). Full research at `docs/style-c-xiaodao-research.md`.
+
+6. **Key finding:** Xiaodao style uses second-person emotional address ("你"), sincere/warm tone (no sarcasm), measured pacing, real character names (not archetypes), and philosophical reflective closings. Target audience: people seeking meaning and catharsis, not entertainment.
+
+---
+
 ## Open Questions (To Resolve Next Session)
 
 1. **Whisper transcription:** Install `faster-whisper` (GPU-accelerated) and transcribe all 7 audio files to Chinese text. Use results to refine the style file with real pacing data and additional transition phrases.
@@ -126,7 +149,9 @@ This is the key differentiator that transcript analysis will reveal — how Uncl
 
 3. **Style B (First-Person POV):** Not yet discussed. Needs its own brainstorming round — protagonist selection logic, emotional tone calibration, knowledge-boundary rules.
 
-4. **Style file refinement:** Once Whisper transcripts are available, compare the style file's act structure and pacing assumptions against Uncle Niu's actual narration patterns. Adjust character counts, transition frequency, and commentary density based on real data.
+4. **Style A file refinement:** Once Whisper transcripts are available, compare the style file's act structure and pacing assumptions against Uncle Niu's actual narration patterns. Adjust character counts, transition frequency, and commentary density based on real data.
+
+5. **Style C (Xiaodao) transcript + style file:** Transcribe `transcripts/xiaodao_greenline.mp3`, then write `styles/xiaodao.md`. Consider downloading 1-2 more long-form Xiaodao videos for pattern confirmation. Research doc at `docs/style-c-xiaodao-research.md`.
 
 ---
 

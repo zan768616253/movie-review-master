@@ -38,7 +38,13 @@
       "Bash(ffmpeg -y -i uncle_niu_full.mp3 -ss 300 -t 30 -c copy sample_300s.mp3)",
       "Bash(ffmpeg -y -i uncle_niu_full.mp3 -ss 450 -t 30 -c copy sample_450s.mp3)",
       "Bash(ffmpeg -y -i uncle_niu_full.mp3 -ss 600 -t 30 -c copy sample_600s.mp3)",
-      "Bash(ls -lh sample_*.mp3)"
+      "Bash(ls -lh sample_*.mp3)",
+      "Bash(ls /home/zan/Projects/Dbvisit/AI/skills/movie-reviewer/yt-dlp*)",
+      "Bash(ls /home/zan/Projects/Dbvisit/AI/skills/movie-reviewer/*.exe)",
+      "Bash(/home/zan/Projects/Dbvisit/AI/skills/movie-reviewer/yt-dlp.exe --dump-json --no-download \"https://www.youtube.com/watch?v=TIF1suLvji8\")",
+      "Bash(/home/zan/Projects/Dbvisit/AI/skills/movie-reviewer/yt-dlp.exe --list-subs \"https://www.youtube.com/watch?v=TIF1suLvji8\" 2>&1)",
+      "WebFetch(domain:www.bilibili.com)",
+      "Bash(/home/zan/Projects/Dbvisit/AI/skills/movie-reviewer/yt-dlp.exe --dump-json --no-download https://www.youtube.com/@Vithun51)"
     ]
   },
   "enabledPlugins": {
