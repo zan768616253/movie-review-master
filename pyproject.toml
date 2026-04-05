@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "movie-review-master"
+version = "0.1.0"
+description = ""
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "", email = "" }]
+requires-python = ">=3.12"
+dependencies = [
+  "edge-tts==7.2.8",
+  "ffmpeg-python==0.2.0",
+  "faster-whisper==1.2.1",
+  "moviepy==2.2.1",
+  "yt-dlp==2026.3.17",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==8.4.2",
+  "pytest-cov==7.1.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["scripts*"]
+
+[project.scripts]
+parse-subtitles = "scripts.parse_subtitles:main"
+transcribe = "scripts.transcribe:main"
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-q"
+testpaths = ["tests"]
+pythonpath = ["."]

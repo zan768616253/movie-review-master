@@ -1,0 +1,30 @@
+[Script Info]
+Title: Sample Movie Subtitles
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1
+Style: TopScreen,Arial,36,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,8,10,10,10,1
+Style: Narration,Arial,40,&H0000FFFF,&H000000FF,&H00000000,&H00000000,0,1,0,0,100,100,0,0,1,2,2,2,10,10,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:15.00,0:00:18.50,Default,,0,0,0,,你知道吗？这个世界上有一种人
+Dialogue: 0,0:00:18.50,0:00:22.00,Default,,0,0,0,,他们天生就与众不同
+Dialogue: 0,0:00:25.00,0:00:28.00,Default,张伟,0,0,0,,我叫张伟，今年三十五岁
+Dialogue: 0,0:00:28.50,0:00:32.00,Default,张伟,0,0,0,,十年前我是一名警察
+Dialogue: 0,0:00:35.00,0:00:38.00,Default,李娜,0,0,0,,你为什么要离开警队？
+Dialogue: 0,0:00:38.50,0:00:42.00,Default,张伟,0,0,0,,因为有些事情{\b1}不能{\b0}用法律解决
+Dialogue: 0,0:00:45.00,0:00:48.00,TopScreen,,0,0,0,,{\an8}三年后 — 上海
+Dialogue: 0,0:00:50.00,0:00:54.00,Default,张伟,0,0,0,,{\i1}我从没想过会再见到她{\i0}
+Dialogue: 0,0:00:55.00,0:00:58.50,Default,李娜,0,0,0,,张伟？是你吗？
+Dialogue: 0,0:00:59.00,0:01:03.00,Default,张伟,0,0,0,,李娜……你怎么会在这里
+Dialogue: 0,0:01:05.00,0:01:09.00,Default,李娜,0,0,0,,我现在在做{\pos(960,800)}一些危险的事情
+Dialogue: 0,0:01:10.00,0:01:14.00,Default,Boss,0,0,0,,Nobody leaves this organization alive.
+Dialogue: 0,0:01:15.00,0:01:18.00,Default,张伟,0,0,0,,你不用害怕，我会保护你
+Dialogue: 0,0:01:20.00,0:01:24.00,Narration,,0,0,0,,两个曾经相爱的人，再次被命运绑在了一起
+Dialogue: 0,0:01:26.00,0:01:30.00,Default,张伟,0,0,0,,就算拼上这条命{\fad(200,200)}我也要把你救出来
