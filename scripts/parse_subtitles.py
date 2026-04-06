@@ -31,6 +31,9 @@ def strip_tags(text: str) -> str:
     return output
 
 def parse_ass(file_name: str) -> list[Subtitle]:
+    """
+    Parse an ASS subtitle file and return a list of Subtitle objects.
+    """
     subtitles: list[Subtitle] = []
     event_start = False
     with open(file_name, "r", encoding="utf-8") as f:
