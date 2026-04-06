@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 @dataclass
 class Subtitle:
@@ -62,7 +63,7 @@ def parse_ass(file_name: str) -> list[Subtitle]:
             style = parts[3]
             speaker = parts[4]
 
-            text = ",".join(parts[9:])
+            text = strip_tags(",".join(parts[9:]))            
 
             subtitle = Subtitle(
                 start=start, 
@@ -75,5 +76,19 @@ def parse_ass(file_name: str) -> list[Subtitle]:
             
     return subtitles
 
-if __name__ == "__main__":
-    pass
+def generate_ass_scripts(file_name: str) -> Path:
+    """
+    Generate a text file from an ASS subtitle file and return its Path.
+    """
+    subtitles = parse_ass(file_name)
+    scripts_path = Path(file_name).with_suffix(".txt")
+    lines: list[str] = []
+    for subtitle in subtitles:
+        text = subtitle.text.replace("\\N", "\n").strip()
+        lines.append(text)
+
+    content = "\n".join(lines)
+    with scripts_path.open("w", encoding="utf-8") as f:
+        f.write(content)
+
+    return scripts_path
