@@ -1,223 +1,378 @@
 # Movie Review Master — Project Status & Plan
 
-**Date:** 2026-04-04
-**Author:** Eric (with Claude)
+**Date:** 2026-04-06
+**Author:** Eric (review updated with GitHub Copilot)
 
 ---
 
 ## What This Project Is
 
-An autonomous AI agent (running in Claude Code) that takes a **movie file + subtitle file** as input and outputs a **~10-minute fully produced movie review video** — complete with script, voiceover (cloned voice), and assembled video.
+An autonomous AI agent that takes a **movie file + subtitle file** as input and produces a **~10-minute movie review video** with:
 
-**Core pipeline:** Movie → Subtitle Parsing → Script Generation (styled) → TTS Voiceover → Video Assembly → Output
+- generated script
+- AI voiceover
+- assembled review video
+
+**Target pipeline:** Movie + subtitles -> subtitle parsing -> plot/script generation -> TTS voiceover -> video assembly -> output assets
+
+The product goal in `PROD.md` is still correct. What changed in this update is the **implementation status** and the **recommended build order** based on the actual repository state.
 
 ---
 
-## Current Project Structure
+## Current Status At A Glance
 
+**Overall stage:** Early implementation / foundation work
+
+**What already exists:**
+- Style A (`styles/niu-shu.md`) is written.
+- 7 Uncle Niu MP3 files and transcripts exist in `transcripts/uncle_niu/`.
+- Xiaodao research is documented and the sample audio is downloaded.
+- `scripts/parse_subtitles.py` exists as an initial ASS parser.
+- `scripts/transcribe.py` exists as a working batch transcription script.
+
+**What does not exist yet:**
+- No end-to-end pipeline.
+- No reusable CLI for subtitle parsing or transcription.
+- No `video_processor.py`, `archetype_mapper.py`, `generate_audio.py`, or `render_video.py`.
+- No Style B file and no Style C file yet.
+
+**Most important planning conclusion:**
+The next best step is **not** to start the subtitle parser from scratch. That work has already started. The best next step is to **finish the subtitle intake layer properly** so the rest of the pipeline has a stable foundation.
+
+---
+
+## Verified Repository State (2026-04-06)
+
+### Code That Exists Today
+
+**`scripts/parse_subtitles.py`**
+- Has a `Subtitle` dataclass.
+- Parses ASS timestamps into seconds.
+- Removes ASS inline style tags.
+- Parses ASS `Dialogue:` lines into structured subtitle objects.
+- Can export parsed ASS subtitles to a `.txt` file.
+- Current limitation: it is **ASS-only**, has **no `main()`**, and is not yet a general subtitle ingestion tool.
+
+**`scripts/transcribe.py`**
+- Has already been used to generate the 7 Uncle Niu transcript `.txt` files.
+- Current limitation: it is a **hardcoded batch script**, not a reusable tool.
+- The script loads the Whisper model at module import time, which makes it unsuitable as a clean package entry point.
+- It also has **no `main()`**, even though `pyproject.toml` declares a `transcribe` console script.
+
+### Tests
+
+- `tests/test_parse_subtitles.py` currently passes with:
+  `conda run -n py312_machine_learning --no-capture-output pytest tests/test_parse_subtitles.py -q`
+- Result during this review: **4 parser tests passed**.
+- Current limitation: tests only cover the initial ASS path and do not yet cover `.srt`, `.vtt`, CLI behavior, or malformed-input handling.
+
+### Assets On Disk
+
+**Transcripts**
+- `transcripts/uncle_niu/` contains 7 MP3 + TXT pairs.
+- `transcripts/xiaodao_greenline.mp3` exists.
+- `transcripts/xiaodao_greenline.txt` does **not** exist yet.
+
+**Voice samples**
+- `voice-samples/uncle_niu/` contains `uncle_niu_full.mp3` plus 5 clipped samples.
+
+**Style files**
+- Present: `styles/niu-shu.md`
+- Missing: `styles/xiaodao.md`, `styles/first-person-pov.md`
+
+### Runtime / Environment Snapshot
+
+Verified during this review:
+
+| Item | Status | Notes |
+|------|--------|-------|
+| `faster_whisper` | ✅ importable | transcription dependency available |
+| `ffmpeg-python` / `ffmpeg` module | ✅ importable | Python wrapper available |
+| `moviepy` | ✅ importable | video composition dependency available |
+| `edge_tts` | ✅ importable | fallback TTS already available |
+| `yt_dlp` | ✅ importable | Linux-side package available |
+| `torch` | ✅ importable | present in environment |
+| `openai` | ✅ importable | present in environment |
+| `fish_speech` | ❌ not importable | still not installed |
+| system `ffmpeg` | ✅ verified | version `6.1.1` |
+| NVIDIA GPU | ✅ verified | `RTX 4060 Laptop GPU`, `8188 MiB` |
+
+### Packaging / Repo Mismatches
+
+These are small but important:
+
+- `pyproject.toml` declares console scripts for `parse-subtitles` and `transcribe`, but the current Python files do not expose `main()` functions yet.
+- `pyproject.toml` points `readme` to `README.md`, but there is currently no `README.md` in the repository root.
+- Dependencies are declared in both `pyproject.toml` and `requirements.txt`; by repo rule, `pyproject.toml` should be treated as the source of truth for dependency changes.
+
+---
+
+## What Has Been Completed So Far
+
+### Workstream A — Style Research
+
+**Completed**
+- Wrote `styles/niu-shu.md` for Style A (Uncle Niu).
+- Downloaded and transcribed 7 Uncle Niu review audios.
+- Researched Xiaodao and documented the findings in `docs/style-c-xiaodao-research.md`.
+- Downloaded `transcripts/xiaodao_greenline.mp3` as the first Style C sample.
+
+**Still open**
+- Transcribe Xiaodao sample audio.
+- Write `styles/xiaodao.md`.
+- Design and write `styles/first-person-pov.md`.
+- Revisit `styles/niu-shu.md` using transcript-based pacing evidence.
+
+### Workstream B — Core Pipeline Foundations
+
+**Completed**
+- Initial subtitle parsing prototype for ASS files.
+- Initial transcription prototype for a fixed batch folder.
+- Parser unit tests for the sample ASS fixture.
+
+**Still open**
+- Support `.srt` and `.vtt` subtitle formats.
+- Create clean CLI entry points.
+- Define a stable parsed-subtitle output contract for downstream steps.
+- Implement video processing, script generation handoff, TTS generation, and rendering.
+
+### Workstream C — TTS / Voice
+
+**Completed**
+- `edge-tts` is already available in the environment.
+- Uncle Niu voice sample assets exist.
+
+**Still open**
+- Install and validate Fish Speech.
+- Choose the best Uncle Niu voice sample.
+- Build `generate_audio.py`.
+- Decide how to switch between generic TTS and cloned-voice TTS in the pipeline.
+
+---
+
+## Recommended Build Order
+
+This is the recommended order from this point forward.
+
+### 1. Finish subtitle intake first
+
+Reason:
+- Subtitle parsing is the real entry point for the entire product.
+- It is already partially built, so this is the highest-leverage next step.
+- A reliable parser gives you reusable structured input for script generation, style application, and scene selection.
+
+### 2. Refactor transcription into a real tool
+
+Reason:
+- You already proved the transcription path works.
+- Turning it into a reusable CLI lets you transcribe Xiaodao immediately and reuse the same workflow for future samples or subtitle fallback.
+
+### 3. Complete the style library
+
+Reason:
+- Style quality matters, but style work is not the current technical blocker.
+- Once the parser/transcriber are stable, style documents become easier to ground in real transcript evidence.
+
+### 4. Delay Fish Speech integration until text intake is stable
+
+Reason:
+- `edge-tts` is already available, so you can reach a first end-to-end prototype without voice cloning.
+- Fish Speech is still valuable, but it is no longer the next critical blocker.
+
+---
+
+## Detailed Next-Step Plan
+
+### Phase 1 — Subtitle Intake v1 (Recommended Next Milestone)
+
+**Goal:** turn `scripts/parse_subtitles.py` from a prototype into a reusable project entry point.
+
+### 1.1 Add a clean library + CLI boundary
+
+- Keep parsing functions importable without side effects.
+- Add a `main()` function so the `parse-subtitles` console script in `pyproject.toml` becomes real.
+- Accept:
+  - input subtitle path
+  - optional output path
+  - output format (`txt`, `json`, possibly `stdout`)
+
+### 1.2 Expand format support
+
+- Keep the current ASS parser.
+- Add `.srt` parsing.
+- Add `.vtt` parsing.
+- Normalize all formats into the same `Subtitle` structure.
+
+### 1.3 Normalize subtitle text consistently
+
+- Strip ASS tags.
+- Convert escaped line breaks like `\N` into a consistent text form.
+- Collapse extra whitespace.
+- Skip empty lines or unsupported dialogue records.
+
+### 1.4 Improve test coverage
+
+- Keep the current ASS fixture tests.
+- Add one `.srt` fixture.
+- Add one `.vtt` fixture.
+- Add tests for multiline subtitles.
+- Add tests for malformed or partial input.
+- Add a CLI smoke test once `main()` exists.
+
+### 1.5 Define the output contract for downstream scripts
+
+Minimum recommended structure per subtitle item:
+
+```json
+{
+  "start": 12.34,
+  "end": 15.67,
+  "text": "subtitle text",
+  "speaker": null,
+  "style": null,
+  "source_format": "ass"
+}
 ```
-movie-review-master/
-├── PROD.md                          # Product requirements document (complete)
-├── requirements.txt                 # Python dependencies
-├── yt-dlp.exe                       # YouTube downloader (Windows binary)
-├── docs/
-│   ├── style-design-progress.md     # Session-by-session progress log
-│   ├── style-c-xiaodao-research.md  # Xiaodao style research notes
-│   └── project-status-and-plan.md   # ← THIS FILE
-├── scripts/
-│   ├── transcribe.py                # Whisper transcription script (working)
-│   └── parse_subtitles.py           # Subtitle parser (empty — not started)
-├── styles/
-│   └── niu-shu.md                   # Uncle Niu style guide (complete)
-├── transcripts/
-│   ├── uncle_niu/
-│   │   ├── 01_rebel_girl.mp3 + .txt   (7 pairs total — all transcribed)
-│   │   ├── ...
-│   │   └── 07_retired_soldier.mp3 + .txt
-│   └── xiaodao_greenline.mp3        # Xiaodao sample (NOT yet transcribed)
-└── voice-samples/
-    └── uncle_niu/
-        ├── uncle_niu_full.mp3       # Full audio from video 7
-        ├── sample_15s.mp3           # 5 x 30-second clips at different timestamps
-        ├── sample_120s.mp3
-        ├── sample_300s.mp3
-        ├── sample_450s.mp3
-        └── sample_600s.mp3
-```
+
+That gives future scripts enough information to:
+- summarize plot beats
+- reconstruct timing windows
+- map characters
+- select scenes for clips
+
+### Exit Criteria For Phase 1
+
+- `parse-subtitles <subtitle_file>` works from the CLI.
+- `.ass`, `.srt`, and `.vtt` all parse into the same structure.
+- Tests cover the three formats.
+- Parsed output is good enough to feed a later `video_processor.py`.
 
 ---
 
-## Dependency Check (2026-04-04)
+### Phase 2 — Transcription Tool v1
 
-### Installed & Working
+**Goal:** convert `scripts/transcribe.py` from a one-off script into a reusable fallback tool.
 
-| Package | Version | Purpose | Status |
-|---------|---------|---------|--------|
-| faster-whisper | 1.2.1 | Audio → text transcription | ✅ Installed, all 7 Uncle Niu files transcribed |
-| ffmpeg | 6.1.1 | Audio/video processing (system) | ✅ Installed |
-| ffmpeg-python | 0.2.0 | Python wrapper for ffmpeg | ✅ Installed |
-| moviepy | 2.2.1 | Video editing/composition | ✅ Installed |
-| torch | 2.7.0 | GPU compute for ML models | ✅ Installed |
-| openai | 2.26.0 | OpenAI API (if needed) | ✅ Installed |
-| NVIDIA GPU | RTX 4060 8GB, CUDA 13.0 | GPU acceleration | ✅ Available |
+### 2.1 Refactor script structure
 
-### NOT Installed (Needed Next)
+- Move model loading inside `main()` or a dedicated function.
+- Avoid doing work at import time.
+- Add file/folder arguments instead of hardcoded paths.
 
-| Package | Purpose | Priority |
-|---------|---------|----------|
-| **Fish Speech** | TTS voice cloning (primary TTS engine per PROD.md) | 🔴 HIGH — blocks voiceover |
-| **edge-tts** | Fallback TTS (Microsoft, no GPU needed) | 🟡 MEDIUM — fallback option |
-| **yt-dlp** (Linux) | YouTube downloads from WSL | 🟢 LOW — only the Windows .exe exists, not usable in WSL |
+### 2.2 Add reusable options
 
-### Note on "Fish Whisper"
-You mentioned installing "fish whisper" — that was likely **faster-whisper** (the transcription engine), which IS installed (v1.2.1) and has already been used to transcribe all 7 Uncle Niu audio files. **Fish Speech** (the TTS/voice-cloning engine) is a separate tool and has NOT been installed yet.
+- input file or folder
+- language
+- model size
+- device / compute type
+- output directory
 
----
+### 2.3 Use it immediately on the Xiaodao sample
 
-## What's Been Done (Summary)
+- Input: `transcripts/xiaodao_greenline.mp3`
+- Output target: `transcripts/xiaodao_greenline.txt`
 
-### Session 1 (2026-03-31) — Style A Research & Data Collection
-- Downloaded 7 Uncle Niu YouTube videos as MP3 audio
-- Researched character archetypes, opening hooks, transition phrases online
-- Wrote complete Uncle Niu style guide: `styles/niu-shu.md` (10 sections)
-- Cut 5 × 30-second voice samples for future voice cloning
-- Created `PROD.md` product requirements document
+### Exit Criteria For Phase 2
 
-### Session 2 (2026-04-01) — Whisper Transcription & Style C Research
-- Installed faster-whisper, wrote `scripts/transcribe.py`
-- Transcribed all 7 Uncle Niu audio files to text (Chinese)
-- Identified Style C candidate: Xiaodao (小岛电影) YouTube channel
-- Downloaded Xiaodao sample audio (`xiaodao_greenline.mp3`)
-- Analyzed 40 Xiaodao video titles, documented style differences
-- Wrote research notes: `docs/style-c-xiaodao-research.md`
-
-### Session 3 (2026-04-04) — This Session
-- Full project review and dependency audit
-- Created this plan document
+- `transcribe` works as a real CLI.
+- Module import no longer triggers transcription.
+- Xiaodao transcript exists and can be reviewed.
 
 ---
 
-## Detailed Plan — What To Do Next
+### Phase 3 — Complete The Style Library
 
-### Phase 1: Complete Style Research (Style C + B)
+### 3.1 Write `styles/xiaodao.md`
 
-**1.1 Transcribe Xiaodao sample audio**
-- File: `transcripts/xiaodao_greenline.mp3` (still untranscribed)
-- Use the existing `scripts/transcribe.py` approach
-- Output: `transcripts/xiaodao_greenline.txt`
+- Base it on the actual transcript, not just title research.
+- Capture:
+  - hook pattern
+  - emotional pacing
+  - narrator/viewer relationship
+  - closing style
 
-**1.2 Write Xiaodao style file**
-- Analyze the transcript for patterns (perspective, pacing, transitions, emotional beats)
-- Write `styles/xiaodao.md` following same format as `niu-shu.md`
+### 3.2 Write `styles/first-person-pov.md`
 
-**1.3 Brainstorm & write Style B (First-Person POV)**
-- Design protagonist selection logic
-- Define emotional tone calibration rules
-- Write `styles/first-person-pov.md`
+- Define protagonist selection logic.
+- Define knowledge-boundary rules.
+- Define emotional intensity rules.
+- Define when this style is a bad fit.
 
-**1.4 Refine Style A (Uncle Niu) with transcript data**
-- Compare `niu-shu.md` assumptions against actual transcripts
-- Verify pacing (characters per minute), transition frequency, act structure timing
+### 3.3 Refine `styles/niu-shu.md`
 
----
+- Use the 7 transcripts to check actual pacing.
+- Confirm whether the 10-minute structure in the style file matches the real narration pattern.
 
-### Phase 2: Build the Core Pipeline Scripts
+### Exit Criteria For Phase 3
 
-These are the scripts defined in `PROD.md`. Build them one at a time, learning Python along the way.
-
-**2.1 `scripts/parse_subtitles.py`** — Subtitle Parser
-- Input: `.srt`, `.ass`, or `.vtt` subtitle file
-- Output: structured data (dialogue text + timestamps)
-- This is the entry point — everything else depends on having parsed subtitle data
-
-**2.2 `scripts/video_processor.py`** — Video/Subtitle Intake
-- Input: movie file (.mp4) + subtitle file
-- Extracts subtitle text, identifies scenes, prepares plot summary
-- Sends to Claude API for script generation
-
-**2.3 `scripts/archetype_mapper.py`** — Character Name → Archetype
-- Maps real character names to Uncle Niu archetypes (小帅, 小美, 丧彪, etc.)
-- Only needed for Style A; Style B/C use real names
-- Uses the archetype table from `niu-shu.md`
-
-**2.4 `scripts/generate_audio.py`** — TTS Voiceover
-- Takes generated script text → produces voiceover .mp3
-- Uses Fish Speech (primary) or edge-tts (fallback)
-- Requires Fish Speech to be installed first (see Phase 3)
-
-**2.5 `scripts/render_video.py`** — Final Video Assembly
-- Combines: movie clips + voiceover audio → final review video
-- Uses moviepy for composition
-- Output: `output/final_video.mp4` (1080p H.264)
+- All three style files exist.
+- Each style has clear constraints and a usable prompt contract.
+- Style-selection logic is ready for later orchestration.
 
 ---
 
-### Phase 3: Install & Configure TTS Engines
+### Phase 4 — Pipeline Skeleton
 
-**TTS Strategy (decided 2026-04-04):**
-Fish Speech S2 Pro (current version) requires 24GB VRAM — won't run on our RTX 4060 (8GB).
-Plan: start with edge-tts for development, then add Fish Speech v1.5 for voice cloning.
+After the three phases above, build the next layer:
 
-**3.1 Install edge-tts (development TTS)**
-- `pip install edge-tts` — zero GPU, uses Microsoft's cloud voices
-- Chinese male voice: `zh-CN-YunxiNeural`
-- Good enough to get pipeline working end-to-end
-- No voice cloning — generic preset voice only
+- `video_processor.py`
+- `archetype_mapper.py`
+- `generate_audio.py`
+- `render_video.py`
+- a simple orchestrator script
 
-**3.2 Install Fish Speech v1.5 (voice cloning TTS)**
-- Old version (~500M params, ~2-4GB VRAM) — runs on RTX 4060
-- Supports zero-shot voice cloning from 10-30s reference audio
-- Quality decent but not as good as S2 Pro
-- Use for cloning Uncle Niu's voice from our voice samples
-
-**3.3 Select best voice sample**
-- Listen to the 5 voice samples in `voice-samples/uncle_niu/`
-- Pick the cleanest one (clear speech, no background music)
-
-**3.4 Test voice cloning**
-- Feed selected sample + test script to Fish Speech v1.5
-- Verify quality of cloned Uncle Niu voice
-
-**3.5 Future: Monitor s2.cpp (GGUF quantized S2 Pro)**
-- Community project providing quantized S2 Pro models
-- q6_k (~4.5GB) might fit on 8GB VRAM
-- Currently alpha — revisit when it matures
+At that point, the project can target its first end-to-end prototype with `edge-tts` before Fish Speech voice cloning is added.
 
 ---
 
-### Phase 4: Integration & End-to-End Testing
+## Concrete Recommendation For The Very Next Session
 
-**4.1 Wire all scripts together**
-- Create main entry point / orchestrator script
-- Movie + subtitles → all the way to final video
+If you want the highest-value next move, do this exact sequence:
 
-**4.2 Test with a real movie**
-- Pick a test movie with subtitles
-- Run full pipeline end-to-end
-- Check against PROD.md success criteria (8 checkpoints)
+1. Finish `scripts/parse_subtitles.py` into a real CLI.
+2. Add `.srt` and `.vtt` support plus tests.
+3. Refactor `scripts/transcribe.py` so it no longer runs work at import time.
+4. Transcribe `transcripts/xiaodao_greenline.mp3`.
+5. Write `styles/xiaodao.md`.
 
-**4.3 Iterate on quality**
-- Review generated script quality
-- Check voiceover naturalness
-- Verify video assembly timing
+That order gives you one technical milestone and one content milestone without jumping too early into video assembly or voice cloning.
 
 ---
 
-## Recommended Next Steps (This Session)
+## Tracking Checklist
 
-1. **Transcribe the Xiaodao audio** — quick win, same process as Uncle Niu
-2. **Start writing `parse_subtitles.py`** — the first real pipeline script, good Python practice
-3. **Research Fish Speech installation** — understand requirements before installing
+### Foundation
+- [x] Define product target in `PROD.md`
+- [x] Build initial Whisper transcription workflow
+- [x] Create initial ASS subtitle parser
+- [ ] Turn subtitle parser into reusable CLI
+- [ ] Support `.srt` and `.vtt`
+- [ ] Define parsed-subtitle JSON contract
+
+### Style System
+- [x] Write `styles/niu-shu.md`
+- [ ] Write `styles/xiaodao.md`
+- [ ] Write `styles/first-person-pov.md`
+- [ ] Refine Uncle Niu pacing from transcript evidence
+
+### Voice / Audio
+- [x] Prepare Uncle Niu reference clips
+- [x] Verify `edge-tts` is available
+- [ ] Install Fish Speech
+- [ ] Build `generate_audio.py`
+- [ ] Compare generic TTS vs cloned voice quality
+
+### Video Pipeline
+- [ ] Build `video_processor.py`
+- [ ] Build `archetype_mapper.py`
+- [ ] Build `render_video.py`
+- [ ] Create orchestrator / first end-to-end run
+- [ ] Validate against `PROD.md` success criteria
 
 ---
 
-## Success Criteria (from PROD.md)
+## Short Status Summary
 
-1. ✅ `output/final_video.mp4` exists and plays
-2. ✅ Duration: 8-12 minutes
-3. ✅ Language matches style (Chinese for Uncle Niu)
-4. ✅ Style rules applied (archetypes, hooks, transitions)
-5. ✅ No original movie audio leaks through
-6. ✅ All intermediate assets present (script, voiceover, clips)
-7. ✅ Video: 1080p H.264, AAC audio
-8. ✅ Full plot captured (no missing key events)
+The project is in a better place than the older plan suggested: subtitle parsing has started, parser tests pass, and `edge-tts` / `yt-dlp` are already available. The biggest gap is not missing dependencies anymore; it is the lack of **clean, reusable interfaces** between the prototype scripts and the planned pipeline.
+
+That makes the next move clear: finish subtitle intake first, then refactor transcription, then complete the style library, then assemble the pipeline.

@@ -1,164 +1,143 @@
 # Style System Design — Progress Tracker
 
-**Status:** Style A draft complete; Style B not started; Style C research in progress
-**Last Updated:** 2026-04-01
-**Next Step:** Install Whisper, transcribe audio files (Uncle Niu + Xiaodao), refine style files with real transcript data; brainstorm Style B
+**Status:** Style A complete; Style C research complete but transcript pending; Style B not started
+**Last Updated:** 2026-04-06
+**Recommended Next Style Task:** Transcribe `transcripts/xiaodao_greenline.mp3`, then write `styles/xiaodao.md`
 
 ---
 
-## What We're Designing
+## What This Document Tracks
 
-The style definition files that tell Claude how to generate movie review scripts in specific narrative styles:
-- `styles/niu-shu.md` — **Style A: Uncle Niu (牛叔说电影)** — third-person omniscient, deadpan, sarcastic
-- `styles/first-person-pov.md` — **Style B: First-Person Protagonist POV** — emotional, immersive (not started)
-- `styles/xiaodao.md` — **Style C: Xiaodao (小岛电影)** — warm narrator, sentimental, philosophical (research phase)
+This file tracks the status of the **style library**, not the full engineering pipeline.
 
-Previous session focused on Style A. This session began research on Style C.
+The planned style files are:
 
----
+- `styles/niu-shu.md` — Style A: Uncle Niu / sarcastic third-person narrator
+- `styles/first-person-pov.md` — Style B: protagonist POV / immersive first-person narrator
+- `styles/xiaodao.md` — Style C: warm, reflective, emotional narrator
 
-## Research Completed
-
-### Uncle Niu YouTube Videos Analyzed
-
-| # | Video ID | Title | Channel |
-|---|----------|-------|---------|
-| 1 | Izm5XmOvi9k | 叛逆少女穿越回35年前，直面杀手，拯救母亲与小镇！ | 牛叔说电影 (main) |
-| 2 | DGMsAjWBUas | 【牛叔】恐龙灭绝的原因，99年事件的真相，人类距离灭绝只差一次大冲撞 | 牛叔说电影 (main) |
-| 3 | A-dvs069Wl8 | 【牛叔】燃烧！高校争霸武斗篇，铃兰双雄大对决，谁才是最后的王者 | 牛叔说电影 (main) |
-| 4 | -czN5o7dHlw | 【牛叔】戲說電影《綠巨人浩克》文縐縐的綠胖有點太慢啦！ | 副频道【牛叔说电影】(sub) |
-| 5 | JBuD4FovNwM | 【牛叔】惊天大新闻！《黑衣纠察队》05 超人类居然人为制造？女版狼叔登场 | 牛叔说电影 (main) |
-| 6 | fKHD4m8UKqM | 【牛叔】戏说电影《午夜夜幕》特种部队内部的勾心斗角 | 副频道【牛叔说电影】(sub) |
-| 7 | 08dJ3x9ufCk | 【牛叔】爽就完了，退役兵王为救小孩，1人横扫一个国家的军队，结局太舒服 | 牛叔说电影 (main) |
-
-### Character Archetype Table (from web research)
-
-| Archetype | Chinese | Role | When to Use |
-|-----------|---------|------|-------------|
-| Xiaoshuai | 小帅 | Handsome male lead | Default male protagonist |
-| Xiaomei | 小美 | Beautiful female lead | Default female protagonist |
-| Dazhuang | 大壮 | Muscular/strong male | Physical/tough male lead |
-| Sangbiao | 丧彪 | Villain | Any antagonist |
-| FBL | 佛波勒 | Law enforcement | Police, FBI, agents (deliberate mispronunciation) |
-| Xiakalami | 小卡拉米 | Extras/nobodies | Unimportant side characters (Dongbei dialect) |
-| Qiantiaoshu | 千条叔 | Experienced elder | Middle-aged men with backstory |
-| Huzige | 胡子哥 | Bearded man | Any bearded character |
-| Dapiaoliang | 大漂亮 | Attractive support | Secondary attractive characters |
-| Gangdan | 钢蛋 | Foreign male name sub | Replacing Western male names |
-| Cuihua | 翠花 | Foreign female name sub | Replacing Western female names |
-| Jinfamei | 金发妹 | Blonde girl | Any blonde female character |
-| Qiantiaojie | 千条姐 | Experienced woman | Female version of 千条叔 |
-| Additional | 小白, 大强, 大山, 阿珍, 阿强, 大美丽 | Various supporting | Context-dependent |
-
-### Opening Hook Pattern
-
-- **Mandatory opener:** "注意看" (Pay attention)
-- **Formula:** "注意看，这个男人叫小帅，他..." or "眼前这个女人叫小美，她和她的男朋友小帅，就在刚刚……"
-- Hooks prioritize: 性暗示、犯罪与谋杀、冲突与矛盾 (sexual innuendo, crime/murder, conflict/contradiction)
-
-### Transition Phrases
-
-| Phrase | Meaning | Usage |
-|--------|---------|-------|
-| 注意看 | Pay attention | Reused throughout, not just opening |
-| 下一秒 | The next second | Quick time jump |
-| 却没想到 | But didn't expect | Surprise twist |
-| 不出意外的话要出意外了 | If nothing unexpected happens, something unexpected will | Ironic foreshadowing |
-| 按下不表 | Set aside for now | Borrowed from 评书 (traditional storytelling) |
-
-### Tone & Voice Characteristics
-
-- **Delivery:** Deadpan, fast-paced, highly sarcastic
-- **"废话文学" (nonsense literature):** Redundant/circular phrasing for comedy — e.g., "这个长得像小女孩的小女孩，其实是一个小女孩"
-- **Pseudo-idioms:** Invents fake classical phrases like "饮恨西北"
-- **Philosophy:** Maximize information density, minimize cognitive load
-- **Perspective:** Third-person omniscient, detached narrator
-
-### TTS Voice for Uncle Niu Style
-
-- Generic channels use Microsoft Azure "云希" voice (cheerful style) or Alibaba Cloud AI
-- User wants to clone Uncle Niu's actual voice using Fish Speech
-- **Needs:** 10-30 second clean audio clip of Uncle Niu speaking (no background music)
+For code and execution planning, use `docs/project-status-and-plan.md`.
 
 ---
 
-## Key Design Insight
+## Current Style Inventory
 
-The PRD targets **~10 minutes**, but the generic "注意看/小帅小美" style is designed for **3-minute Douyin/TikTok** clips. Uncle Niu's YouTube channel does longer-form reviews. The style file must account for **pacing differences**:
-
-- 3-min format: pure rapid-fire compression, no structure
-- 10-min format: needs act structure (setup → escalation → climax → resolution), breathing room, deeper sarcasm
-
-This is the key differentiator that transcript analysis will reveal — how Uncle Niu paces a 10-minute narrative vs the generic formula.
-
----
-
-## Completed This Session (2026-03-31)
-
-1. **YouTube subtitles:** Confirmed none of the 7 videos have subtitles (not even auto-generated). YouTube auto-captions don't reliably work for Chinese narration channels.
-
-2. **Audio downloaded:** All 7 videos' audio extracted as MP3 to `transcripts/` folder (54MB total):
-   - `01_rebel_girl.mp3` through `07_retired_soldier.mp3`
-   - Ready for Whisper transcription when installed
-
-3. **Voice cloning samples:** 5 x 30-second clips cut from video 7 at different timestamps:
-   - `voice-samples/sample_15s.mp3`, `sample_120s.mp3`, `sample_300s.mp3`, `sample_450s.mp3`, `sample_600s.mp3`
-   - User needs to listen and pick the cleanest one (no background music, clear speech)
-   - Full audio also saved: `voice-samples/uncle_niu_full.mp3`
-
-4. **Style file written:** `styles/niu-shu.md` — 10 sections covering:
-   - Opening hook formula (注意看)
-   - Full character archetype table (11 primary + 8 secondary)
-   - Four-act narrative structure for 10-min format
-   - Tone rules (deadpan, 废话文学, pseudo-idioms, sarcastic commentary)
-   - Transition phrases
-   - Plot compression rules
-   - Closing patterns
-   - Hard constraints
-   - Script output format
-   - Archetype assignment workflow
+| Style | File | Status | Notes |
+|------|------|--------|-------|
+| Style A | `styles/niu-shu.md` | ✅ written | strongest and most concrete style doc right now |
+| Style B | `styles/first-person-pov.md` | ❌ missing | concept exists, file not started |
+| Style C | `styles/xiaodao.md` | ❌ missing | research done, transcript and file still missing |
 
 ---
 
-## Completed This Session (2026-04-01)
+## What Is Already Backed By Evidence
 
-1. **Style C candidate identified:** YouTube channel "小岛电影" (@Vithun51) — emotional/sentimental movie review style, distinct from both Uncle Niu (sarcastic) and first-person POV (immersive).
+### Style A — Uncle Niu
 
-2. **Target video analyzed:** "8.9高分经典电影！善良的好人被误解，是人间最痛心的事！" (14:02, about The Green Mile). No subtitles available.
+Evidence already available:
 
-3. **Audio downloaded:** `transcripts/xiaodao_greenline.mp3` (13.4MB) — ready for Whisper transcription.
+- `styles/niu-shu.md` exists.
+- 7 source MP3 files exist in `transcripts/uncle_niu/`.
+- 7 transcript `.txt` files also exist.
+- Voice reference samples exist in `voice-samples/uncle_niu/`.
 
-4. **Channel catalog analyzed:** 40 video titles scraped via yt-dlp. Two content formats identified:
-   - Long-form reviews (10-34 min) tagged #我的观影报告 — the core style to emulate
-   - Short promos (2-7 min) for new releases — not the target style
+This means Style A is no longer just a theory document. It now has enough source material to support a second refinement pass later.
 
-5. **Style analysis documented:** Key differentiators vs Style A and B mapped out across 8 dimensions (perspective, tone, pacing, characters, commentary, hook style, film selection, closing). Full research at `docs/style-c-xiaodao-research.md`.
+### Style C — Xiaodao
 
-6. **Key finding:** Xiaodao style uses second-person emotional address ("你"), sincere/warm tone (no sarcasm), measured pacing, real character names (not archetypes), and philosophical reflective closings. Target audience: people seeking meaning and catharsis, not entertainment.
+Evidence already available:
 
----
+- `docs/style-c-xiaodao-research.md` exists.
+- `transcripts/xiaodao_greenline.mp3` exists.
+- Channel positioning and title-pattern research are already documented.
 
-## Open Questions (To Resolve Next Session)
+What is still missing:
 
-1. **Whisper transcription:** Install `faster-whisper` (GPU-accelerated) and transcribe all 7 audio files to Chinese text. Use results to refine the style file with real pacing data and additional transition phrases.
-   ```bash
-   pip install faster-whisper
-   ```
+- the actual transcript
+- the style definition file
+- confirmation of sentence rhythm, transition phrases, and closing pattern from real narration
 
-2. **Voice cloning sample selection:** User must listen to the 5 sample clips and pick the cleanest one for Fish Speech reference audio.
+### Style B — First-Person POV
 
-3. **Style B (First-Person POV):** Not yet discussed. Needs its own brainstorming round — protagonist selection logic, emotional tone calibration, knowledge-boundary rules.
-
-4. **Style A file refinement:** Once Whisper transcripts are available, compare the style file's act structure and pacing assumptions against Uncle Niu's actual narration patterns. Adjust character counts, transition frequency, and commentary density based on real data.
-
-5. **Style C (Xiaodao) transcript + style file:** Transcribe `transcripts/xiaodao_greenline.mp3`, then write `styles/xiaodao.md`. Consider downloading 1-2 more long-form Xiaodao videos for pattern confirmation. Research doc at `docs/style-c-xiaodao-research.md`.
+This remains a design-only idea. There is no transcript research file and no style file yet.
 
 ---
 
-## Sources
+## Confirmed Style Differences
 
-- [知乎: "注意看，这个男人叫小帅"](https://zhuanlan.zhihu.com/p/581510859)
-- [虎嗅: 注意看，"小帅和小美"正在肢解电影](https://m.huxiu.com/article/713933.html)
-- [品玩: 标题党、废话文学和AI配音的烂梗](https://www.pingwest.com/a/268501)
-- [知乎: 解说文案思路套路模板](https://zhuanlan.zhihu.com/p/614799957)
-- [爱范儿: 小帅和小美用三分钟毁掉电影](https://www.ifanr.com/1524332)
+These are the three style directions as currently understood:
+
+| Dimension | Style A: Uncle Niu | Style B: First-Person POV | Style C: Xiaodao |
+|-----------|--------------------|---------------------------|------------------|
+| Perspective | Third-person omniscient | First-person protagonist | Warm narrator addressing viewer |
+| Tone | Deadpan, sarcastic, compressed | Emotional, immersive, subjective | Sincere, reflective, sentimental |
+| Character naming | Archetypes only | Real names | Real names |
+| Main hook | `注意看` and conflict/shock | Immediate lived tension | Emotional truth / life meaning |
+| Pacing | Fast, information-dense | Suspense-led | Measured, lingering |
+| Best fit | Genre / action / plot-heavy movies | Character-centered movies | Classics, dramas, emotional films |
+
+---
+
+## Open Style Work
+
+### Priority 1 — Finish Style C
+
+1. Transcribe `transcripts/xiaodao_greenline.mp3`.
+2. Extract the real opening pattern, transition phrases, and ending style.
+3. Write `styles/xiaodao.md` in the same level of detail as `styles/niu-shu.md`.
+
+### Priority 2 — Design Style B
+
+1. Define protagonist selection logic.
+2. Define knowledge-boundary rules.
+3. Define emotional calibration rules.
+4. Write `styles/first-person-pov.md`.
+
+### Priority 3 — Refine Style A With Transcript Evidence
+
+1. Measure how fast Uncle Niu actually moves through plot beats.
+2. Check how often he re-hooks the audience.
+3. Verify whether the current 10-minute structure in `styles/niu-shu.md` matches the real samples.
+
+---
+
+## Recommended Style Work Order
+
+Use this order unless the project direction changes:
+
+1. Finish Xiaodao transcript.
+2. Write `styles/xiaodao.md`.
+3. Draft `styles/first-person-pov.md`.
+4. Revisit `styles/niu-shu.md` with transcript-based refinements.
+
+This keeps the style library moving forward without blocking the main parser/transcription engineering work.
+
+---
+
+## Session Log
+
+### 2026-03-31
+
+- Downloaded 7 Uncle Niu audio files.
+- Researched archetype naming, opening hooks, and transition phrases.
+- Wrote `styles/niu-shu.md`.
+- Prepared Uncle Niu voice-cloning sample clips.
+
+### 2026-04-01
+
+- Identified Xiaodao as the Style C candidate.
+- Downloaded `transcripts/xiaodao_greenline.mp3`.
+- Analyzed 40 Xiaodao video titles and documented the research in `docs/style-c-xiaodao-research.md`.
+
+### 2026-04-06
+
+- Reviewed the repository against the earlier planning docs.
+- Confirmed that Style A is supported by real transcript assets.
+- Confirmed that Style C is still blocked only by transcription and file writing.
+- Realigned this tracker so it reflects the actual repository state rather than the earlier research-only snapshot.
+
+---
+
+## Short Summary
+
+Style A is the only finished style file today. Style C has enough research to become the next completed style once the Xiaodao audio is transcribed. Style B is still a blank page and should be treated as a design task after Style C is grounded in real transcript data.
