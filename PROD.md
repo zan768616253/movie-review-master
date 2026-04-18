@@ -13,7 +13,7 @@ The user must provide **two files** placed in the same directory:
 | File | Format | Notes |
 |------|--------|-------|
 | Movie file | `.mp4` | Full-length movie |
-| Subtitle file | `.srt` (preferred) or `.ass` / `.vtt` | Must be in the **same directory** as the `.mp4`, with the **same filename** (e.g., `movie.mp4` + `movie.srt`) |
+| Subtitle file | `.srt` (preferred), `.ass` / `.ssa`, or `.vtt` | Must be in the **same directory** as the `.mp4`, with the **same filename** (e.g., `movie.mp4` + `movie.srt`) |
 
 **Subtitle file format details:**
 - **Preferred:** `.srt` (SubRip Text) — plain text, most universally supported, easiest to parse
@@ -30,12 +30,16 @@ The agent produces an **output folder** next to the input files containing all a
 output/
 ├── final_video.mp4       # Assembled ~10-minute review video (ready for YouTube)
 ├── voiceover.mp3         # Standalone voiceover audio track (for post-editing)
-├── script.txt            # Full generated script (Chinese or English)
+├── script.txt            # Full generated script with [SCENE] markers (Chinese or English)
+├── script_clean.txt      # Script without markers (pure narration text)
 ├── script_translated.txt # Translated version (if bilingual mode used)
+├── thumbnail.jpg         # Auto-generated YouTube thumbnail (1280×720)
+├── character_map.txt     # Character → archetype mapping (Style A only)
 └── clips/
-    ├── keyframe_001.jpg  # Extracted keyframes used in the video
-    ├── keyframe_002.jpg
-    └── ...               # Extracted short clips (silent, no original audio)
+    ├── clip_001.mp4      # Extracted silent video clips at scene timestamps
+    ├── clip_002.mp4
+    ├── keyframe_001.jpg  # Static keyframes (fallback for coverage gaps)
+    └── ...
 ```
 
 **Output video specs:**
@@ -91,75 +95,164 @@ No original movie audio is used. All voiceover is AI-generated.
 
 **Hardware:** User has an **NVIDIA RTX 4060 (8GB VRAM)** — sufficient for local GPU-accelerated TTS with voice cloning.
 
-### Primary Engine: Fish Speech v1.5+
+### Primary Engine: Qwen3-TTS (0.6B-Base)
 **Self-hosted, free, GPU-accelerated**
 
 | Spec | Detail |
 |------|--------|
 | Cost | **$0** (fully local) |
-| License | **Apache 2.0** (code + model weights, fully permissive for personal and commercial use) |
-| VRAM usage | ~2-4 GB (leaves ~4 GB headroom on RTX 4060) |
-| Chinese quality | Excellent — natively trained on large-scale Chinese data; natural prosody, accurate tones |
-| English quality | Excellent — multilingual training |
-| Voice cloning | **Zero-shot** — pass 10-30 seconds of clean reference audio at inference time. No fine-tuning needed |
-| Generation speed | ~1 second of compute produces 10-15 seconds of audio on RTX 4060 |
-| Install | `pip install fish-speech` (Python package + model auto-download) |
-| API style | OpenAI-compatible HTTP API server, or direct Python API |
-| Output format | WAV (native); convert to MP3 via `ffmpeg` |
+| License | **Apache 2.0** (fully permissive for personal and commercial use) |
+| VRAM usage | ~3-5 GB (comfortable on RTX 4060 with ~3-5 GB headroom) |
+| Chinese quality | **Best-in-class** — WER 0.92 on Seed-TTS benchmark; Chinese is Qwen3-TTS's strongest language |
+| English quality | Excellent — WER 1.32, 10-language multilingual support |
+| Voice cloning | **Zero-shot** — needs only **~3 seconds** of reference audio + transcript. No fine-tuning needed |
+| Generation speed | ~5x real-time on mid-range GPU (~50 min for a 10-min script). Community `torch.compile` fork claims ~6x speedup |
+| Install | `pip install -U qwen-tts` (Python package + model auto-download from HuggingFace) |
+| API style | Direct Python API (`from qwen_tts import QwenTTS`); built-in Gradio web UI demo also available |
+| Output format | WAV (24 kHz, mono); convert to MP3 via `ffmpeg` |
+| Model variants | 0.6B-Base (voice cloning), 1.7B-Base (higher quality, ~5-7 GB VRAM — tight but feasible with FlashAttention 2) |
+
+**Why Qwen3-TTS over Fish Speech:** Fish Speech cannot run on this hardware. Qwen3-TTS has better Chinese benchmarks (WER 0.92 vs Fish Speech's comparable scores), a lower voice cloning reference requirement (3s vs 10-30s), and simpler installation (`pip install`).
 
 **Voice selection strategy:**
-- **Style A (Uncle Niu):** Use a built-in male Chinese voice (detached, neutral tone). Select from Fish Speech's pre-trained Chinese male voices.
-- **Style B (First-Person POV):** Use zero-shot voice cloning. The `video_processor.py` script will extract a clean 10-30 second audio clip of the protagonist's dialogue from the movie. This reference clip is passed to Fish Speech at inference time to clone the protagonist's voice for the narration.
+- **Style A (Uncle Niu):** Use a built-in Chinese male preset voice (detached, neutral tone). Qwen3-TTS 0.6B-CustomVoice provides 4 Chinese preset voices including male options. Alternatively, clone from the Uncle Niu voice samples in `voice-samples/uncle_niu/`.
+- **Style B (First-Person POV):** Use zero-shot voice cloning. The `video_processor.py` script extracts a clean ~3-10 second audio clip of the protagonist's dialogue from the movie. This reference clip + its transcript is passed to Qwen3-TTS at inference time via `create_voice_clone_prompt()`.
 
-**Long-output handling:** Fish Speech quality can degrade on utterances longer than ~60 seconds. The `generate_audio.py` script must split the script into paragraph-sized chunks (30-50 seconds each), generate each chunk separately, and concatenate the resulting WAV files using `ffmpeg`.
+**Long-output handling:** Max generation is ~40-50 seconds per call (8192 tokens at 12.5 Hz × 16 codebooks). The `generate_audio.py` script must:
+1. Split the script into sentence-level or paragraph-sized chunks (~30-40 seconds each)
+2. Use `create_voice_clone_prompt()` once to build a reusable voice prompt from the reference audio
+3. Generate each chunk with the cached voice prompt for consistent voice across chunks
+4. Concatenate the resulting WAV files using `ffmpeg`
+5. Apply audio normalization (consistent volume across chunks, light compression)
 
-### Fallback Engine: CosyVoice 2
-**Self-hosted, free, GPU-accelerated**
-
-Used as a fallback if Fish Speech cannot produce satisfactory results for a specific voice or if shorter reference clips are available:
-
-| Spec | Detail |
-|------|--------|
-| Cost | **$0** (fully local) |
-| License | Apache 2.0 (code); model weights under Tongyi Qianwen license (permits commercial use, review model card for specifics) |
-| VRAM usage | ~4-6 GB (tighter on RTX 4060 but functional) |
-| Chinese quality | Excellent — natively trained by Alibaba Tongyi Speech Lab |
-| Voice cloning | **Zero-shot** — needs only **3-10 seconds** of reference audio (lower requirement than Fish Speech) |
-| Install | Clone from GitHub (`FunAudioLLM/CosyVoice`), PyTorch-based |
-
-> **When to use CosyVoice 2 over Fish Speech:** When the protagonist has limited clean dialogue (less than 10 seconds available), CosyVoice 2's lower reference audio requirement (3-10s) makes it the better choice for voice cloning.
-
-### Emergency Fallback: edge-tts
-If the user's GPU is unavailable or both local engines fail:
+### Fallback Engine: edge-tts
+If the user's GPU is unavailable or Qwen3-TTS fails:
 - **`edge-tts`** (Microsoft Edge Neural TTS): Free, no GPU required, `pip install edge-tts`
 - Chinese voices: `zh-CN-XiaoxiaoNeural` (female), `zh-CN-YunxiNeural` (male)
 - No voice cloning — uses preset voices only
 - Quality: Very good (neural), but no character-matched voice for Style B
 
-> **Default for this project:** Fish Speech (local GPU). The `generate_audio.py` script checks which engine is available via a `.env` config and falls back: Fish Speech → CosyVoice 2 → edge-tts.
+> **Default for this project:** Qwen3-TTS 0.6B-Base (local GPU). The `generate_audio.py` script checks which engine is available via a `.env` config and falls back: Qwen3-TTS → edge-tts.
 
 ---
 
-## 5. System Architecture ("Progressive Disclosure")
+## 5. Script Generation (LLM Strategy)
+
+The script is the core creative output. The agent uses **Claude** (via Claude Code itself or the Claude API) to generate the review script from subtitle data.
+
+### Input to the LLM
+
+| Input | Source | Purpose |
+|-------|--------|---------|
+| Full subtitle text | Parsed by `parse_subtitles.py` | Plot source material — all dialogue with timestamps |
+| Style rules | `styles/*.md` file for chosen style | Tone, structure, constraints, archetype table |
+| Character mapping | `archetype_mapper.py` output (Style A only) | Original name → archetype name translation table |
+| User language choice | User selection at runtime | Chinese (default) or English |
+
+### Generation Workflow
+
+1. **Character extraction:** Parse subtitle text to identify all named characters and their dialogue frequency. For Style A, run archetype mapping and present the mapping table for user review.
+2. **Plot analysis:** Feed the full subtitle text to Claude with instructions to identify: main plot arc (beginning, escalation, climax, resolution), key scenes with their subtitle timestamps, and the protagonist.
+3. **Script generation:** Feed the plot analysis + style rules to Claude. The output must include:
+   - The full narration script (continuous text, ~2,200-2,500 Chinese characters)
+   - **Scene timestamp references** per paragraph — e.g., `[SCENE: 00:15:00-00:22:30]` markers indicating which part of the movie each narration segment covers. These markers are stripped from the voiceover text but used by `render_video.py` to select the right video clips.
+4. **User review checkpoint:** The agent pauses and presents the generated script for user review. The user can edit the script before TTS generation proceeds. This is the highest-leverage quality control point.
+
+### Context Window Handling
+
+A full movie's subtitles can be 5,000-10,000 lines. Strategies:
+- **Primary:** Use Claude's large context window (200K tokens) — most movies fit within a single prompt.
+- **Fallback for very long movies:** Summarize the subtitle text in chunks first, then generate the script from the summaries.
+
+---
+
+## 6. Video Quality Features
+
+These features separate "amateur slideshow" from "YouTube-ready review."
+
+### 6.1 Video Clips Over Static Keyframes
+
+Extract **5-15 second silent video clips** at key scene timestamps (from the scene-script alignment in Section 5), not just static JPGs. Movie review channels show motion — this is the single biggest quality differentiator.
+
+- **Primary:** Silent video clips at scene timestamps (no original audio)
+- **Fallback:** Static keyframes with Ken Burns effect (subtle pan/zoom) when clips can't be cleanly extracted
+
+### 6.2 Background Music
+
+Add a subtle **royalty-free ambient music track** under the voiceover. Duck music volume during narration, raise slightly during visual-only transitions.
+
+- Source: Pre-selected royalty-free tracks stored in the project (e.g., from pixabay.com/music or incompetech.com)
+- Implementation: `ffmpeg` audio mixing — voiceover at full volume, music at -15 to -20 dB
+
+### 6.3 Burned-In Subtitles
+
+Render the narration script as **on-screen subtitles** synchronized to the voiceover. Chinese review channels universally have these — many viewers watch on mobile without audio.
+
+- Render using `ffmpeg` ASS/SRT subtitle burn-in or MoviePy text overlay
+- Font: Clean sans-serif (e.g., Source Han Sans / 思源黑体), white with black outline
+
+### 6.4 Visual Transitions
+
+Use **0.3-0.5 second crossfade dissolves** between clips instead of hard cuts. This gives a professional feel at minimal implementation cost.
+
+### 6.5 Audio Post-Processing
+
+After concatenating TTS chunks:
+- **Normalize volume** across chunks (prevent jumps between sentences)
+- Apply light **compression** for consistent loudness
+- Target **-14 LUFS** (YouTube loudness standard)
+- Implementation: `ffmpeg` loudnorm filter
+
+### 6.6 Thumbnail Generation (Optional)
+
+Auto-generate a YouTube thumbnail:
+- Select the most visually striking keyframe from the movie
+- Overlay the video title text (from the `[TITLE]` in the script)
+- Output as `output/thumbnail.jpg` (1280×720)
+
+---
+
+## 7. System Architecture ("Progressive Disclosure")
 
 ```text
 movie-review-master/
 ├── SKILL.md                 # Mission Control: input collection & workflow routing
 ├── scripts/
-│   ├── video_processor.py   # Parses subtitle file; extracts keyframes/clips + voice reference from .mp4
-│   ├── archetype_mapper.py  # Style A only: maps character names to archetypes
-│   ├── generate_audio.py    # TTS: Fish Speech (primary) → CosyVoice 2 → edge-tts fallback chain
-│   └── render_video.py      # Assembles final video; writes output/ folder
+│   ├── parse_subtitles.py   # Parses .srt/.ass/.vtt into structured Subtitle objects
+│   ├── video_processor.py   # Extracts silent video clips, keyframes, + voice reference from .mp4
+│   ├── archetype_mapper.py  # Style A only: maps character names to archetypes via LLM
+│   ├── generate_script.py   # Orchestrates LLM script generation with style rules + scene timestamps
+│   ├── generate_audio.py    # TTS: Qwen3-TTS (primary) → edge-tts fallback chain
+│   └── render_video.py      # Assembles final video with clips, transitions, subtitles, music
 ├── styles/
 │   ├── niu-shu.md           # Style A: full archetype table + tone rules
-│   └── first-person-pov.md  # Style B: protagonist selection + narrative rules
-├── .env.example             # Template: engine selection + optional API keys
-└── requirements.txt         # Python dependencies (fish-speech, moviepy, ffmpeg-python, etc.)
+│   ├── first-person-pov.md  # Style B: protagonist selection + narrative rules
+│   └── xiaodao.md           # Style C: warm emotional narrator + reflective tone rules
+├── assets/
+│   └── bgm/                 # Royalty-free background music tracks
+├── .env.example             # Template: TTS engine selection + optional API keys
+└── requirements.txt         # Python dependencies (qwen-tts, moviepy, ffmpeg-python, etc.)
+```
+
+### Pipeline Flow
+
+```text
+[1] parse_subtitles.py  →  structured subtitle data (with timestamps)
+         ↓
+[2] generate_script.py  →  review script + scene timestamp markers
+    (calls archetype_mapper.py for Style A)
+    (user reviews script before continuing)
+         ↓
+[3] video_processor.py  →  silent video clips at scene timestamps + keyframes + voice ref clip
+         ↓
+[4] generate_audio.py   →  voiceover WAV (chunked, normalized) + background music mix
+         ↓
+[5] render_video.py     →  final_video.mp4 + thumbnail + all output assets
 ```
 
 ---
 
-## 6. Success Criteria
+## 8. Success Criteria
 
 A successful run is defined as meeting **all** of the following:
 
@@ -173,13 +266,16 @@ A successful run is defined as meeting **all** of the following:
 | 6 | All post-editing assets are present | `output/voiceover.mp3`, `output/clips/` folder, `output/script.txt` all exist |
 | 7 | Video is 1080p H.264 | Check via `ffprobe output/final_video.mp4` |
 | 8 | Script captures the full plot arc | Beginning, middle, climax, and ending are all represented |
+| 9 | Video shows motion clips, not just static images | Spot-check: scrub through video — most segments should be moving footage |
+| 10 | Burned-in subtitles are present and readable | Watch first minute — narration text should appear on screen |
+| 11 | Audio has consistent volume with no jarring jumps | Listen through — no sudden loud/quiet transitions between chunks |
 
 ---
 
-## 7. Out of Scope (for now)
+## 9. Out of Scope (for now)
 
-- Archetype table for Style A (defined later in `styles/niu-shu.md`)
 - Automatic YouTube upload
-- Background music generation
-- On-screen text/subtitle overlay on the output video
+- AI-generated background music (using pre-selected royalty-free tracks instead)
 - Multi-episode or series support
+- Automatic YouTube description / tags generation
+- Multiple camera angles or picture-in-picture effects

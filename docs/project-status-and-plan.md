@@ -1,7 +1,7 @@
 # Movie Review Master — Project Status & Plan
 
-**Date:** 2026-04-06
-**Author:** Eric (review updated with GitHub Copilot)
+**Date:** 2026-04-07
+**Author:** Eric (review updated with Claude Code)
 
 ---
 
@@ -93,7 +93,8 @@ Verified during this review:
 | `yt_dlp` | ✅ importable | Linux-side package available |
 | `torch` | ✅ importable | present in environment |
 | `openai` | ✅ importable | present in environment |
-| `fish_speech` | ❌ not importable | still not installed |
+| `fish_speech` | ❌ dropped | replaced by Qwen3-TTS (2026-04-07 decision) |
+| `qwen_tts` | ❌ not installed | primary TTS engine, install with `pip install -U qwen-tts` |
 | system `ffmpeg` | ✅ verified | version `6.1.1` |
 | NVIDIA GPU | ✅ verified | `RTX 4060 Laptop GPU`, `8188 MiB` |
 
@@ -141,12 +142,32 @@ These are small but important:
 **Completed**
 - `edge-tts` is already available in the environment.
 - Uncle Niu voice sample assets exist.
+- TTS engine decision made: **Qwen3-TTS 0.6B-Base** replaces Fish Speech as primary engine (2026-04-07).
+  - Reason: Fish Speech cannot run on this hardware. Qwen3-TTS has best-in-class Chinese benchmarks (WER 0.92), lower voice cloning requirement (3s vs 10-30s), and simple `pip install qwen-tts`.
+  - Fallback chain simplified to: Qwen3-TTS → edge-tts (CosyVoice 2 dropped).
 
 **Still open**
-- Install and validate Fish Speech.
-- Choose the best Uncle Niu voice sample.
-- Build `generate_audio.py`.
-- Decide how to switch between generic TTS and cloned-voice TTS in the pipeline.
+- Install and validate Qwen3-TTS (`pip install qwen-tts`).
+- Choose the best Uncle Niu voice sample for cloning reference.
+- Build `generate_audio.py` with chunked generation + audio normalization.
+- Decide how to switch between preset TTS and cloned-voice TTS in the pipeline.
+
+### Workstream D — LLM Script Generation (NEW)
+
+**Not started** — identified as a critical gap during 2026-04-07 review.
+
+The PRD now defines a script generation strategy (PROD.md Section 5) using Claude as the LLM. Key components:
+- Character extraction from subtitle data
+- Archetype mapping (Style A) with user review
+- Plot analysis with scene timestamp identification
+- Script generation with `[SCENE: HH:MM:SS-HH:MM:SS]` markers per paragraph
+- User review checkpoint before TTS
+
+**Still open**
+- Build `generate_script.py` orchestrator.
+- Implement scene-script alignment (LLM outputs timestamp refs per paragraph).
+- Implement user review checkpoint workflow.
+- Test with full-length subtitle files against Claude's context window.
 
 ---
 
@@ -173,11 +194,18 @@ Reason:
 - Style quality matters, but style work is not the current technical blocker.
 - Once the parser/transcriber are stable, style documents become easier to ground in real transcript evidence.
 
-### 4. Delay Fish Speech integration until text intake is stable
+### 4. Build script generation (LLM layer) before TTS
 
 Reason:
-- `edge-tts` is already available, so you can reach a first end-to-end prototype without voice cloning.
-- Fish Speech is still valuable, but it is no longer the next critical blocker.
+- The script is the core creative output — no point generating audio until the script quality is validated.
+- Scene-script alignment (timestamp markers) must exist before video clips can be extracted intelligently.
+- `edge-tts` is already available, so you can reach a first end-to-end prototype without Qwen3-TTS voice cloning.
+
+### 5. Integrate Qwen3-TTS after text pipeline is stable
+
+Reason:
+- Qwen3-TTS replaces Fish Speech (which couldn't run on this hardware).
+- `edge-tts` works for initial prototyping; Qwen3-TTS adds voice cloning for production quality.
 
 ---
 
@@ -311,17 +339,53 @@ That gives future scripts enough information to:
 
 ---
 
-### Phase 4 — Pipeline Skeleton
+### Phase 4 — Script Generation (LLM Layer)
 
-After the three phases above, build the next layer:
+**Goal:** Build the core intelligence — generate a review script from subtitle data using Claude.
 
-- `video_processor.py`
-- `archetype_mapper.py`
-- `generate_audio.py`
-- `render_video.py`
-- a simple orchestrator script
+### 4.1 Build `generate_script.py`
 
-At that point, the project can target its first end-to-end prototype with `edge-tts` before Fish Speech voice cloning is added.
+- Accept parsed subtitle data as input.
+- Load the appropriate style file based on user selection.
+- For Style A: call `archetype_mapper.py` first, present mapping for user review.
+- Feed subtitle text + style rules to Claude to generate the script.
+- Output must include `[SCENE: HH:MM:SS-HH:MM:SS]` markers per paragraph.
+- Present script to user for review/editing before continuing.
+
+### 4.2 Build `archetype_mapper.py`
+
+- Extract character names and dialogue frequency from parsed subtitles.
+- Map to archetypes using the table in `styles/niu-shu.md`.
+- Output a mapping table for user confirmation.
+
+### Exit Criteria For Phase 4
+
+- Given a subtitle file + style choice, the agent produces a reviewable script.
+- Script includes scene timestamp markers for downstream clip extraction.
+- User can review and edit the script before proceeding.
+
+---
+
+### Phase 5 — Video & Audio Pipeline
+
+After the script generation layer works, build the production layer:
+
+- `video_processor.py` — extract silent video clips at scene timestamps + keyframes + voice reference clip
+- `generate_audio.py` — Qwen3-TTS (primary) → edge-tts fallback; chunked generation + normalization + background music mixing
+- `render_video.py` — assemble final video with clips, crossfade transitions, Ken Burns on stills, burned-in subtitles, thumbnail generation
+
+Target first end-to-end prototype with `edge-tts` before adding Qwen3-TTS voice cloning.
+
+---
+
+### Phase 6 — Qwen3-TTS Voice Cloning
+
+After the full pipeline works with edge-tts:
+
+- Install Qwen3-TTS (`pip install -U qwen-tts`)
+- Validate voice cloning with Uncle Niu samples
+- Add engine switching logic in `generate_audio.py`
+- Compare output quality: Qwen3-TTS cloned voice vs edge-tts preset voice
 
 ---
 
@@ -329,13 +393,13 @@ At that point, the project can target its first end-to-end prototype with `edge-
 
 If you want the highest-value next move, do this exact sequence:
 
-1. Finish `scripts/parse_subtitles.py` into a real CLI.
-2. Add `.srt` and `.vtt` support plus tests.
-3. Refactor `scripts/transcribe.py` so it no longer runs work at import time.
-4. Transcribe `transcripts/xiaodao_greenline.mp3`.
-5. Write `styles/xiaodao.md`.
+1. Finish `scripts/parse_subtitles.py` into a real CLI with `.srt` and `.vtt` support.
+2. Refactor `scripts/transcribe.py` so it no longer runs work at import time.
+3. Transcribe `transcripts/xiaodao_greenline.mp3`.
+4. Write `styles/xiaodao.md`.
+5. Start `scripts/generate_script.py` — even a basic version that feeds subtitles + style rules to Claude and outputs a draft script is extremely valuable as a proof-of-concept for the core product.
 
-That order gives you one technical milestone and one content milestone without jumping too early into video assembly or voice cloning.
+That order gives you the subtitle foundation, then the script generation brain — the two layers everything else depends on.
 
 ---
 
@@ -355,24 +419,40 @@ That order gives you one technical milestone and one content milestone without j
 - [ ] Write `styles/first-person-pov.md`
 - [ ] Refine Uncle Niu pacing from transcript evidence
 
+### Script Generation (LLM Layer)
+- [ ] Build `generate_script.py` (Claude-based script generation)
+- [ ] Build `archetype_mapper.py` (character → archetype mapping)
+- [ ] Implement scene-script alignment (timestamp markers per paragraph)
+- [ ] Implement user review checkpoint
+
 ### Voice / Audio
 - [x] Prepare Uncle Niu reference clips
 - [x] Verify `edge-tts` is available
-- [ ] Install Fish Speech
-- [ ] Build `generate_audio.py`
-- [ ] Compare generic TTS vs cloned voice quality
+- [x] TTS engine decision: Qwen3-TTS replaces Fish Speech
+- [ ] Install and validate Qwen3-TTS
+- [ ] Build `generate_audio.py` (chunked generation + normalization)
+- [ ] Add background music mixing
+- [ ] Compare Qwen3-TTS cloned voice vs edge-tts preset voice
 
 ### Video Pipeline
-- [ ] Build `video_processor.py`
-- [ ] Build `archetype_mapper.py`
-- [ ] Build `render_video.py`
+- [ ] Build `video_processor.py` (silent clips + keyframes + voice ref)
+- [ ] Build `render_video.py` (assembly + transitions + subtitle burn-in)
+- [ ] Add Ken Burns effect for static keyframes
+- [ ] Add crossfade transitions between clips
+- [ ] Add thumbnail generation
 - [ ] Create orchestrator / first end-to-end run
-- [ ] Validate against `PROD.md` success criteria
+- [ ] Validate against `PROD.md` success criteria (11 checks)
 
 ---
 
 ## Short Status Summary
 
-The project is in a better place than the older plan suggested: subtitle parsing has started, parser tests pass, and `edge-tts` / `yt-dlp` are already available. The biggest gap is not missing dependencies anymore; it is the lack of **clean, reusable interfaces** between the prototype scripts and the planned pipeline.
+**Updated 2026-04-07:** Major decisions made this session:
 
-That makes the next move clear: finish subtitle intake first, then refactor transcription, then complete the style library, then assemble the pipeline.
+1. **TTS engine:** Qwen3-TTS 0.6B-Base replaces Fish Speech (which can't run on this hardware). Fallback chain simplified to Qwen3-TTS → edge-tts.
+2. **LLM strategy defined:** Claude generates the review script from subtitle data. This was the biggest gap in the PRD — now documented in PROD.md Section 5.
+3. **Quality features added:** PROD.md now specifies video clips (not just keyframes), background music, burned-in subtitles, crossfade transitions, audio normalization, and thumbnail generation. These are what separate "amateur" from "YouTube-ready."
+4. **Scene-script alignment:** The LLM outputs `[SCENE: timestamp]` markers per paragraph, enabling intelligent clip extraction. This was the missing link between script and video.
+5. **Pipeline expanded:** New `generate_script.py` module added to the architecture. Build order updated to 6 phases.
+
+The project foundation (subtitle parsing, transcription, style research) is solid. The next major milestone is finishing the subtitle intake layer, then building the script generation layer — the core intelligence that makes everything else work.
