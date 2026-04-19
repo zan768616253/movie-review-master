@@ -166,6 +166,7 @@ def main() -> int:
         "-f", 
         "--format",
         choices=["txt", "json"],
+        default="txt",
         help="Output format (default: txt)",
     )
     output_group = arg_parser.add_mutually_exclusive_group()
@@ -181,8 +182,7 @@ def main() -> int:
         help="Print to stdout instead of writing a file",
     )
     args = arg_parser.parse_args()
-
-    subtitles = []
+    
     try:
         subtitles = parse_subtitles(args.input)
 
@@ -196,7 +196,7 @@ def main() -> int:
     if args.format == "txt":
         output_text = "\n".join(subtitle.text for subtitle in subtitles)
     else:
-        output_text = json.dumps([asdict(subtitle) for subtitle in subtitles], ensure_asiii=False, indent=2)
+        output_text = json.dumps([asdict(subtitle) for subtitle in subtitles], ensure_ascii=False, indent=2)
 
     if args.stdout:
         print(output_text)
