@@ -1,14 +1,15 @@
+import json
 import sys
+import pytest
+
 from pathlib import Path
 from shutil import copyfile
-
-import pytest
 
 from scripts.parse_subtitles import (
     main,
     parse_subtitles,
     parse_timestamp,
-    strip_tags,
+    normalize_subtitle_text,
 )
 
 
@@ -74,7 +75,7 @@ def test_parse_timestamp(timestamp: str, expected: float):
     ],
 )
 def test_strip_tags(text: str, expected: str):
-    output = strip_tags(text)
+    output = normalize_subtitle_text(text)
     assert output == expected
 
 
@@ -160,3 +161,23 @@ def test_main_reports_unsupported_format(tmp_path: Path, monkeypatch, capsys):
 
     assert exit_code == 1
     assert "Unsupported subtitle format" in captured.err
+
+@pytest.mark.parametrize(
+    ("fixture_name", "expected_texts"),
+    [
+        ("sample_movie.ass", EXPECTED_SAMPLE_MOVIE_ASS_SCRIPTS.split("\n")),
+        ("sample_movie.srt", EXPECTED_SAMPLE_MOVIE_SRT_TEXTS),
+    ],
+)
+def test_main_writes_default_output_json(tmp_path: Path, fixture_name: str, expected_texts: list[str], monkeypatch):
+    sample_movie_path = copy_fixture(tmp_path, fixture_name)
+    expected_output_path = sample_movie_path.with_suffix(".json")
+
+    monkeypatch.setattr(sys, "argv", ["parse-subtitles", str(sample_movie_path), "-f", "json"])
+
+    exit_code = main()
+    assert exit_code == 0
+
+    data = json.loads(expected_output_path.read_text(encoding="utf-8"))
+    assert isinstance(data, list)
+    assert [item["text"] for item in data] == expected_texts

@@ -1,9 +1,10 @@
 import argparse
 import re
 import sys
+import json
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from itertools import chain
 from pathlib import Path
 
@@ -39,7 +40,7 @@ class AssSubtitleParser(SubtitleParser):
         subtitles: list[Subtitle] = []
         event_start = False
 
-        with Path(file_name).open("r", encoding="utf-8") as file:
+        with Path(file_name).open("r", encoding="utf-8-sig") as file:
             for line in file:
                 line = line.strip()
 
@@ -59,7 +60,7 @@ class AssSubtitleParser(SubtitleParser):
                     Subtitle(
                         start=parse_timestamp(parts[1]),
                         end=parse_timestamp(parts[2]),
-                        text=strip_tags(parts[9]),
+                        text=normalize_subtitle_text(parts[9]),
                         speaker=parts[4],
                         style=parts[3],
                     )
@@ -103,7 +104,7 @@ class SrtSubtitleParser(SubtitleParser):
         if timing_match is None:
             return None
 
-        text = strip_tags("\n".join(block[timing_index + 1 :]))
+        text = normalize_subtitle_text("\n".join(block[timing_index + 1 :]))
 
         return Subtitle(
             start=parse_timestamp(timing_match.group("start")),
@@ -128,14 +129,15 @@ def parse_timestamp(timestamp: str) -> float:
     return int(hour) * 3600 + int(minute) * 60 + float(second)
 
 
-def strip_tags(text: str) -> str:
+def normalize_subtitle_text(text: str) -> str:
     """
     Remove subtitle markup from text.
     Input example: 因为有些事情{\b1}不能{\b0}用法律解决
     Output example: 因为有些事情不能用法律解决
     """
     text = _SUBTITLE_BREAK_PATTERN.sub("\n", text)
-    return _SUBTITLE_TAG_PATTERN.sub("", text)
+    text = _SUBTITLE_TAG_PATTERN.sub("", text)
+    return text.replace(r"\N", "\n").strip()
 
 
 def get_subtitle_parser(file_name: str | Path) -> SubtitleParser:
@@ -160,6 +162,12 @@ def main() -> int:
     )
 
     arg_parser.add_argument("input", type=Path, help="Path to subtitle file (.ass or .srt)")
+    arg_parser.add_argument(
+        "-f", 
+        "--format",
+        choices=["txt", "json"],
+        help="Output format (default: txt)",
+    )
     output_group = arg_parser.add_mutually_exclusive_group()
     output_group.add_argument(
         "-o",
@@ -174,6 +182,7 @@ def main() -> int:
     )
     args = arg_parser.parse_args()
 
+    subtitles = []
     try:
         subtitles = parse_subtitles(args.input)
 
@@ -184,13 +193,19 @@ def main() -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
-    output_text = "\n".join(subtitle.text.replace(r"\N", "\n").strip() for subtitle in subtitles)
+    if args.format == "txt":
+        output_text = "\n".join(subtitle.text for subtitle in subtitles)
+    else:
+        output_text = json.dumps([asdict(subtitle) for subtitle in subtitles], ensure_asiii=False, indent=2)
 
     if args.stdout:
         print(output_text)
         return 0
 
-    output_path = args.output if args.output is not None else args.input.with_suffix(".txt")
+    if args.output is not None:
+        output_path = args.output
+    else:
+        output_path = args.input.with_suffix(".txt" if args.format == "txt" else ".json")
 
     try:
         output_path.write_text(output_text, encoding="utf-8")
@@ -200,6 +215,7 @@ def main() -> int:
 
     print(f"Generated subtitle script: {output_path}")
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -120,7 +120,7 @@ Mentioned only so the choice is explicit:
 
 **Real test movie (new)**
 - `movies/呪術回戦0/呪術回戦0.mkv` — 14.3 GB, Blu-ray quality MKV.
-- `movies/呪術回戦0/简体.srt` — 98 KB Simplified Chinese SRT.
+- `movies/呪術回戦0/呪術回戦0.srt` — 98 KB Simplified Chinese SRT.
 - **Note:** the subtitle filename does not match the movie filename. `PROD.md` Section 1 currently requires them to share a stem. Either rename the SRT to `呪術回戦0.srt`, or relax the "same name" rule in `PROD.md` and have the CLI accept an explicit subtitle path.
 
 **Transcripts**
@@ -284,7 +284,7 @@ This feeds future scripts: plot beats, timing windows, character mapping, scene 
 
 #### 1.6 Real-world validation on Jujutsu Kaisen 0 *(new)*
 
-- Run the CLI on `movies/呪術回戦0/简体.srt`.
+- Run the CLI on `movies/呪術回戦0/呪術回戦0.srt`.
 - Inspect the parsed output: total cue count, first/last timestamps, any rows that look broken.
 - Decide whether `PROD.md` Section 1 needs relaxing on the "subtitle filename must match movie filename" rule (currently violated by `简体.srt` vs `呪術回戦0.mkv`).
 
@@ -433,7 +433,7 @@ Now that a real movie is on disk and Phase 1 is ~70% done, the best next sequenc
 
 1. **Add `main()` + a CLI to `parse_subtitles.py`** (argparse, input path, optional output path, `--format txt|json`).
 2. **Add JSON output** matching the contract in 1.5.
-3. **Run the CLI on `movies/呪術回戦0/简体.srt`** and sanity-check the parsed result.
+3. **Run the CLI on `movies/呪術回戦0/呪術回戦0.srt`** and sanity-check the parsed result.
 4. **Decide what to do about mismatched subtitle filenames** — update `PROD.md` Section 1 if the "same stem" rule should be relaxed.
 5. **Refactor `transcribe.py`** so import-time work goes away, then transcribe `xiaodao_greenline.mp3`.
 6. **Write `styles/xiaodao.md`** grounded in that transcript.
