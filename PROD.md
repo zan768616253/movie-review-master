@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD): movie-review-master
 
 **Product Name:** `movie-review-master`
-**Skill & Workflow Objective:** An autonomous AI agent running in Claude Code that ingests a full raw movie file (`.mp4`) with an external subtitle file, extracts the plot, and autonomously generates a ~10-minute fully produced movie review video (script, voiceover, and video assembly). The agent must support two distinct narrative styles and route the workflow accordingly.
+**Skill & Workflow Objective:** An autonomous AI agent running in Claude Code that ingests a full raw movie file (`.mp4` or `.mkv`) with an external subtitle file, extracts the plot, and autonomously generates a ~10-minute fully produced movie review video (script, voiceover, and video assembly). The agent must support two distinct narrative styles and route the workflow accordingly. The pipeline's final output is a **DaVinci-ready project folder**, not the YouTube master — final polish and export happen in DaVinci Resolve.
 
 ---
 
@@ -12,44 +12,46 @@ The user must provide **two files** placed in the same directory:
 
 | File | Format | Notes |
 |------|--------|-------|
-| Movie file | `.mp4` | Full-length movie |
-| Subtitle file | `.srt` (preferred), `.ass` / `.ssa`, or `.vtt` | Must be in the **same directory** as the `.mp4`, with the **same filename** (e.g., `movie.mp4` + `movie.srt`) |
+| Movie file | `.mp4` or `.mkv` | Full-length movie. Both containers are handled identically by `ffmpeg`. |
+| Subtitle file | `.srt` (preferred) or `.ass` / `.ssa` | Same directory as the movie by default. If the subtitle filename does not match the movie stem (common with fan-translated subs, e.g., `呪術回戦0.mkv` + `简体.srt`), pass an explicit subtitle path to the CLI. |
 
 **Subtitle file format details:**
 - **Preferred:** `.srt` (SubRip Text) — plain text, most universally supported, easiest to parse
-- **Accepted fallback:** `.ass` / `.ssa` (Advanced SubStation Alpha) or `.vtt` (WebVTT)
+- **Accepted fallback:** `.ass` / `.ssa` (Advanced SubStation Alpha)
 - Encoding must be **UTF-8** (important for Chinese character support)
 - The subtitle language should match the target output language (Chinese subtitles for Chinese output, English for English output)
 
-> If no subtitle file is found alongside the `.mp4`, the agent will fall back to audio transcription using OpenAI Whisper (local, free). This fallback is slower and less accurate.
+> If no subtitle file is found alongside the movie, the agent will fall back to audio transcription using OpenAI Whisper (local, free). This fallback is slower and less accurate.
 
 ### Output
-The agent produces an **output folder** next to the input files containing all assets needed for YouTube upload and optional post-editing:
+The agent produces a **DaVinci-ready output folder** next to the input files. The pipeline's `final_video.mp4` is a *draft* — it is watchable end-to-end, but is intentionally **not** the uploadable master. The master is produced by importing this folder into **DaVinci Resolve** (Windows, free edition), fine-tuning, and exporting from there. Every asset is kept as a separate file so DaVinci can swap, re-time, or replace any of them during editing.
 
 ```
 output/
-├── final_video.mp4       # Assembled ~10-minute review video (ready for YouTube)
-├── voiceover.mp3         # Standalone voiceover audio track (for post-editing)
-├── script.txt            # Full generated script with [SCENE] markers (Chinese or English)
-├── script_clean.txt      # Script without markers (pure narration text)
-├── script_translated.txt # Translated version (if bilingual mode used)
-├── thumbnail.jpg         # Auto-generated YouTube thumbnail (1280×720)
+├── final_video.mp4       # Draft review video (watchable, but not the upload master)
+├── voiceover.mp3         # Narration track (MP3) — separate for DaVinci re-timing
+├── voiceover.wav         # Narration track (WAV) — higher quality for DaVinci import
+├── subtitles.srt         # Narration subtitles — re-importable as a DaVinci subtitle track
+├── script.txt            # Full script with [SCENE] markers (Chinese or English)
+├── script_clean.txt      # Narration-only (no markers) — source for subtitles.srt
+├── script_translated.txt # Translated script (bilingual mode only)
+├── thumbnail.jpg         # 1280×720 auto-generated YouTube thumbnail
 ├── character_map.txt     # Character → archetype mapping (Style A only)
 └── clips/
-    ├── clip_001.mp4      # Extracted silent video clips at scene timestamps
+    ├── clip_001.mp4      # Silent video clips at scene timestamps
     ├── clip_002.mp4
     ├── keyframe_001.jpg  # Static keyframes (fallback for coverage gaps)
     └── ...
 ```
 
-**Output video specs:**
-- Resolution: **1920×1080** (1080p, YouTube standard)
+**Draft video specs (what `final_video.mp4` targets):**
+- Resolution: **1920×1080** (1080p)
 - Frame rate: **30fps**
-- Codec: **H.264** (MP4 container, universally compatible)
+- Codec: **H.264** (MP4 container)
 - Audio: AI-generated voiceover only — **no original movie audio is included**
 - Duration: ~10 minutes
 
-> Post-editing: All source assets (audio + clips/frames) are kept in the `output/` folder. These can be imported into any free video editor (e.g., **DaVinci Resolve**) for fine-tuning before upload.
+> **Post-editing workflow:** open `output/` in DaVinci Resolve on the Windows host (via `\\wsl$\Ubuntu\...`), drop `voiceover.wav` on the timeline, lay `clips/*.mp4` in scene order per `script.txt`, import `subtitles.srt` as a subtitle track, then grade/color and export. The draft `final_video.mp4` is useful for previewing but does not need to be preserved.
 
 ---
 
@@ -218,8 +220,8 @@ Auto-generate a YouTube thumbnail:
 movie-review-master/
 ├── SKILL.md                 # Mission Control: input collection & workflow routing
 ├── scripts/
-│   ├── parse_subtitles.py   # Parses .srt/.ass/.vtt into structured Subtitle objects
-│   ├── video_processor.py   # Extracts silent video clips, keyframes, + voice reference from .mp4
+│   ├── parse_subtitles.py   # Parses .srt/.ass into structured Subtitle objects
+│   ├── video_processor.py   # Extracts silent video clips, keyframes, + voice reference from .mp4/.mkv
 │   ├── archetype_mapper.py  # Style A only: maps character names to archetypes via LLM
 │   ├── generate_script.py   # Orchestrates LLM script generation with style rules + scene timestamps
 │   ├── generate_audio.py    # TTS: Qwen3-TTS (primary) → edge-tts fallback chain

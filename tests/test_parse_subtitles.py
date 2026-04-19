@@ -1,14 +1,11 @@
+import sys
 from pathlib import Path
 from shutil import copyfile
 
 import pytest
 
 from scripts.parse_subtitles import (
-    generate_ass_scripts,
-    generate_srt_scripts,
-    generate_subtitle_scripts,
-    parse_ass,
-    parse_srt,
+    main,
     parse_subtitles,
     parse_timestamp,
     strip_tags,
@@ -82,57 +79,84 @@ def test_strip_tags(text: str, expected: str):
 
 
 @pytest.mark.parametrize(
-    ("parse_fn", "fixture_name", "expected_texts"),
+    ("fixture_name", "expected_texts"),
     [
-        (parse_ass, "sample_movie.ass", EXPECTED_SAMPLE_MOVIE_ASS_SCRIPTS.split("\n")),
-        (parse_srt, "sample_movie.srt", EXPECTED_SAMPLE_MOVIE_SRT_TEXTS),
+        ("sample_movie.ass", EXPECTED_SAMPLE_MOVIE_ASS_SCRIPTS.split("\n")),
+        ("sample_movie.srt", EXPECTED_SAMPLE_MOVIE_SRT_TEXTS),
     ],
 )
-def test_parse_subtitle_formats(tmp_path: Path, parse_fn, fixture_name: str, expected_texts: list[str]):
+def test_parse_subtitles(tmp_path: Path, fixture_name: str, expected_texts: list[str]):
     sample_movie_path = copy_fixture(tmp_path, fixture_name)
-    subtitle_list = parse_fn(sample_movie_path)
+    subtitle_list = parse_subtitles(sample_movie_path)
 
     assert len(subtitle_list) == len(expected_texts)
     assert [subtitle.text for subtitle in subtitle_list] == expected_texts
 
 
-@pytest.mark.parametrize(
-    ("generate_fn", "fixture_name", "expected_output"),
-    [
-        (generate_ass_scripts, "sample_movie.ass", EXPECTED_SAMPLE_MOVIE_ASS_SCRIPTS),
-        (generate_srt_scripts, "sample_movie.srt", EXPECTED_SAMPLE_MOVIE_SRT_SCRIPTS),
-    ],
-)
-def test_generate_subtitle_scripts(tmp_path: Path, generate_fn, fixture_name: str, expected_output: str):
-    sample_movie_path = copy_fixture(tmp_path, fixture_name)
-    scripts_path = generate_fn(sample_movie_path)
+def test_main_writes_default_output(tmp_path: Path, monkeypatch, capsys):
+    sample_movie_path = copy_fixture(tmp_path, "sample_movie.srt")
+    expected_output_path = sample_movie_path.with_suffix(".txt")
 
-    assert scripts_path.read_text(encoding="utf-8") == expected_output
+    monkeypatch.setattr(sys, "argv", ["parse-subtitles", str(sample_movie_path)])
 
+    exit_code = main()
+    captured = capsys.readouterr()
 
-@pytest.mark.parametrize(
-    ("dispatch_fn", "fixture_name", "expected_output"),
-    [
-        (parse_subtitles, "sample_movie.ass", EXPECTED_SAMPLE_MOVIE_ASS_SCRIPTS.split("\n")),
-        (parse_subtitles, "sample_movie.srt", EXPECTED_SAMPLE_MOVIE_SRT_TEXTS),
-    ],
-)
-def test_parse_subtitles_dispatch(tmp_path: Path, dispatch_fn, fixture_name: str, expected_output: list[str]):
-    sample_movie_path = copy_fixture(tmp_path, fixture_name)
-    subtitle_list = dispatch_fn(sample_movie_path)
-
-    assert [subtitle.text for subtitle in subtitle_list] == expected_output
+    assert exit_code == 0
+    assert expected_output_path.read_text(encoding="utf-8") == EXPECTED_SAMPLE_MOVIE_SRT_SCRIPTS
+    assert f"Generated subtitle script: {expected_output_path}" in captured.out
 
 
-@pytest.mark.parametrize(
-    ("dispatch_fn", "fixture_name", "expected_output"),
-    [
-        (generate_subtitle_scripts, "sample_movie.ass", EXPECTED_SAMPLE_MOVIE_ASS_SCRIPTS),
-        (generate_subtitle_scripts, "sample_movie.srt", EXPECTED_SAMPLE_MOVIE_SRT_SCRIPTS),
-    ],
-)
-def test_generate_subtitle_scripts_dispatch(tmp_path: Path, dispatch_fn, fixture_name: str, expected_output: str):
-    sample_movie_path = copy_fixture(tmp_path, fixture_name)
-    scripts_path = dispatch_fn(sample_movie_path)
+def test_main_prints_to_stdout(tmp_path: Path, monkeypatch, capsys):
+    sample_movie_path = copy_fixture(tmp_path, "sample_movie.ass")
 
-    assert scripts_path.read_text(encoding="utf-8") == expected_output
+    monkeypatch.setattr(sys, "argv", ["parse-subtitles", str(sample_movie_path), "--stdout"])
+
+    exit_code = main()
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured.out == EXPECTED_SAMPLE_MOVIE_ASS_SCRIPTS + "\n"
+    assert captured.err == ""
+    assert not sample_movie_path.with_suffix(".txt").exists()
+
+
+def test_main_writes_custom_output_path(tmp_path: Path, monkeypatch):
+    sample_movie_path = copy_fixture(tmp_path, "sample_movie.srt")
+    output_path = tmp_path / "custom_output.txt"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["parse-subtitles", str(sample_movie_path), "-o", str(output_path)],
+    )
+
+    exit_code = main()
+
+    assert exit_code == 0
+    assert output_path.read_text(encoding="utf-8") == EXPECTED_SAMPLE_MOVIE_SRT_SCRIPTS
+
+
+def test_main_reports_missing_input_file(tmp_path: Path, monkeypatch, capsys):
+    missing_path = tmp_path / "missing.srt"
+
+    monkeypatch.setattr(sys, "argv", ["parse-subtitles", str(missing_path)])
+
+    exit_code = main()
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "Error: input file not found" in captured.err
+
+
+def test_main_reports_unsupported_format(tmp_path: Path, monkeypatch, capsys):
+    unsupported_path = tmp_path / "sample.txt"
+    unsupported_path.write_text("not subtitles", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["parse-subtitles", str(unsupported_path)])
+
+    exit_code = main()
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "Unsupported subtitle format" in captured.err

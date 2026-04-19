@@ -1,6 +1,10 @@
+import argparse
 import re
+import sys
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from itertools import chain
 from pathlib import Path
 
 
@@ -26,18 +30,6 @@ class SubtitleParser(ABC):
     @abstractmethod
     def parse(self, file_name: str | Path) -> list[Subtitle]:
         """Parse subtitle content into Subtitle objects."""
-
-    def generate_scripts(self, file_name: str | Path) -> Path:
-        """Generate a text file from parsed subtitles and return its path."""
-        subtitles = self.parse(file_name)
-        scripts_path = Path(file_name).with_suffix(".txt")
-        lines: list[str] = []
-        for subtitle in subtitles:
-            text = subtitle.text.replace("\\N", "\n").strip()
-            lines.append(text)
-
-        scripts_path.write_text("\n".join(lines), encoding="utf-8")
-        return scripts_path
 
 
 class AssSubtitleParser(SubtitleParser):
@@ -83,8 +75,9 @@ class SrtSubtitleParser(SubtitleParser):
         subtitles: list[Subtitle] = []
         block: list[str] = []
 
+        # Many SRT files (especially from Windows tools) include a BOM
         with Path(file_name).open("r", encoding="utf-8-sig") as file:
-            for raw_line in file:
+            for raw_line in chain(file, [""]):
                 line = raw_line.rstrip("\r\n")
 
                 if line.strip():
@@ -94,11 +87,7 @@ class SrtSubtitleParser(SubtitleParser):
                 subtitle = self._parse_block(block)
                 if subtitle is not None:
                     subtitles.append(subtitle)
-                block = []
-
-        subtitle = self._parse_block(block)
-        if subtitle is not None:
-            subtitles.append(subtitle)
+                block.clear()
 
         return subtitles
 
@@ -106,20 +95,15 @@ class SrtSubtitleParser(SubtitleParser):
         if not block:
             return None
 
-        lines = [line.strip("\ufeff") for line in block]
-        line_index = 0
-
-        if lines[0].strip().isdigit():
-            line_index = 1
-
-        if line_index >= len(lines):
+        timing_index = 1 if block[0].strip().isdigit() else 0
+        if timing_index >= len(block):
             return None
 
-        timing_match = _SRT_TIMING_PATTERN.match(lines[line_index].strip())
+        timing_match = _SRT_TIMING_PATTERN.match(block[timing_index].strip())
         if timing_match is None:
             return None
 
-        text = strip_tags("\n".join(lines[line_index + 1 :]))
+        text = strip_tags("\n".join(block[timing_index + 1 :]))
 
         return Subtitle(
             start=parse_timestamp(timing_match.group("start")),
@@ -169,26 +153,53 @@ def parse_subtitles(file_name: str | Path) -> list[Subtitle]:
     return get_subtitle_parser(file_name).parse(file_name)
 
 
-def generate_subtitle_scripts(file_name: str | Path) -> Path:
-    """Generate a text script file for any supported subtitle type."""
-    return get_subtitle_parser(file_name).generate_scripts(file_name)
+def main() -> int:
+    arg_parser = argparse.ArgumentParser(
+        prog="parse-subtitles",
+        description="Parse .ass or .srt subtitles into a text file.",
+    )
 
+    arg_parser.add_argument("input", type=Path, help="Path to subtitle file (.ass or .srt)")
+    output_group = arg_parser.add_mutually_exclusive_group()
+    output_group.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="Output path (default: <input>.txt next to input)",
+    )
+    output_group.add_argument(
+        "--stdout",
+        action="store_true",
+        help="Print to stdout instead of writing a file",
+    )
+    args = arg_parser.parse_args()
 
-def parse_ass(file_name: str | Path) -> list[Subtitle]:
-    """Parse an ASS subtitle file and return a list of Subtitle objects."""
-    return AssSubtitleParser().parse(file_name)
+    try:
+        subtitles = parse_subtitles(args.input)
 
+    except FileNotFoundError:
+        print(f"Error: input file not found: {args.input}", file=sys.stderr)
+        return 1
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
 
-def generate_ass_scripts(file_name: str | Path) -> Path:
-    """Generate a text file from an ASS subtitle file and return its path."""
-    return AssSubtitleParser().generate_scripts(file_name)
+    output_text = "\n".join(subtitle.text.replace(r"\N", "\n").strip() for subtitle in subtitles)
 
+    if args.stdout:
+        print(output_text)
+        return 0
 
-def parse_srt(file_name: str | Path) -> list[Subtitle]:
-    """Parse an SRT subtitle file and return a list of Subtitle objects."""
-    return SrtSubtitleParser().parse(file_name)
+    output_path = args.output if args.output is not None else args.input.with_suffix(".txt")
 
+    try:
+        output_path.write_text(output_text, encoding="utf-8")
+    except OSError as e:
+        print(f"Error: could not write to output path {output_path}: {e}", file=sys.stderr)
+        return 1
 
-def generate_srt_scripts(file_name: str | Path) -> Path:
-    """Generate a text file from an SRT subtitle file and return its path."""
-    return SrtSubtitleParser().generate_scripts(file_name)
+    print(f"Generated subtitle script: {output_path}")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
