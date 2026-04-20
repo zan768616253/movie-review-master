@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import argparse
 import sys
+
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
+from faster_whisper import WhisperModel
 
 
 DEFAULT_MODEL_SIZE = "large-v3"
 DEFAULT_DEVICE = "cuda"
-DEFAULT_BEAM_SIZE = 5
-DEFAULT_LANGUAGE = "zh"
 DEFAULT_OUTPUT_SUFFIX = ".txt"
-DEFAULT_EXTENSIONS = (".mp3",)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,30 +29,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--model-size", default=DEFAULT_MODEL_SIZE, help="Whisper model name or local path")
     parser.add_argument("--device", default=DEFAULT_DEVICE, help="Device for faster-whisper, such as cuda or cpu")
-    parser.add_argument("--compute-type", default=None, help="Optional faster-whisper compute type")
-    parser.add_argument("--beam-size", type=int, default=DEFAULT_BEAM_SIZE, help="Beam size for decoding")
     parser.add_argument(
         "--language",
-        default=DEFAULT_LANGUAGE,
+        default="zh",
         help='Language code to force, or "auto" to let Whisper detect it',
-    )
-    parser.add_argument(
-        "--recursive",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Recurse into subdirectories when input_path is a directory",
-    )
-    parser.add_argument(
-        "--extensions",
-        nargs="+",
-        default=list(DEFAULT_EXTENSIONS),
-        metavar="EXT",
-        help="File extensions to include when scanning a directory",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        help="Optional directory for generated transcript files",
     )
     return parser
 
@@ -69,33 +48,7 @@ def normalize_language(language: str | None) -> str | None:
     return cleaned
 
 
-def normalize_extensions(extensions: Sequence[str]) -> tuple[str, ...]:
-    normalized: list[str] = []
-
-    for extension in extensions:
-        cleaned = extension.strip().lower()
-        if not cleaned:
-            continue
-        if not cleaned.startswith("."):
-            cleaned = f".{cleaned}"
-        if cleaned not in normalized:
-            normalized.append(cleaned)
-
-    if not normalized:
-        raise ValueError("At least one file extension must be provided")
-
-    return tuple(normalized)
-
-
-def choose_compute_type(device: str, compute_type: str | None) -> str:
-    if compute_type:
-        return compute_type
-    if "cuda" in device.lower():
-        return "float16"
-    return "int8"
-
-
-def collect_input_files(input_path: Path, extensions: Sequence[str], recursive: bool) -> list[Path]:
+def collect_input_files(input_path: Path) -> list[Path]:
     if not input_path.exists():
         raise FileNotFoundError(input_path)
 
@@ -105,42 +58,20 @@ def collect_input_files(input_path: Path, extensions: Sequence[str], recursive: 
     if not input_path.is_dir():
         raise ValueError(f"Input path is not a file or directory: {input_path}")
 
-    allowed_extensions = {extension.lower() for extension in extensions}
-    iterator = input_path.rglob("*") if recursive else input_path.iterdir()
-
-    return sorted(
-        path
-        for path in iterator
-        if path.is_file() and path.suffix.lower() in allowed_extensions
-    )
+    return sorted(input_path.rglob("*.mp3"))
 
 
-def build_output_path(
-    source_path: Path,
-    *,
-    input_root: Path | None,
-    output_dir: Path | None,
-    output_suffix: str = DEFAULT_OUTPUT_SUFFIX,
-) -> Path:
-    if output_dir is None:
-        return source_path.with_suffix(output_suffix)
-
-    if input_root is None:
-        return output_dir / source_path.with_suffix(output_suffix).name
-
-    return output_dir / source_path.relative_to(input_root).with_suffix(output_suffix)
+def choose_compute_type(device: str) -> str:
+    if "cuda" in device.lower():
+        return "float16"
+    return "int8"
 
 
-def build_model(model_size: str, device: str, compute_type: str | None) -> Any:
-    try:
-        from faster_whisper import WhisperModel
-    except ImportError as exc:  # pragma: no cover - dependency issue
-        raise RuntimeError("faster-whisper is required to run transcribe.py") from exc
-
+def build_model(model_size: str, device: str) -> Any:
     return WhisperModel(
         model_size,
         device=device,
-        compute_type=choose_compute_type(device, compute_type),
+        compute_type=choose_compute_type(device),
     )
 
 
@@ -157,11 +88,10 @@ def transcribe_file(
     source_path: Path,
     output_path: Path,
     model: Any,
-    beam_size: int,
     language: str | None,
 ) -> int:
     kwargs: dict[str, object] = {
-        "beam_size": beam_size,
+        "beam_size": 5,
         "condition_on_previous_text": False,
     }
     if language is not None:
@@ -174,46 +104,31 @@ def transcribe_file(
 def main(
     argv: Sequence[str] | None = None,
     *,
-    model_factory: Callable[[str, str, str | None], Any] = build_model,
+    model_factory: Callable[[str, str], Any] = build_model,
 ) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
     try:
-        extensions = normalize_extensions(args.extensions)
         language = normalize_language(args.language)
-        compute_type = choose_compute_type(args.device, args.compute_type)
         input_path = args.input_path.expanduser()
-        output_dir = args.output_dir.expanduser() if args.output_dir is not None else None
-        source_files = collect_input_files(input_path, extensions, args.recursive)
+        source_files = collect_input_files(input_path)
         if not source_files:
-            raise ValueError(f"No matching audio files found in {input_path}")
-        model = model_factory(args.model_size, args.device, compute_type)
+            raise ValueError(f"No matching .mp3 files found in {input_path}")
+        model = model_factory(args.model_size, args.device)
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    input_root = input_path if input_path.is_dir() else None
     failures = 0
-
     for source_path in source_files:
-        output_path = build_output_path(
-            source_path,
-            input_root=input_root,
-            output_dir=output_dir,
-        )
-
-        if output_path == source_path:
-            print(f"Error: refusing to overwrite input file in place: {source_path}", file=sys.stderr)
-            failures += 1
-            continue
+        output_path = source_path.with_suffix(DEFAULT_OUTPUT_SUFFIX)
 
         try:
             line_count = transcribe_file(
                 source_path,
                 output_path,
                 model,
-                args.beam_size,
                 language,
             )
         except Exception as exc:
