@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts.transcribe import collect_input_files, main
+from scripts.tools.transcribe_audio import collect_input_files, main
 
 
 @dataclass
@@ -48,12 +48,9 @@ def test_collect_input_files_recursively_finds_mp3(tmp_path: Path):
 
     # Should find both mp3 files but ignore wav
     assert collect_input_files(tmp_path) == [top_level, nested_file]
-    
+
     # Passing a single file works too
     assert collect_input_files(top_level) == [top_level]
-
-
-
 
 
 def test_main_transcribes_directory_with_injected_model(tmp_path: Path):

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import argparse
 import sys
-
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
+
 from faster_whisper import WhisperModel
 
 
@@ -24,11 +24,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "input_path",
         nargs="?",
-        type=Path,        
+        type=Path,
         help="Audio file or directory to transcribe",
     )
-    parser.add_argument("--model-size", default=DEFAULT_MODEL_SIZE, help="Whisper model name or local path")
-    parser.add_argument("--device", default=DEFAULT_DEVICE, help="Device for faster-whisper, such as cuda or cpu")
+    parser.add_argument(
+        "--model-size",
+        default=DEFAULT_MODEL_SIZE,
+        help="Whisper model name or local path",
+    )
+    parser.add_argument(
+        "--device",
+        default=DEFAULT_DEVICE,
+        help="Device for faster-whisper, such as cuda or cpu",
+    )
     parser.add_argument(
         "--language",
         default="zh",

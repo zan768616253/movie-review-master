@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 from shutil import copyfile
 
-from scripts.parse_subtitles import (
+from scripts.stage1_parse_subtitles import (
     main,
     parse_subtitles,
     parse_timestamp,
@@ -48,7 +48,7 @@ EXPECTED_SAMPLE_MOVIE_SRT_TEXTS = [
 
 
 def copy_fixture(tmp_path: Path, fixture_name: str) -> Path:
-    source_path = Path(__file__).parent / "fixtures" / fixture_name
+    source_path = Path(__file__).parent.parent / "fixtures" / fixture_name
     destination_path = tmp_path / fixture_name
     copyfile(source_path, destination_path)
     return destination_path
