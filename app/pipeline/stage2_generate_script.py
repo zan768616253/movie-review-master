@@ -27,7 +27,7 @@ Prerequisites — all must exist before you run this step:
 
 Run:
 
-    python -m scripts.stage2_generate_script \\
+    python -m app.pipeline.stage2_generate_script \\
         --style styles/niu-shu.md \\
         --subtitle-text movies/呪術回戦0/呪術回戦0.txt \\
         --subtitle-srt  movies/呪術回戦0/呪術回戦0.srt \\
@@ -43,7 +43,7 @@ Then:
   3. Save Claude's response into  movies/<title>/script_<style>_draft.txt.
   4. Run the Stage 2 quality checks below. Iterate with Claude if needed.
   5. Proceed to Stage 3:
-         python -m scripts.stage3_generate_audio --script ...
+         python -m app.pipeline.stage3_generate_audio --script ...
 
 ================================================================
 WHAT THE PROMPT CONTAINS (and why)
@@ -271,7 +271,7 @@ def main(argv=None) -> int:
             "module docstring for the full workflow."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="See scripts/stage2_generate_script.py module docstring for instructions.",
+        epilog="See app/pipeline/stage2_generate_script.py module docstring for instructions.",
     )
     parser.add_argument("--style", type=Path, required=True, help="Path to the style .md file")
     parser.add_argument("--subtitle-text", type=Path, required=True, help="Parsed plain-text plot (from Stage 1)")

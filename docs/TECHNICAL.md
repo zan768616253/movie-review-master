@@ -21,12 +21,15 @@ movie-review-master/
     HANDBOOK.md
     TECHNICAL.md
     agent-rules/
-  scripts/
-    stage1_parse_subtitles.py
-    stage2_generate_script.py
-    stage3_generate_audio.py
-    stage4_video_processor.py
-    stage5_render_video.py
+  app/
+    __init__.py
+    pipeline/
+      __init__.py
+      stage1_parse_subtitles.py
+      stage2_generate_script.py
+      stage3_generate_audio.py
+      stage4_video_processor.py
+      stage5_render_video.py
     tools/
       __init__.py
       transcribe_audio.py
@@ -43,11 +46,11 @@ movie-review-master/
     niu-shu.md
     first-person-pov.md
   tests/
-    scripts/
+    pipeline/
       test_stage1_parse_subtitles.py
       test_stage3_generate_audio.py
-      tools/
-        test_transcribe_audio.py
+    tools/
+      test_transcribe_audio.py
 ```
 
 ## 3. Environment and Execution Rules
@@ -61,9 +64,9 @@ Reference: [docs/agent-rules/python-environment.md](/home/ericw/Project/Learn/AI
 
 ## 4. Current Script Inventory
 
-Pipeline scripts are prefixed with `stageN_` to make pipeline order obvious at a glance. Utility scripts that support the pipeline but are not stages live under `scripts/tools/`.
+Pipeline modules are prefixed with `stageN_` to make pipeline order obvious at a glance. Utility modules that support the pipeline but are not stages live under `app/tools/`.
 
-### `scripts/stage1_parse_subtitles.py`
+### `app/pipeline/stage1_parse_subtitles.py`
 
 Purpose:
 
@@ -83,7 +86,7 @@ Key public pieces:
 - `parse_subtitles()`
 - `main()`
 
-### `scripts/stage2_generate_script.py`
+### `app/pipeline/stage2_generate_script.py`
 
 Purpose:
 
@@ -96,7 +99,7 @@ Current state:
 - exposes `generate-script` entry point that prints the assembled prompt to stdout
 - Stage 2 is run manually today (paste prompt into Claude, paste response into a draft file); `build_prompt()` is the stable contract an automated backend can drop into later
 
-### `scripts/stage3_generate_audio.py`
+### `app/pipeline/stage3_generate_audio.py`
 
 Purpose:
 
@@ -116,7 +119,7 @@ Important contract:
 - output is `voiceover_<tag>_voiceclone.mp3`
 - manifest is `voiceover_<tag>_voiceclone.manifest.json`
 
-### `scripts/stage4_video_processor.py`
+### `app/pipeline/stage4_video_processor.py`
 
 Purpose:
 
@@ -128,7 +131,7 @@ Current state:
 - implemented
 - exposes `video-processor` entry point
 
-### `scripts/stage5_render_video.py`
+### `app/pipeline/stage5_render_video.py`
 
 Purpose:
 
@@ -149,7 +152,7 @@ Current stage-1 characteristics:
 - no background music
 - B-roll rotation supported through pre-extracted clip inputs
 
-### `scripts/tools/transcribe_audio.py`
+### `app/tools/transcribe_audio.py`
 
 Purpose:
 
@@ -161,7 +164,7 @@ Current state:
 - exposes `transcribe` entry point
 - covered by automated tests with injected fake model
 
-### `scripts/tools/voice_analysis.py`
+### `app/tools/voice_analysis.py`
 
 Purpose:
 
@@ -177,8 +180,8 @@ Current state:
 
 These components are part of the project design but are not yet present as first-class production modules:
 
-- `scripts/stage2_generate_script.py` — currently a placeholder; automated LLM-backed generation is planned
-- `scripts/archetype_mapper.py` — style-A-specific character mapping helper
+- `app/pipeline/stage2_generate_script.py` — currently a placeholder; automated LLM-backed generation is planned
+- `app/pipeline/archetype_mapper.py` — style-A-specific character mapping helper
 - `styles/xiaodao.md` — Style C, research phase only
 
 ## 6. Data Contracts
@@ -245,12 +248,12 @@ movies/<title>/
 
 Configured in `pyproject.toml`:
 
-- `parse-subtitles = scripts.stage1_parse_subtitles:main`
-- `generate-script = scripts.stage2_generate_script:main`
-- `generate-audio = scripts.stage3_generate_audio:main`
-- `video-processor = scripts.stage4_video_processor:main`
-- `render-video = scripts.stage5_render_video:main`
-- `transcribe = scripts.tools.transcribe_audio:main`
+- `parse-subtitles = app.pipeline.stage1_parse_subtitles:main`
+- `generate-script = app.pipeline.stage2_generate_script:main`
+- `generate-audio = app.pipeline.stage3_generate_audio:main`
+- `video-processor = app.pipeline.stage4_video_processor:main`
+- `render-video = app.pipeline.stage5_render_video:main`
+- `transcribe = app.tools.transcribe_audio:main`
 
 ## 8. Testing Baseline
 

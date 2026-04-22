@@ -15,7 +15,7 @@ Outputs:
 No audio in clips (-an). Stream-copy video (-c:v copy) — fast, no re-encode.
 
 Example:
-  python -m scripts.stage4_video_processor \\
+  python -m app.pipeline.stage4_video_processor \\
       --script movies/呪術回戦0/script_niu-shu_draft.txt \\
       --video movies/呪術回戦0/呪術回戦0.mkv \\
       --output-dir movies/呪術回戦0/output

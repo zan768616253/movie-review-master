@@ -18,12 +18,11 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-import soundfile as sf
 import torch
 
 
 BASE_MODEL_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 VOICE_ASSETS_DIR = REPO_ROOT / "voice-assets"
 DEFAULT_REF_AUDIO = VOICE_ASSETS_DIR / "uncle_niu" / "reference" / "clone_reference.mp3"
 DEFAULT_REF_TEXT = VOICE_ASSETS_DIR / "uncle_niu" / "reference" / "clone_reference.txt"

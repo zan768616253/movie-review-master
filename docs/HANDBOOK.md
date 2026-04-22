@@ -9,7 +9,7 @@ Use each document for one job only:
 - [PROD.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/PROD.md): product scope, success criteria, boundaries
 - [docs/HANDBOOK.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/HANDBOOK.md): durable knowledge and system design
 - [plan.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/plan.md): current status, priorities, next work
-- [docs/TECHNICAL.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/TECHNICAL.md): code-facing architecture, contracts, scripts, tests
+- [docs/TECHNICAL.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/TECHNICAL.md): code-facing architecture, contracts, pipeline, tools, tests
 - `styles/*.md`: style-specific writing rulebooks
 - [docs/style-c-xiaodao-research.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/style-c-xiaodao-research.md): supporting research for the unfinished Style C
 - [docs/agent-rules/python-environment.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/agent-rules/python-environment.md): Python execution rule

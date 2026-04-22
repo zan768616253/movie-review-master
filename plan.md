@@ -9,7 +9,7 @@ Last updated: 2026-04-21
 - Documentation structure has been consolidated around `PROD.md`, `docs/HANDBOOK.md`, `plan.md`, and `docs/TECHNICAL.md`.
 - Subtitle parsing is implemented and tested.
 - Transcription CLI is implemented and tested.
-- Utility scripts now live under `scripts/tools/` instead of sitting beside the pipeline stages.
+- Utility modules now live under `app/tools/` instead of sitting beside the pipeline stages.
 - Style A and Style B rule files exist.
 - Style A audio generation, clip extraction, and stage-1 rendering scripts exist.
 - The full script-generation module is still the biggest missing production component.
@@ -24,14 +24,14 @@ Verified on 2026-04-21:
 ## 3. Completed
 
 - pipeline scripts renamed with `stageN_` prefix for obvious ordering
-- `scripts/stage1_parse_subtitles.py` supports `.srt` and `.ass`
+- `app/pipeline/stage1_parse_subtitles.py` supports `.srt` and `.ass`
 - JSON and text subtitle exports exist
-- `scripts/stage2_generate_script.py` placeholder documents the manual script-authoring workflow and assembles the LLM prompt
-- `scripts/stage3_generate_audio.py` exists for the current Style A path
-- `scripts/stage4_video_processor.py` extracts primary clips, B-roll, and keyframes
-- `scripts/stage5_render_video.py` provides a stage-1 deterministic render path
-- `scripts/tools/transcribe_audio.py` provides a reusable CLI (utility, not a stage)
-- `scripts/tools/voice_analysis.py` provides one-off TTS reference analysis
+- `app/pipeline/stage2_generate_script.py` placeholder documents the manual script-authoring workflow and assembles the LLM prompt
+- `app/pipeline/stage3_generate_audio.py` exists for the current Style A path
+- `app/pipeline/stage4_video_processor.py` extracts primary clips, B-roll, and keyframes
+- `app/pipeline/stage5_render_video.py` provides a stage-1 deterministic render path
+- `app/tools/transcribe_audio.py` provides a reusable CLI (utility, not a stage)
+- `app/tools/voice_analysis.py` provides one-off TTS reference analysis
 - `styles/niu-shu.md` and `styles/first-person-pov.md` are present
 - documentation cleanup and centralization completed on 2026-04-21
 
@@ -44,7 +44,7 @@ Verified on 2026-04-21:
 
 ## 5. Ordered Next Tasks
 
-### Priority 1: automate `stage2_generate_script.py`
+### Priority 1: automate `app/pipeline/stage2_generate_script.py`
 
 Goal:
 

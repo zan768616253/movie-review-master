@@ -28,18 +28,18 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["scripts*"]
+include = ["app*"]
 
 [project.scripts]
-parse-subtitles = "scripts.stage1_parse_subtitles:main"
-generate-script = "scripts.stage2_generate_script:main"
-generate-audio = "scripts.stage3_generate_audio:main"
-video-processor = "scripts.stage4_video_processor:main"
-render-video = "scripts.stage5_render_video:main"
-transcribe = "scripts.tools.transcribe_audio:main"
+parse-subtitles = "app.pipeline.stage1_parse_subtitles:main"
+generate-script = "app.pipeline.stage2_generate_script:main"
+generate-audio = "app.pipeline.stage3_generate_audio:main"
+video-processor = "app.pipeline.stage4_video_processor:main"
+render-video = "app.pipeline.stage5_render_video:main"
+transcribe = "app.tools.transcribe_audio:main"
 
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-q"
-testpaths = ["tests/scripts", "tests/scripts/tools"]
+testpaths = ["tests/pipeline", "tests/tools"]
 pythonpath = ["."]

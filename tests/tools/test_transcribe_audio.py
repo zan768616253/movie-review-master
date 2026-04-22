@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts.tools.transcribe_audio import collect_input_files, main
+from app.tools.transcribe_audio import collect_input_files, main
 
 
 @dataclass

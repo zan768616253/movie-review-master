@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from scripts.stage3_generate_audio import DEFAULT_REF_AUDIO, DEFAULT_REF_TEXT, main
+from app.pipeline.stage3_generate_audio import DEFAULT_REF_AUDIO, DEFAULT_REF_TEXT, main
 
 
 def test_default_reference_files_exist() -> None:
