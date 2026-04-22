@@ -136,3 +136,4 @@ Thumbs.db
 movies/
 
 .codex
+.env
