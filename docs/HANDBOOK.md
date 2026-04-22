@@ -85,7 +85,15 @@ The manifest is the sync contract between audio generation and rendering. It rec
 
 ## 5. End-to-End Pipeline Design
 
-The logical pipeline has five stages.
+The logical pipeline has six stages.
+
+### Stage 0: Visual Indexing
+
+Purpose:
+
+- provide fine-grained visual search metadata for the full movie
+- generate `visual_segments.json` containing 3-5 second action beats
+- solve the visual grounding gap by providing timestamps for non-dialogue moments
 
 ### Stage 1: Subtitle Intake
 

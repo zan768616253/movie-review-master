@@ -25,6 +25,7 @@ movie-review-master/
     __init__.py
     pipeline/
       __init__.py
+      stage0_index_visuals.py
       stage1_parse_subtitles.py
       stage2_generate_script.py
       stage3_generate_audio.py
@@ -248,6 +249,7 @@ movies/<title>/
 
 Configured in `pyproject.toml`:
 
+- `index-visuals = app.pipeline.stage0_index_visuals:main`
 - `parse-subtitles = app.pipeline.stage1_parse_subtitles:main`
 - `generate-script = app.pipeline.stage2_generate_script:main`
 - `generate-audio = app.pipeline.stage3_generate_audio:main`

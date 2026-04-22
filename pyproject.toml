@@ -19,6 +19,8 @@ dependencies = [
   "torch==2.7.0",
   "torchaudio==2.7.0",
   "yt-dlp==2026.3.17",
+  "google-generativeai>=0.8.0",
+  "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +33,7 @@ dev = [
 include = ["app*"]
 
 [project.scripts]
+index-visuals = "app.pipeline.stage0_index_visuals:main"
 parse-subtitles = "app.pipeline.stage1_parse_subtitles:main"
 generate-script = "app.pipeline.stage2_generate_script:main"
 generate-audio = "app.pipeline.stage3_generate_audio:main"
