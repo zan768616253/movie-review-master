@@ -1,4 +1,3 @@
-import os
 import json
 import base64
 import requests
@@ -13,7 +12,7 @@ except ImportError:
     TfidfVectorizer = None
     cosine_similarity = None
 
-from .base import VisualIndexerStrategy, get_video_duration, seconds_to_timestamp
+from .base import VisualIndexerStrategy, seconds_to_timestamp
 
 DEFAULT_OLLAMA_MODEL = "qwen3-vl:4b"
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"

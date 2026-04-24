@@ -1,215 +1,106 @@
-"""Stage 2: Script Authoring — placeholder + prompt assembler.
+"""Stage 2: Two-pass script authoring prompt assembler.
 
-Turns a parsed movie plot + a chosen style rulebook into a Chinese review
-script with `[SCENE: ...]` and optional `[BROLL: ...]` markers.
+This stage stays manual for now, but the prompt contract is split into
+two explicit passes:
 
-Today this stage is **manual**: you assemble the prompt here, paste it
-into Claude Code (or any LLM), paste the response into a draft file, and
-continue to Stage 3. The file intentionally carries almost no logic —
-its job is to document the step and produce a clean, reproducible
-prompt contract that a future automated backend (Anthropic API, local
-LLM, etc.) can drop into without changing upstream expectations.
+1. Writer pass (`--mode writer`): produce narration beats with no timing.
+2. Grounding pass (`--mode grounder`): consume the beat draft, full SRT,
+    and `visual_segments.json`, then emit the final grounded script using
+    `[SCENE start=... end=... source=... confidence=... evidence=...]`
+    markers.
 
-================================================================
-HOW TO USE (manual flow, today)
-================================================================
-
-Prerequisites — all must exist before you run this step:
-
-  1. The movie at            movies/<title>/<movie>.mkv
-  2. The subtitle at         movies/<title>/<movie>.srt   (.ass also fine)
-  3. Parsed plain-text plot  movies/<title>/<movie>.txt   (produced by Stage 1)
-  4. A chosen style file     styles/niu-shu.md            (Style A), or
-                             styles/first-person-pov.md   (Style B)
-  5. Your own knowledge of the movie's dominant genre
-     (action / horror / thriller / romance / drama / comedy / supernatural / crime).
-     This drives the Section 5.5b "Genre Visual Focus" rule in the style file.
-
-Run:
-
-    python -m app.pipeline.stage2_generate_script \\
-        --style styles/niu-shu.md \\
-        --subtitle-text movies/呪術回戦0/呪術回戦0.txt \\
-        --subtitle-srt  movies/呪術回戦0/呪術回戦0.srt \\
-        --movie-title "呪術回戦0 (Jujutsu Kaisen 0)" \\
-        --genre action \\
-        > /tmp/stage2_prompt.txt
-
-Then:
-
-  1. Paste the contents of /tmp/stage2_prompt.txt into Claude Code (or
-     a fresh Claude conversation).
-  2. Claude produces the script.
-  3. Save Claude's response into  movies/<title>/script_<style>_draft.txt.
-  4. Run the Stage 2 quality checks below. Iterate with Claude if needed.
-  5. Proceed to Stage 3:
-         python -m app.pipeline.stage3_generate_audio --script ...
-
-================================================================
-WHAT THE PROMPT CONTAINS (and why)
-================================================================
-
-The assembled prompt is structured so the LLM has everything it needs
-to produce a compliant script in one pass:
-
-  1. ROLE        — one-line instruction pinning the LLM to the
-                   scriptwriter role in the chosen style.
-  2. STYLE RULEBOOK — the FULL contents of the chosen style .md file.
-                   The style file is the single source of truth for:
-                     * Mission (audience-attention framing)
-                     * Hook rules (front-load the best scene)
-                     * Character-mapping rules (archetypes for Style A,
-                       original names for Style B)
-                     * Tone & pacing rules
-                     * Section 5.5   Genre Modulation (tonal)
-                     * Section 5.5b  Genre Visual Focus (clip-budget
-                       minimums for action/horror/etc.)
-                     * [SCENE] + [BROLL] output format
-                     * Hard constraints (red lines)
-                   Pasting it verbatim means the script rules and the
-                   review rules never drift.
-  3. MOVIE METADATA — title + genre. Genre explicitly anchors which
-                   Section 5.5b budget the LLM must satisfy.
-  4. PLOT SOURCE  — parsed-subtitle plain text. This is what the LLM
-                   reads to understand the plot.
-  5. SRT PREVIEW  — first 40 lines of the actual SRT. This shows the LLM
-                   the exact timestamp format (`HH:MM:SS,mmm`) it should
-                   mirror in its `[SCENE: HH:MM:SS-HH:MM:SS]` markers.
-                   Without this, LLMs often invent wrong timestamp shapes.
-  6. INSTRUCTIONS — explicit output requirements restated in imperative
-                   form: length target, marker granularity, character
-                   mapping table, hook-candidate ranking, genre
-                   modulation declaration, closing rules.
-
-================================================================
-WHAT GOOD STAGE 2 OUTPUT LOOKS LIKE
-================================================================
-
-Saved as  movies/<title>/script_<style>_draft.txt.  Shape:
-
-    ================================================================
-    DRY-RUN SCRIPT — <style> style, <movie title>
-    ================================================================
-    角色对照表 (Character Mapping)  — Style A only
-      <original name> → <archetype> (role)
-    钩子候选 (Hook candidates, ranked)
-      1. [SELECTED] ...
-      2. ...
-      3. ...
-    选定类型修饰 (Genre modulation) — cites Section 5.5 + 5.5b
-    ================================================================
-    FINAL SCRIPT (read as continuous narration; [MARKERS] stripped)
-    ================================================================
-    [TITLE] ...
-    [HOOK]
-    [SCENE: HH:MM:SS-HH:MM:SS]
-    [BROLL: ...optional...]
-    <narration>
-    [ACT 1 - SETUP]
-    [SCENE: ...]
-    ...
-    [CLOSING]
-    <final narration lines — no [SCENE] here>
-
-================================================================
-QUALITY CHECKS (run before Stage 3)
-================================================================
-
-  1. SCENE COUNT. `grep -c '^\\[SCENE:' draft.txt` should be 30-80
-     for a 7-12 min review. <30 means clips will be too long (the
-     "broad-range" bug); >80 means chunks too short to read
-     naturally.
-  2. HERO-CLIP GRANULARITY. Each [SCENE] window should be 5-10s.
-     `grep '^\\[SCENE:' draft.txt` and eyeball — any windows >30s
-     should be split.
-  3. GENRE BUDGET. For action / horror / thriller, count [SCENE]+[BROLL]
-     entries pointing at action/scare footage. Must meet or exceed the
-     minimum in the style file Section 5.5b (e.g., action ≥40%).
-     If short: add [BROLL: ...] lines to non-action narration chunks.
-  4. HOOK IS NOT MOVIE OPENING. First [SCENE] timestamp must NOT be
-     near 00:00:00. It must be the most gripping moment in the movie,
-     front-loaded out of sequence.
-  5. FULL ARC COVERED. Last [SCENE] timestamp should be near the
-     movie's ending. Scan chronologically — no big unexplained gaps.
-  6. STYLE A CHECK: No original names in narration. Replace every real
-     character name with the archetype decided at the top.
-  7. CLOSING HAS NO [SCENE]. The narration after [CLOSING] must have
-     no [SCENE] marker — rendering uses the last keyframe or a
-     title card.
-
-================================================================
-ITERATION (common fixes after draft lands)
-================================================================
-
-  - "Scene X is off" → re-grep the SRT near that narration's subject
-    for a better timestamp, edit the marker, re-run Stage 4 + Stage 5.
-  - "Not enough action footage" → insert [BROLL: ...] lines above
-    non-action [SCENE] markers, pulling timestamps from the real
-    action scenes. See docs/HANDBOOK.md §6.1.
-  - "Narration is dry / not attracting enough" → ask Claude to
-    rewrite act N with more 废话文学 / sarcasm / dialogue punches.
-    Keep [SCENE] markers stable so Stage 4 doesn't need re-extract.
-  - "Draft is too short / too long" → ask Claude to cut or expand
-    to hit the 1,800-2,800 char target.
-
-================================================================
-WHY THIS FILE IS MOSTLY A DOCSTRING
-================================================================
-
-This step is the creative core of the pipeline. Automating it
-prematurely would either:
-  - produce generic scripts that don't match the style's voice, or
-  - require an LLM API call, which couples the pipeline to an
-    external paid service.
-
-Keeping Stage 2 manual lets us tune the prompt contract against real
-reviews until it's stable. When it is, `build_prompt()` below stays
-the contract and an automated backend just calls it + an LLM.
+The goal is to keep Stage 2's human/LLM handoff reproducible while Stage 4
+and Stage 5 operate on a precise grounding contract.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+import json
 from pathlib import Path
+from typing import Any
+
+from app.pipeline.common.script_contract import seconds_to_timestamp
+from app.pipeline.stage1_parse_subtitles import parse_subtitles
 
 
 SCRIPT_WRITER_ROLE = (
-    "You are a Chinese movie-review scriptwriter. You strictly follow "
-    "the style rulebook provided below. You write in Simplified Chinese. "
-    "Your output must be a complete review script with [SCENE] markers "
-    "at hero-clip granularity and optional [BROLL] markers for "
-    "genre-visual cross-cuts."
+    "You are a Chinese movie-review scriptwriter. You strictly follow the style "
+    "rulebook provided below. You write in Simplified Chinese and focus only on "
+    "storytelling, tone, and pacing. Do not assign timestamps in this pass."
 )
-
+GROUNDING_EDITOR_ROLE = (
+    "You are the alignment editor for a movie-review pipeline. You must anchor "
+    "each narration beat to either the SRT or the visual segment index, cite the "
+    "evidence, and mark uncertain beats as ungrounded instead of inventing times."
+)
 SRT_PREVIEW_LINES = 40
 
 
-def build_prompt(
+def collapse_whitespace(text: str) -> str:
+    return " ".join(text.split())
+
+
+def build_srt_reference(subtitle_srt_path: Path) -> str:
+    subtitles = parse_subtitles(subtitle_srt_path)
+    lines = []
+    for index, subtitle in enumerate(subtitles, 1):
+        lines.append(
+            f"[srt:{index:03d}] {seconds_to_timestamp(subtitle.start)} --> "
+            f"{seconds_to_timestamp(subtitle.end)} :: {collapse_whitespace(subtitle.text)}"
+        )
+    return "\n".join(lines)
+
+
+def build_visual_reference(visual_segments_path: Path) -> str:
+    segments: list[dict[str, Any]] = json.loads(visual_segments_path.read_text(encoding="utf-8"))
+    lines = []
+    for index, segment in enumerate(segments, 1):
+        segment_id = str(segment.get("id") or f"visual:{index:03d}")
+        characters = "|".join(segment.get("characters") or []) or "-"
+        confidence = float(segment.get("confidence") or 0.0)
+        summary = collapse_whitespace(str(segment.get("summary") or ""))
+        ocr_text = collapse_whitespace(str(segment.get("ocr_text") or ""))
+        action_flag = "true" if segment.get("is_action") else "false"
+        suffix = f" | ocr={ocr_text}" if ocr_text else ""
+        lines.append(
+            f"[{segment_id}] {segment['start']} --> {segment['end']} | chars={characters} "
+            f"| action={action_flag} | confidence={confidence:.2f} | summary={summary}{suffix}"
+        )
+    return "\n".join(lines)
+
+
+def build_writer_prompt(
     style_path: Path,
     subtitle_text_path: Path,
-    subtitle_srt_path: Path,
     movie_title: str,
     genre: str,
+    subtitle_srt_path: Path | None = None,
 ) -> str:
-    """Assemble the script-writer prompt ready to paste into an LLM.
-
-    The returned string is the stable "prompt contract" for Stage 2.
-    Future automated backends (Anthropic API, local LLM, etc.) should
-    call this function and pass its output as the user prompt.
-    """
     style_text = style_path.read_text(encoding="utf-8")
     plot_text = subtitle_text_path.read_text(encoding="utf-8")
-    srt_text = subtitle_srt_path.read_text(encoding="utf-8")
-    srt_preview = "\n".join(srt_text.splitlines()[:SRT_PREVIEW_LINES])
+    srt_preview = ""
+    if subtitle_srt_path is not None:
+        srt_text = subtitle_srt_path.read_text(encoding="utf-8")
+        srt_preview = "\n".join(srt_text.splitlines()[:SRT_PREVIEW_LINES])
+
+    optional_srt_section = ""
+    if srt_preview:
+        optional_srt_section = f"""
+# SRT Preview — first {SRT_PREVIEW_LINES} lines
+This is reference-only context. Do not emit timestamps or [SCENE] markers in this pass.
+<<<SRT_PREVIEW_START>>>
+{srt_preview}
+<<<SRT_PREVIEW_END>>>
+"""
 
     return f"""# Role
 {SCRIPT_WRITER_ROLE}
 
 # Style Rulebook
 The rulebook below is the single source of truth for tone, structure,
-character naming, genre modulation, and output format. Follow every
-rule exactly.
+character naming, and genre modulation. Follow every rule exactly.
 
 <<<STYLE_RULEBOOK_START>>>
 {style_text}
@@ -223,67 +114,180 @@ Genre: {genre}
 <<<PLOT_START>>>
 {plot_text}
 <<<PLOT_END>>>
-
-# SRT Preview — first {SRT_PREVIEW_LINES} lines
-Use this as the reference format for the `HH:MM:SS` timestamps inside
-your `[SCENE: HH:MM:SS-HH:MM:SS]` markers.
-<<<SRT_PREVIEW_START>>>
-{srt_preview}
-<<<SRT_PREVIEW_END>>>
+{optional_srt_section}
 
 # Output requirements
 
-1. Length target: 7-12 minutes of spoken Chinese, which is
-   approximately 1,800-2,800 Chinese characters of narration.
-2. Open the output with:
-   - For Style A: a character-mapping table (original name → archetype).
-   - A hook-candidate ranking (top 3, one marked [SELECTED]).
-   - A declared genre modulation per style file Sections 5.5 + 5.5b,
-     citing the genre "{genre}".
-3. Output the script with structural markers in this order:
+1. Length target: 7-12 minutes of spoken Chinese, approximately 1,800-2,800 Chinese characters.
+2. Keep the structural markers:
    [TITLE], [HOOK], [ACT 1 - SETUP], [ACT 2 - ESCALATION],
    [ACT 3 - CLIMAX], [ACT 4 - RESOLUTION], [CLOSING].
-4. Every narration beat gets one [SCENE: HH:MM:SS-HH:MM:SS] marker.
-   Target 30-80 total markers. Each window must be 5-10 seconds of
-   source footage, anchored to a specific visual moment.
-5. Cross-reference the SRT to anchor [SCENE] windows on real dialogue
-   or visual beats. For silent action beats with no dialogue, infer
-   from surrounding anchors and keep the window tight.
-6. Apply the Section 5.5b genre visual-focus minimum. When narration
-   alone does not hit the minimum for the declared genre, add
-   `[BROLL: HH:MM:SS-HH:MM:SS, HH:MM:SS-HH:MM:SS]` lines between the
-   `[SCENE]` and its narration. [BROLL] clips are cross-cut over the
-   narration during rendering.
-7. The [CLOSING] block has narration but NO [SCENE] — rendering uses
-   the last keyframe or a title card.
+3. Under each section, break the narration into short beats using explicit markers:
+   [BEAT 1], [BEAT 2], [BEAT 3], ...
+4. Each beat should contain one sentence or one short paragraph only.
+5. Do not output any [SCENE] or [BROLL] markers in this pass.
+6. Do not guess timestamps. Ignore clip timing entirely.
+7. The [CLOSING] section still contains narration beats, but no visual marker of any kind.
 
 # Produce
-Output only the script itself. No preamble. No code fences. The
-response must be ready to save directly as
-`script_<style>_draft.txt`."""
+Output only the beat draft itself. No preamble. No code fences.
+"""
 
-def main(argv=None) -> int:
+
+def build_grounding_prompt(
+    beats_path: Path,
+    subtitle_srt_path: Path,
+    visual_segments_path: Path,
+    movie_title: str,
+) -> str:
+    beats_text = beats_path.read_text(encoding="utf-8")
+    srt_reference = build_srt_reference(subtitle_srt_path)
+    visual_reference = build_visual_reference(visual_segments_path)
+
+    return f"""# Role
+{GROUNDING_EDITOR_ROLE}
+
+# Movie
+Title: {movie_title}
+
+# Narration Beat Draft
+The beat draft below is already written in the target voice. Preserve the wording unless a tiny edit is needed for clarity.
+
+<<<BEATS_START>>>
+{beats_text}
+<<<BEATS_END>>>
+
+# Full SRT Reference
+Use SRT citations whenever a beat references spoken dialogue, paraphrased dialogue, or a moment anchored by subtitles.
+
+<<<SRT_REFERENCE_START>>>
+{srt_reference}
+<<<SRT_REFERENCE_END>>>
+
+# Visual Segment Reference
+Use this only for non-dialogue beats: action, reactions, transitions, and establishing shots.
+
+<<<VISUAL_REFERENCE_START>>>
+{visual_reference}
+<<<VISUAL_REFERENCE_END>>>
+
+# Grounding algorithm
+
+1. Classify each beat as DIALOGUE or ACTION.
+2. If DIALOGUE: search the SRT reference first. Choose the best matching subtitle evidence and use that timestamp window.
+3. If ACTION: search the visual segment reference. Prefer character overlap, then semantic match, then action=true when motion is described.
+4. If the best candidate is weak, emit the beat as ungrounded instead of hallucinating a timestamp.
+5. Preserve the section structure and narration text from the beat draft.
+
+# Output contract
+
+1. Replace every [BEAT N] marker with a grounded [SCENE ...] marker immediately above the beat text.
+2. Use this exact attribute form for grounded beats:
+   [SCENE start=HH:MM:SS.mmm end=HH:MM:SS.mmm source=srt|visual confidence=0.00 evidence=srt:NNN|visual:NNN]
+3. When a beat is ungrounded, use:
+   [SCENE source=ungrounded confidence=0.00 evidence=none]
+4. If character identity is clear and useful for fallback B-roll selection, add:
+   characters="Name A|Name B"
+5. Keep [TITLE], [HOOK], [ACT ...], and [CLOSING].
+6. Do not output [BEAT] markers in the final result.
+7. Do not output code fences or explanations.
+
+# Produce
+Output only the final grounded script.
+"""
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="stage2-generate-script",
-        description=(
-            "Print the assembled script-writer prompt to stdout. "
-            "Stage 2 is currently a manual LLM handoff — see the file's "
-            "module docstring for the full workflow."
-        ),
+        description="Print the Stage 2 writer or grounding prompt to stdout.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="See app/pipeline/stage2_generate_script.py module docstring for instructions.",
     )
-    parser.add_argument("--style", type=Path, required=True, help="Path to the style .md file")
-    parser.add_argument("--subtitle-text", type=Path, required=True, help="Parsed plain-text plot (from Stage 1)")
-    parser.add_argument("--subtitle-srt", type=Path, required=True, help="Source SRT file (for the timestamp-shape reference)")
-    parser.add_argument("--movie-title", required=True, help="Movie title with optional language")
-    parser.add_argument("--genre", required=True, help="Genre keyword (action, horror, thriller, romance, drama, comedy, supernatural, crime)")
-    args = parser.parse_args(argv)
-    for path_arg in (args.style, args.subtitle_text, args.subtitle_srt):
-        if not path_arg.exists():
-            print(f"Input not found: {path_arg}", file=sys.stderr)
+    parser.add_argument(
+        "--mode",
+        choices=["writer", "grounder"],
+        default="writer",
+        help="Writer builds the beat-draft prompt; grounder builds the alignment prompt.",
+    )
+    parser.add_argument("--style", type=Path, help="Path to the style .md file")
+    parser.add_argument("--subtitle-text", type=Path, help="Parsed plain-text plot (from Stage 1)")
+    parser.add_argument("--subtitle-srt", type=Path, help="Source subtitle file (.srt or .ass)")
+    parser.add_argument("--movie-title", help="Movie title with optional language")
+    parser.add_argument("--genre", help="Genre keyword for the writer pass")
+    parser.add_argument("--beats", type=Path, help="Beat draft produced by the writer pass")
+    parser.add_argument("--visual-segments", type=Path, help="visual_segments.json from Stage 0")
+    return parser
+
+
+def missing_input_paths(paths: list[Path]) -> list[Path]:
+    return [p for p in paths if not p.exists()]
+
+
+def report_missing_paths(missing: list[Path]) -> None:
+    for path_arg in missing:
+        print(f"Input not found: {path_arg}", file=sys.stderr)
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
+
+    if args.mode == "writer":
+        missing = [
+            flag_name
+            for flag_name, value in (
+                ("--style", args.style),
+                ("--subtitle-text", args.subtitle_text),
+                ("--movie-title", args.movie_title),
+                ("--genre", args.genre),
+            )
+            if value is None
+        ]
+        if missing:
+            print(f"Writer mode requires: {', '.join(missing)}", file=sys.stderr)
             return 1
-    print(build_prompt(args.style, args.subtitle_text, args.subtitle_srt, args.movie_title, args.genre))
+        existing_paths = [args.style, args.subtitle_text]
+        if args.subtitle_srt is not None:
+            existing_paths.append(args.subtitle_srt)
+        missing_paths = missing_input_paths(existing_paths)
+        if missing_paths:
+            report_missing_paths(missing_paths)
+            return 1
+        print(
+            build_writer_prompt(
+                style_path=args.style,
+                subtitle_text_path=args.subtitle_text,
+                subtitle_srt_path=args.subtitle_srt,
+                movie_title=args.movie_title,
+                genre=args.genre,
+            )
+        )
+        return 0
+
+    missing = [
+        flag_name
+        for flag_name, value in (
+            ("--beats", args.beats),
+            ("--subtitle-srt", args.subtitle_srt),
+            ("--visual-segments", args.visual_segments),
+            ("--movie-title", args.movie_title),
+        )
+        if value is None
+    ]
+    if missing:
+        print(f"Grounder mode requires: {', '.join(missing)}", file=sys.stderr)
+        return 1
+    missing_paths = missing_input_paths([args.beats, args.subtitle_srt, args.visual_segments])
+    if missing_paths:
+        report_missing_paths(missing_paths)
+        return 1
+    print(
+        build_grounding_prompt(
+            beats_path=args.beats,
+            subtitle_srt_path=args.subtitle_srt,
+            visual_segments_path=args.visual_segments,
+            movie_title=args.movie_title,
+        )
+    )
     return 0
 
 

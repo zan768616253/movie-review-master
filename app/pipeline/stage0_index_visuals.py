@@ -9,7 +9,8 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from app.pipeline.visual_indexing import GeminiStrategy, OllamaStrategy
+from app.pipeline.common.script_contract import get_video_duration, validate_visual_segments
+from app.pipeline.stage0_indexers import GeminiStrategy, OllamaStrategy
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,6 +32,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="gemini",
         help="Backend strategy to use for visual extraction",
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Override the default model name for the chosen strategy (e.g. gemini-3-pro-preview)",
+    )
     return parser
 
 
@@ -46,17 +53,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     args.tmp_dir.mkdir(parents=True, exist_ok=True)
 
     if args.strategy == "gemini":
-        strategy = GeminiStrategy()
+        strategy = GeminiStrategy(model_name=args.model) if args.model else GeminiStrategy()
     else:
         strategy = OllamaStrategy()
 
     try:
-        segments = strategy.index_video(video_path, characters, args.chunk_minutes, args.tmp_dir)
+        raw_segments = strategy.index_video(video_path, characters, args.chunk_minutes, args.tmp_dir)
+
+        video_duration_s = get_video_duration(video_path)
+        segments, diagnostics = validate_visual_segments(raw_segments, video_duration_s)
+        if diagnostics.clamped_to_eof or diagnostics.dropped_bad_range or diagnostics.dropped_past_eof or diagnostics.dropped_too_long:
+            print(f"Visual segment validation: {diagnostics.as_summary()} (movie duration {video_duration_s:.1f}s)")
 
         output_path = args.output if args.output else video_path.parent / "visual_segments.json"
         output_path.write_text(json.dumps(segments, indent=2, ensure_ascii=False), encoding="utf-8")
 
-        print(f"\nSuccess! Found {len(segments)} segments using {args.strategy} strategy -> {output_path}")
+        print(f"\nSuccess! Kept {len(segments)}/{len(raw_segments)} segments using {args.strategy} strategy -> {output_path}")
     except Exception as e:
         print(f"Error during processing: {e}")
         return 1

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 import time
@@ -20,65 +19,85 @@ from typing import Optional
 import numpy as np
 import torch
 
+from app.pipeline.common.script_contract import (
+    BROLL_LINE_RE,
+    STRUCTURAL_MARKER_RE,
+    SceneMarker,
+    parse_broll_ranges,
+    parse_scene_marker,
+)
+
 
 BASE_MODEL_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 VOICE_ASSETS_DIR = REPO_ROOT / "voice-assets"
 DEFAULT_REF_AUDIO = VOICE_ASSETS_DIR / "uncle_niu" / "reference" / "clone_reference.mp3"
 DEFAULT_REF_TEXT = VOICE_ASSETS_DIR / "uncle_niu" / "reference" / "clone_reference.txt"
-
-SCENE_RE = re.compile(
-    r"\[SCENE:\s*(\d{2}:\d{2}:\d{2})\s*-\s*(\d{2}:\d{2}:\d{2})\s*\]"
+DEFAULT_VOICE_CLONE_MODE = "auto"
+DEFAULT_MAX_ICL_REFERENCE_SECONDS = 30.0
+DEFAULT_MAX_XVECTOR_REFERENCE_SECONDS = 30.0
+PROMPT_TEMPLATE_MARKERS = (
+    "<<<BEATS_START>>>",
+    "<<<SRT_REFERENCE_START>>>",
+    "<<<VISUAL_REFERENCE_START>>>",
+    "# Grounding algorithm",
+    "# Output contract",
 )
-BROLL_LINE_RE = re.compile(r"\[BROLL:\s*([^\]]+?)\s*\]")
-BROLL_RANGE_RE = re.compile(r"(\d{2}:\d{2}:\d{2})\s*-\s*(\d{2}:\d{2}:\d{2})")
-STRUCTURAL_MARKER_RE = re.compile(r"^\s*\[(TITLE|HOOK|ACT\s*\d+[^\]]*|CLOSING)\]")
+MAX_CHARS_PER_CHUNK = 12000
 
 
 @dataclass
 class Chunk:
     index: int
-    scene_start: Optional[str]
-    scene_end: Optional[str]
+    scene: Optional[SceneMarker]
     text: str
     broll: list[tuple[str, str]] = field(default_factory=list)
 
+    # Flat accessors the manifest writer and CLI summary still want.
+    @property
+    def scene_start(self) -> Optional[str]:
+        return self.scene.start if self.scene else None
 
-def parse_broll_ranges(text: str) -> list[tuple[str, str]]:
-    return [(match.group(1), match.group(2)) for match in BROLL_RANGE_RE.finditer(text)]
+    @property
+    def scene_end(self) -> Optional[str]:
+        return self.scene.end if self.scene else None
 
+    @property
+    def scene_source(self) -> Optional[str]:
+        return self.scene.source if self.scene else None
 
-def append_chunk(
-    chunks: list[Chunk],
-    scene: Optional[tuple[str, str]],
-    lines: list[str],
-    broll: list[tuple[str, str]],
-) -> None:
-    if not lines:
-        return
+    @property
+    def scene_confidence(self) -> Optional[float]:
+        return self.scene.confidence if self.scene else None
 
-    scene_start, scene_end = scene if scene is not None else (None, None)
-    chunks.append(
-        Chunk(
-            index=len(chunks) + 1,
-            scene_start=scene_start,
-            scene_end=scene_end,
-            text="\n".join(lines),
-            broll=list(broll) if scene is not None else [],
-        )
-    )
+    @property
+    def scene_evidence(self) -> Optional[str]:
+        return self.scene.evidence if self.scene else None
+
+    @property
+    def scene_characters(self) -> list[str]:
+        return list(self.scene.characters) if self.scene else []
 
 
 def parse_script_chunks(script_text: str) -> list[Chunk]:
     """Split a marked script into narration chunks."""
     chunks: list[Chunk] = []
-    current_scene: Optional[tuple[str, str]] = None
+    current_scene: Optional[SceneMarker] = None
     pending_lines: list[str] = []
     pending_broll: list[tuple[str, str]] = []
     in_script = False
 
     def flush() -> None:
-        append_chunk(chunks, current_scene, pending_lines, pending_broll)
+        nonlocal pending_lines, pending_broll, current_scene
+        if pending_lines:
+            chunks.append(Chunk(
+                index=len(chunks) + 1,
+                scene=current_scene,
+                text="\n".join(pending_lines),
+                broll=list(pending_broll) if current_scene is not None else [],
+            ))
+        pending_lines = []
+        pending_broll = []
 
     for raw in script_text.splitlines():
         line = raw.strip()
@@ -96,17 +115,13 @@ def parse_script_chunks(script_text: str) -> list[Chunk]:
         if structural:
             if structural.group(1).upper() == "CLOSING":
                 flush()
-                pending_lines = []
-                pending_broll = []
                 current_scene = None
             continue
 
-        scene_match = SCENE_RE.search(line)
-        if scene_match:
+        scene_marker = parse_scene_marker(line)
+        if scene_marker is not None:
             flush()
-            pending_lines = []
-            pending_broll = []
-            current_scene = (scene_match.group(1), scene_match.group(2))
+            current_scene = scene_marker
             continue
 
         broll_match = BROLL_LINE_RE.search(line)
@@ -118,6 +133,39 @@ def parse_script_chunks(script_text: str) -> list[Chunk]:
 
     flush()
     return chunks
+
+
+def count_scene_markers(script_text: str) -> int:
+    return sum(1 for raw in script_text.splitlines() if parse_scene_marker(raw.strip()) is not None)
+
+
+def validate_script_input(script_path: Path, script_text: str, chunks: list[Chunk]) -> None:
+    if any(marker in script_text for marker in PROMPT_TEMPLATE_MARKERS):
+        raise ValueError(
+            f"{script_path} looks like the Stage 2 grounding prompt, not the final grounded script. "
+            "Paste only the grounder model's final output into grounded_script.txt. "
+            "Do not include prompt headers, SRT references, visual references, or <<<...>>> blocks."
+        )
+
+    if "[BEAT " in script_text:
+        raise ValueError(
+            f"{script_path} still contains [BEAT N] markers. Stage 3 expects the final grounded script "
+            "with [SCENE ...] markers replacing every beat."
+        )
+
+    if count_scene_markers(script_text) == 0:
+        raise ValueError(
+            f"{script_path} contains no [SCENE ...] markers. Stage 3 expects the grounded Stage 2 output, "
+            "not the writer draft or a prompt file."
+        )
+
+    longest_chunk = max(chunks, key=lambda chunk: len(chunk.text), default=None)
+    if longest_chunk is not None and len(longest_chunk.text) > MAX_CHARS_PER_CHUNK:
+        raise ValueError(
+            f"{script_path} contains an oversized narration chunk ({len(longest_chunk.text)} chars in chunk "
+            f"{longest_chunk.index}). This usually means prompt/reference text was pasted into the grounded "
+            "script file instead of only final narration."
+        )
 
 
 def load_model():
@@ -134,13 +182,126 @@ def load_model():
     return model
 
 
+def probe_audio_duration(audio_path: Path) -> float | None:
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(audio_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+    text = result.stdout.strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def resolve_voice_clone_mode(
+    ref_audio: Path,
+    requested_mode: str,
+    max_icl_reference_seconds: float,
+) -> str:
+    if requested_mode != "auto":
+        return requested_mode
+
+    duration_s = probe_audio_duration(ref_audio)
+    if duration_s is None:
+        return "icl"
+    if duration_s > max_icl_reference_seconds:
+        print(
+            f"[prompt] reference audio is {duration_s:.1f}s, which exceeds the ICL-safe threshold "
+            f"of {max_icl_reference_seconds:.1f}s; switching to x-vector-only voice cloning"
+        )
+        return "x-vector"
+    return "icl"
+
+
+def prepare_reference_audio_for_prompt(
+    ref_audio: Path,
+    resolved_mode: str,
+    max_xvector_reference_seconds: float,
+    scratch_dir: Path,
+) -> tuple[Path, float | None]:
+    duration_s = probe_audio_duration(ref_audio)
+    if (
+        resolved_mode != "x-vector"
+        or duration_s is None
+        or max_xvector_reference_seconds <= 0
+        or duration_s <= max_xvector_reference_seconds
+    ):
+        return ref_audio, duration_s
+
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    trimmed_ref_audio = scratch_dir / f"{ref_audio.stem}.xvector_{int(max_xvector_reference_seconds)}s.wav"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(ref_audio),
+            "-t",
+            str(max_xvector_reference_seconds),
+            "-ac",
+            "1",
+            "-ar",
+            "24000",
+            str(trimmed_ref_audio),
+        ],
+        check=True,
+    )
+    print(
+        f"[prompt] x-vector mode still embeds the reference waveform; trimming {ref_audio.name} "
+        f"from {duration_s:.1f}s to {max_xvector_reference_seconds:.1f}s before prompt creation"
+    )
+    return trimmed_ref_audio, duration_s
+
+
 def build_voice_prompt(
     model,
     ref_audio: Path,
     ref_text_path: Path,
+    scratch_dir: Path,
+    voice_clone_mode: str = DEFAULT_VOICE_CLONE_MODE,
+    max_icl_reference_seconds: float = DEFAULT_MAX_ICL_REFERENCE_SECONDS,
+    max_xvector_reference_seconds: float = DEFAULT_MAX_XVECTOR_REFERENCE_SECONDS,
 ) -> object:
+    resolved_mode = resolve_voice_clone_mode(ref_audio, voice_clone_mode, max_icl_reference_seconds)
+    prepared_ref_audio, _duration_s = prepare_reference_audio_for_prompt(
+        ref_audio,
+        resolved_mode,
+        max_xvector_reference_seconds,
+        scratch_dir,
+    )
+    if resolved_mode == "x-vector":
+        print(
+            f"[prompt] ref audio {prepared_ref_audio.name}, transcript ignored, mode={resolved_mode}"
+        )
+        return model.create_voice_clone_prompt(
+            ref_audio=str(prepared_ref_audio),
+            ref_text=None,
+            x_vector_only_mode=True,
+        )
     ref_text = ref_text_path.read_text(encoding="utf-8").strip()
-    print(f"[prompt] ref audio {ref_audio.name}, transcript {len(ref_text)} chars")
+    print(
+        f"[prompt] ref audio {prepared_ref_audio.name}, transcript {len(ref_text)} chars, mode={resolved_mode}"
+    )
     return model.create_voice_clone_prompt(ref_audio=str(ref_audio), ref_text=ref_text)
 
 
@@ -186,6 +347,8 @@ def concat_and_normalize(
     out_mp3: Path,
 ) -> list[tuple[float, float]]:
     """Concatenate chunk audio, normalize it, and return each chunk's time span."""
+    import soundfile as sf
+
     if not wavs:
         raise ValueError("No audio chunks to concatenate")
 
@@ -234,6 +397,10 @@ def build_manifest_payload(
                 "index": chunk.index,
                 "scene_start": chunk.scene_start,
                 "scene_end": chunk.scene_end,
+                "scene_source": chunk.scene_source,
+                "scene_confidence": chunk.scene_confidence,
+                "scene_evidence": chunk.scene_evidence,
+                "scene_characters": chunk.scene_characters,
                 "text": chunk.text,
                 "broll": [[start, end] for (start, end) in chunk.broll],
                 "audio_start_s": start_s,
@@ -344,10 +511,34 @@ def main(argv=None) -> int:
         action="store_true",
         help="Skip TTS and rewrite the manifest using existing timings. Requires the same chunk count.",
     )
+    parser.add_argument(
+        "--voice-clone-mode",
+        choices=["auto", "icl", "x-vector"],
+        default=DEFAULT_VOICE_CLONE_MODE,
+        help="Voice-clone prompt mode. 'auto' switches long reference clips to x-vector-only mode.",
+    )
+    parser.add_argument(
+        "--max-icl-reference-seconds",
+        type=float,
+        default=DEFAULT_MAX_ICL_REFERENCE_SECONDS,
+        help="When --voice-clone-mode=auto, reference clips longer than this fall back to x-vector-only mode.",
+    )
+    parser.add_argument(
+        "--max-xvector-reference-seconds",
+        type=float,
+        default=DEFAULT_MAX_XVECTOR_REFERENCE_SECONDS,
+        help="When x-vector mode is used, cap the reference clip to this duration before speaker embedding.",
+    )
     args = parser.parse_args(argv)
 
     script_text = args.script.read_text(encoding="utf-8")
     chunks = parse_script_chunks(script_text)
+
+    try:
+        validate_script_input(args.script, script_text, chunks)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
     if args.limit is not None:
         chunks = chunks[: args.limit]
@@ -376,7 +567,15 @@ def main(argv=None) -> int:
 
     total_t0 = time.time()
     model = load_model()
-    voice_prompt = build_voice_prompt(model, args.ref_audio, args.ref_text)
+    voice_prompt = build_voice_prompt(
+        model,
+        args.ref_audio,
+        args.ref_text,
+        args.output_dir,
+        voice_clone_mode=args.voice_clone_mode,
+        max_icl_reference_seconds=args.max_icl_reference_seconds,
+        max_xvector_reference_seconds=args.max_xvector_reference_seconds,
+    )
     run_full_generation(model, chunks, voice_prompt, mp3_path, manifest_path)
     print(f"[done] wall time {(time.time() - total_t0) / 60:.1f} min")
     return 0
