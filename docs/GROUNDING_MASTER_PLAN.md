@@ -76,13 +76,14 @@ The current plan writes narration, *then* finds clips. The inverse — pre-selec
 
 ### Stage 4: High-Precision Extraction
 - **Rule:** Stop using `-c:v copy` for hero clips.
-- **Action:** Re-encode with `-c:v libx264`.
+- **Action:** Re-encode with NVENC (`h264_nvenc`) when available, fall back to `libx264`. CPU-only re-encoding is slow enough that a ~10-minute review saturates the CPU for tens of minutes and has taken down WSL2 in practice.
 - **Feature:** Add **±1.5s Handles**. If the script asks for 5s, extract 8s.
+- **Bound:** The safe-boundary extension (Stage 5 priority 2) is applied during extraction so the renderer has frames to work with, but it is capped at `max-extension-seconds` (default 10s) past the scene end. Visual segments are also validated against the real movie duration at Stage 0 before they reach Stage 4. Without both bounds, a single hallucinated visual segment can turn one clip into a multi-hour re-encode.
 
 ### Stage 5: Cinematic Padding Priority
 When narration duration > clip duration, the renderer follows this priority:
 1.  **Handles:** Use the extra 1.5s of pre/post-roll.
-2.  **Shot Extension:** If the segment hasn't ended, keep playing into the next "safe" visual boundary.
+2.  **Shot Extension:** If the segment hasn't ended, keep playing into the next "safe" visual boundary, subject to the Stage 4 extension cap above.
 3.  **Semantic B-Roll:** Pull a clip from the same "Tag" or "Character" pool in Stage 0.
 4.  **Freeze (Last Resort):** Only freeze for <0.5s leftovers. **Never loop movie footage.**
 

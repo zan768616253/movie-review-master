@@ -95,6 +95,10 @@ Purpose:
 - generate `visual_segments.json` containing 3-5 second action beats
 - solve the visual grounding gap by providing timestamps for non-dialogue moments
 
+VLM trust boundary:
+
+- VLMs (both Gemini and local Qwen2.5-VL) routinely return timestamps that exceed the movie duration or span implausible ranges. Stage 0's output is only trusted after it has been passed through `validate_visual_segments`, which clamps `end` to the real video duration, drops segments with inverted or out-of-range times, and drops segments longer than `MAX_VISUAL_SEGMENT_DURATION_S` (30s). Downstream stages must use the validated file, not the raw model response.
+
 ### Stage 1: Subtitle Intake
 
 Purpose:
@@ -153,6 +157,10 @@ Purpose:
 - optionally extract B-roll clips attached to the same narration chunk
 
 The extracted clips are not supposed to carry movie audio. The review soundtrack is built around narration-first timing.
+
+Bounded safe-boundary extension:
+
+- A scene marker's clip may be extended past its `end` to the next safe visual boundary, but never by more than `max-extension-seconds` (default 10s). This cap is the single rule that stops one hallucinated visual segment from turning a 3-second scene into a multi-minute re-encode. The extraction range is additionally clamped to the real movie duration as a second line of defence.
 
 ### Stage 5: Draft Render
 
@@ -245,6 +253,7 @@ Useful distilled knowledge from the earlier validation work:
 - `ffmpeg` is the baseline media engine
 - extracted review clips are silent
 - source video can be stream-copied where possible for speed
+- GPU encoding is the default path on this project's target hardware (RTX 4060). Stages 4 and 5 pick `h264_nvenc` when the local ffmpeg advertises it, and fall back to `libx264 -preset fast` so CI and non-GPU hosts still work. Falling back to CPU encoding is expected to be 3-5x slower on 1080p re-encodes, which is acceptable but not a path to production throughput.
 
 ### Render Synchronization
 

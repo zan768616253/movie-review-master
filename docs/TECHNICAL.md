@@ -26,11 +26,20 @@ movie-review-master/
     pipeline/
       __init__.py
       stage0_index_visuals.py
+      stage0_indexers/
+        __init__.py
+        base.py
+        gemini.py
+        ollama.py
       stage1_parse_subtitles.py
       stage2_generate_script.py
       stage3_generate_audio.py
       stage4_video_processor.py
       stage5_render_video.py
+      common/
+        __init__.py
+        script_contract.py
+        video_encoder.py
     tools/
       __init__.py
       transcribe_audio.py
@@ -132,6 +141,12 @@ Current state:
 - implemented
 - exposes `video-processor` entry point
 
+Key CLI flags:
+
+- `--handle-seconds` (default 1.5) — pre/post handle applied around every hero clip.
+- `--max-extension-seconds` (default 30.0) — upper bound on safe-boundary extension triggered by `visual_segments.json`. Required because a single hallucinated visual segment can otherwise turn one clip into a full-movie re-encode.
+- `--encoder {auto,nvenc,libx264}` (default `auto`) — `auto` picks `h264_nvenc` when available, otherwise falls back to `libx264 -preset fast`.
+
 ### `app/pipeline/stage5_render_video.py`
 
 Purpose:
@@ -152,6 +167,25 @@ Current stage-1 characteristics:
 - no subtitle burn
 - no background music
 - B-roll rotation supported through pre-extracted clip inputs
+
+Key CLI flags:
+
+- `--encoder {auto,nvenc,libx264}` (default `auto`) — same selector used by Stage 4. Used for hero slices, manual B-roll re-encodes, semantic B-roll re-encodes, and still-frame segments.
+
+### `app/pipeline/common/`
+
+Shared helpers used by multiple pipeline stages.
+
+- `script_contract.py` — scene marker parsing, timestamp helpers, visual-segment loading, and `validate_visual_segments()` (the Stage 0 trust boundary).
+- `video_encoder.py` — `resolve_encoder()`, `nvenc_available()`, `encoder_ffmpeg_args()`. Used by Stage 4 and Stage 5 to produce the `-c:v ...` argument list.
+
+### `app/pipeline/stage0_indexers/`
+
+Strategy implementations driven by `stage0_index_visuals.py`.
+
+- `base.py` — `VisualIndexerStrategy` abstract class and the `merge_segments` helper.
+- `gemini.py` — Gemini 3 Flash/Pro backend. Model is overridable via `--model`.
+- `ollama.py` — local Qwen2.5-VL fallback.
 
 ### `app/tools/transcribe_audio.py`
 
@@ -227,6 +261,20 @@ Primary structural markers currently used by downstream tooling:
 - `audio_end_s`
 
 This manifest is the primary sync contract for `stage5_render_video.py`.
+
+### Visual Segment Contract
+
+`stage0_index_visuals.py` writes a JSON list where each entry contains:
+
+- `start` (HH:MM:SS.mmm, always within `[0, video_duration]` after validation)
+- `end` (HH:MM:SS.mmm, clamped to video duration, always greater than `start`)
+- `summary`
+- `ocr_text`
+- `is_action`
+- `confidence`
+- `characters`
+
+Every segment in the written file has already passed `validate_visual_segments()`. Downstream stages should not re-check bounds but may call the validator again defensively.
 
 ### Output Layout Contract
 
