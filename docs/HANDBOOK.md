@@ -52,14 +52,20 @@ The `.srt` or `.ass` file used to reconstruct plot structure, find dialogue anch
 
 A style-constrained narration document that retells the full movie in review form. The script is not plain prose only; it also carries structural markers used by later pipeline steps.
 
-### `[SCENE: HH:MM:SS-HH:MM:SS]`
+### `[SCENE ...]`
 
-The primary synchronization marker. Each `[SCENE]` binds one narration chunk to one source-movie visual range.
+The primary synchronization marker. Each `[SCENE]` binds one narration beat to one source-movie visual range.
+
+Older scripts may use `[SCENE: HH:MM:SS-HH:MM:SS]`. Grounded scripts should prefer the richer attribute form, for example:
+
+`[SCENE start=... end=... source=srt|visual|ungrounded confidence=... evidence=...]`
 
 Rules:
 
 - one primary narration beat maps to one `[SCENE]`
-- `[SCENE]` timestamps should point to the exact visual beat being described
+- dialogue beats should anchor to SRT evidence first
+- non-dialogue beats should anchor to visual-segment evidence
+- if evidence is weak, the beat should be marked `ungrounded` rather than assigned an invented timestamp
 - the marker is for pipeline coordination, not for spoken narration
 
 ### `[BROLL: ...]`
@@ -92,8 +98,14 @@ The logical pipeline has six stages.
 Purpose:
 
 - provide fine-grained visual search metadata for the full movie
-- generate `visual_segments.json` containing 3-5 second action beats
-- solve the visual grounding gap by providing timestamps for non-dialogue moments
+- generate `visual_segments.json` containing shot-level non-dialogue segments, typically a few seconds long
+- solve the visual grounding gap by providing timestamps for action beats, reactions, transitions, and establishing shots
+
+Grounding strategy:
+
+- subtitles are the primary anchor for dialogue; Stage 0 exists to cover the non-dialogue gap, not to redescribe subtitle-covered moments
+- VLM chunking is only an input batching concern; a full movie should still yield many shot-level candidates rather than a handful of broad summaries
+- downstream matching works best when each segment describes one distinct visual beat with characters, action, and OCR when available
 
 VLM trust boundary:
 
@@ -122,6 +134,15 @@ Purpose:
 
 - convert movie plot into a review script in the selected style
 - include structural markers for visuals and later alignment
+
+Two-pass grounding strategy:
+
+- writer pass produces beat-level narration only; it ignores timestamps and focuses on tone, plot, and pacing
+- grounding pass classifies each beat as dialogue or action before assigning any timing
+- dialogue beats search the full SRT first and use subtitle timestamps whenever spoken lines are the real anchor
+- action beats search `visual_segments.json`, favoring character overlap, semantic similarity, and `is_action` when motion is described
+- weak matches stay `ungrounded`; the system must not hallucinate precise timestamps
+- final output is an evidence-bearing grounded script, not raw prose
 
 The script stage must do two jobs at once:
 
@@ -158,9 +179,11 @@ Purpose:
 
 The extracted clips are not supposed to carry movie audio. The review soundtrack is built around narration-first timing.
 
-Bounded safe-boundary extension:
+High-precision extraction rules:
 
-- A scene marker's clip may be extended past its `end` to the next safe visual boundary, but never by more than `max-extension-seconds` (default 10s). This cap is the single rule that stops one hallucinated visual segment from turning a 3-second scene into a multi-minute re-encode. The extraction range is additionally clamped to the real movie duration as a second line of defence.
+- primary hero clips are re-encoded instead of stream-copied so short beats do not drift on keyframe boundaries
+- each extraction includes pre/post handles so Stage 5 can absorb small timing mismatches without an immediate freeze
+- safe-boundary extension may stretch past the requested `end`, but only inside a capped window after Stage 0 validation has already clamped the visual index to the real movie duration
 
 ### Stage 5: Draft Render
 
@@ -173,13 +196,24 @@ Purpose:
 Stable render rules:
 
 - narration duration is authoritative
-- clips are trimmed, padded, or replaced with stills to fit narration timing
+- renderer follows a fixed fallback order: exact hero window, then extracted handles or safe-boundary extension, then explicit or semantic B-roll, then freeze as the last fallback
+- B-roll is a style tool; hard freezes are a grounding failure signal and should stay rare
 - the first working render can favor determinism over polish
 - later iterations add transitions, subtitles, and richer audio mixing
 
 ### Post-Pipeline: DaVinci Handoff
 
 The output folder is meant to be reopened and improved manually. This is part of the design, not a failure of automation.
+
+### Grounding Quality Signals
+
+Use these targets when judging whether alignment quality is acceptable:
+
+- evidence coverage should stay above 95%: most `[SCENE]` markers should cite either an SRT line or a visual-segment ID
+- freeze ratio should stay below 5% of runtime; semantic B-roll is acceptable, hard freezes are the failure signal
+- hero clips should show no visible keyframe jitter
+- ungrounded beat rate should stay below 10%; spikes usually mean the narration drifted from the movie or the visual index is too sparse
+- a short slice review should read as "no visible drift" to a human viewer
 
 ## 6. Style System
 
@@ -252,7 +286,7 @@ Useful distilled knowledge from the earlier validation work:
 
 - `ffmpeg` is the baseline media engine
 - extracted review clips are silent
-- source video can be stream-copied where possible for speed
+- timing-critical hero clips are re-encoded instead of stream-copied so `[SCENE]` boundaries stay stable
 - GPU encoding is the default path on this project's target hardware (RTX 4060). Stages 4 and 5 pick `h264_nvenc` when the local ffmpeg advertises it, and fall back to `libx264 -preset fast` so CI and non-GPU hosts still work. Falling back to CPU encoding is expected to be 3-5x slower on 1080p re-encodes, which is acceptable but not a path to production throughput.
 
 ### Render Synchronization
@@ -260,6 +294,7 @@ Useful distilled knowledge from the earlier validation work:
 - the manifest is the contract between TTS and render
 - audio timing drives visual timing
 - scene and B-roll markers are part of the script contract, not optional decoration
+- grounded scene metadata such as `source`, `evidence`, and optional `characters` is part of that sync contract when available
 
 ### Rendering Baseline
 

@@ -3,13 +3,13 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from app.pipeline.visual_indexing.base import (
+from app.pipeline.stage0_indexers.base import (
     seconds_to_timestamp,
     timestamp_to_seconds,
     merge_segments,
 )
-from app.pipeline.visual_indexing.gemini import GeminiStrategy
-from app.pipeline.visual_indexing.ollama import OllamaStrategy
+from app.pipeline.stage0_indexers.gemini import GeminiStrategy
+from app.pipeline.stage0_indexers.ollama import OllamaStrategy
 
 
 # ---------------------------------------------------------------------------
@@ -71,9 +71,24 @@ class TestMergeSegments:
 # Gemini strategy unit tests
 # ---------------------------------------------------------------------------
 
+def _build_fake_gemini_client(response_text: str) -> MagicMock:
+    """Wire up a MagicMock that looks like a google.genai Client for our usage."""
+    mock_client = MagicMock()
+
+    mock_file = MagicMock()
+    mock_file.state.name = "ACTIVE"
+    mock_client.files.upload.return_value = mock_file
+    mock_client.files.get.return_value = mock_file
+
+    mock_response = MagicMock()
+    mock_response.text = response_text
+    mock_client.models.generate_content.return_value = mock_response
+    return mock_client
+
+
 class TestGeminiStrategy:
-    @patch("app.pipeline.visual_indexing.gemini.genai")
-    @patch("app.pipeline.visual_indexing.gemini.get_video_duration")
+    @patch("app.pipeline.stage0_indexers.gemini.genai")
+    @patch("app.pipeline.stage0_indexers.gemini.get_video_duration")
     @patch.object(GeminiStrategy, "_extract_chunk")
     def test_index_video_splits_and_merges(self, mock_extract, mock_duration, mock_genai, tmp_path):
         tmp_idx_dir = tmp_path / "tmp"
@@ -81,18 +96,11 @@ class TestGeminiStrategy:
 
         mock_duration.return_value = 900.0  # 15 mins -> 2 chunks
 
-        mock_model = MagicMock()
-        mock_response = MagicMock()
-        mock_response.text = json.dumps([{
+        response_text = json.dumps([{
             "start": "00:00:00.000", "end": "00:00:03.000", "summary": "test",
             "ocr_text": "", "is_action": True, "confidence": 0.9, "characters": []
         }])
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
-
-        mock_file = MagicMock()
-        mock_file.state.name = "ACTIVE"
-        mock_genai.upload_file.return_value = mock_file
+        mock_genai.Client.return_value = _build_fake_gemini_client(response_text)
 
         strategy = GeminiStrategy(api_key="fake")
         results = strategy.index_video(tmp_path / "movie.mp4", [], 10, tmp_idx_dir)
@@ -102,29 +110,21 @@ class TestGeminiStrategy:
         assert results[0]["start"] == "00:00:00.000"
         assert results[1]["start"] == "00:10:00.000"
 
-    @patch("app.pipeline.visual_indexing.gemini.genai")
-    @patch("app.pipeline.visual_indexing.gemini.get_video_duration")
+    @patch("app.pipeline.stage0_indexers.gemini.genai")
+    @patch("app.pipeline.stage0_indexers.gemini.get_video_duration")
     @patch.object(GeminiStrategy, "_extract_chunk")
     def test_characters_passed_to_prompt(self, mock_extract, mock_duration, mock_genai, tmp_path):
         tmp_idx_dir = tmp_path / "tmp"
         tmp_idx_dir.mkdir()
         mock_duration.return_value = 60.0  # 1 min -> 1 chunk
 
-        mock_model = MagicMock()
-        mock_response = MagicMock()
-        mock_response.text = json.dumps([])
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
-
-        mock_file = MagicMock()
-        mock_file.state.name = "ACTIVE"
-        mock_genai.upload_file.return_value = mock_file
+        mock_client = _build_fake_gemini_client(json.dumps([]))
+        mock_genai.Client.return_value = mock_client
 
         strategy = GeminiStrategy(api_key="fake")
         strategy.index_video(tmp_path / "m.mp4", ["Yuta", "Gojo"], 10, tmp_idx_dir)
 
-        call_args = mock_model.generate_content.call_args[0][0]
-        prompt_text = call_args[1]
+        prompt_text = mock_client.models.generate_content.call_args.kwargs["contents"][1]
         assert "Yuta" in prompt_text
         assert "Gojo" in prompt_text
 
@@ -134,8 +134,8 @@ class TestGeminiStrategy:
 # ---------------------------------------------------------------------------
 
 class TestOllamaStrategy:
-    @patch("app.pipeline.visual_indexing.ollama.subprocess.run")
-    @patch("app.pipeline.visual_indexing.ollama.requests.post")
+    @patch("app.pipeline.stage0_indexers.ollama.subprocess.run")
+    @patch("app.pipeline.stage0_indexers.ollama.requests.post")
     def test_identical_frames_collapse(self, mock_post, mock_run, tmp_path):
         """Two frames with identical summary + characters must collapse into one segment."""
         strategy = OllamaStrategy()
@@ -160,8 +160,8 @@ class TestOllamaStrategy:
         assert results[0]["start"] == "00:00:00.000"
         assert results[0]["end"] == "00:00:09.000"  # 3 frames * 3s
 
-    @patch("app.pipeline.visual_indexing.ollama.subprocess.run")
-    @patch("app.pipeline.visual_indexing.ollama.requests.post")
+    @patch("app.pipeline.stage0_indexers.ollama.subprocess.run")
+    @patch("app.pipeline.stage0_indexers.ollama.requests.post")
     def test_different_frames_no_collapse(self, mock_post, mock_run, tmp_path):
         """Frames with different summaries must stay separate."""
         strategy = OllamaStrategy()
@@ -196,8 +196,8 @@ class TestOllamaStrategy:
         assert results[0]["end"] == "00:00:03.000"
         assert results[1]["start"] == "00:00:03.000"
 
-    @patch("app.pipeline.visual_indexing.ollama.subprocess.run")
-    @patch("app.pipeline.visual_indexing.ollama.requests.post")
+    @patch("app.pipeline.stage0_indexers.ollama.subprocess.run")
+    @patch("app.pipeline.stage0_indexers.ollama.requests.post")
     def test_json_fallback_on_bad_response(self, mock_post, mock_run, tmp_path):
         """When Ollama returns non-JSON, strategy should not crash."""
         strategy = OllamaStrategy()
@@ -217,7 +217,7 @@ class TestOllamaStrategy:
         assert len(results) == 1
         assert results[0]["confidence"] == 0.5  # fallback value
 
-    @patch("app.pipeline.visual_indexing.ollama.subprocess.run")
+    @patch("app.pipeline.stage0_indexers.ollama.subprocess.run")
     def test_no_frames_returns_empty(self, mock_run, tmp_path):
         """When ffmpeg produces no frames, should return empty list."""
         strategy = OllamaStrategy()

@@ -100,14 +100,21 @@ Key public pieces:
 
 Purpose:
 
-- document the script-authoring step
-- assemble the LLM prompt that turns subtitles + style rulebook into a reviewable draft with `[SCENE]` and `[BROLL]` markers
+- build the writer-pass prompt that produces beat-level narration without timestamps
+- build the grounding-pass prompt that aligns those beats to SRT and `visual_segments.json`
 
 Current state:
 
-- placeholder: rich module docstring + `build_prompt()` helper
-- exposes `generate-script` entry point that prints the assembled prompt to stdout
-- Stage 2 is run manually today (paste prompt into Claude, paste response into a draft file); `build_prompt()` is the stable contract an automated backend can drop into later
+- implemented as a manual two-pass prompt assembler
+- exposes `generate-script` entry point that prints either prompt to stdout
+- supports `--mode writer` and `--mode grounder`
+- Stage 2 is still run manually today; the repo owns the prompt contract, while the actual model execution remains outside the codebase
+
+Key public pieces:
+
+- `build_writer_prompt()`
+- `build_grounding_prompt()`
+- `main()`
 
 ### `app/pipeline/stage3_generate_audio.py`
 
@@ -215,7 +222,7 @@ Current state:
 
 These components are part of the project design but are not yet present as first-class production modules:
 
-- `app/pipeline/stage2_generate_script.py` — currently a placeholder; automated LLM-backed generation is planned
+- automated Stage 2 model execution inside the repo — today the repo assembles prompts, but a human still runs the writer and grounder passes
 - `app/pipeline/archetype_mapper.py` — style-A-specific character mapping helper
 - `styles/xiaodao.md` — Style C, research phase only
 
@@ -244,9 +251,24 @@ Notes:
 
 Primary structural markers currently used by downstream tooling:
 
-- `[SCENE: HH:MM:SS-HH:MM:SS]`
+- legacy scene shorthand: `[SCENE: HH:MM:SS-HH:MM:SS]`
+- grounded scene marker: `[SCENE start=HH:MM:SS.mmm end=HH:MM:SS.mmm source=srt|visual confidence=0.00 evidence=srt:NNN|visual:NNN]`
+- ungrounded scene marker: `[SCENE source=ungrounded confidence=0.00 evidence=none]`
+- optional scene attribute: `characters="Name A|Name B"` for fallback B-roll selection
 - `[BROLL: HH:MM:SS-HH:MM:SS, ...]`
 - `[TITLE]`, `[HOOK]`, `[ACT ...]`, `[CLOSING]` as structural labels for script organization
+
+Notes:
+
+- the parser accepts both legacy and attribute forms
+- downstream extraction and rendering use `source`, `evidence`, and `characters` when present
+
+### Grounding Decision Contract
+
+- dialogue beats should prefer SRT evidence and timestamps
+- action beats should prefer visual-segment evidence
+- weak matches should be emitted as `source=ungrounded` rather than guessed into fake timestamps
+- Stage 4 and Stage 5 use `scene_evidence` and `scene_characters` to steer fallback extraction and semantic B-roll selection
 
 ### Voice Manifest Contract
 
@@ -255,6 +277,10 @@ Primary structural markers currently used by downstream tooling:
 - `index`
 - `scene_start`
 - `scene_end`
+- `scene_source`
+- `scene_confidence`
+- `scene_evidence`
+- `scene_characters`
 - `text`
 - `broll`
 - `audio_start_s`
@@ -266,6 +292,7 @@ This manifest is the primary sync contract for `stage5_render_video.py`.
 
 `stage0_index_visuals.py` writes a JSON list where each entry contains:
 
+- optional `id` (when absent, loaders assign `visual:NNN`)
 - `start` (HH:MM:SS.mmm, always within `[0, video_duration]` after validation)
 - `end` (HH:MM:SS.mmm, clamped to video duration, always greater than `start`)
 - `summary`
@@ -273,6 +300,8 @@ This manifest is the primary sync contract for `stage5_render_video.py`.
 - `is_action`
 - `confidence`
 - `characters`
+
+These segments exist for non-dialogue grounding. Dialogue beats should anchor to SRT instead of requiring duplicate Stage 0 coverage.
 
 Every segment in the written file has already passed `validate_visual_segments()`. Downstream stages should not re-check bounds but may call the validator again defensively.
 
