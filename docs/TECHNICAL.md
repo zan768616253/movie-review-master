@@ -30,7 +30,7 @@ movie-review-master/
         __init__.py
         base.py
         gemini.py
-        ollama.py
+        ollama.py (removed)
       stage1_parse_subtitles.py
       stage2_generate_script.py
       stage3_generate_audio.py
@@ -191,8 +191,8 @@ Shared helpers used by multiple pipeline stages.
 Strategy implementations driven by `stage0_index_visuals.py`.
 
 - `base.py` — `VisualIndexerStrategy` abstract class and the `merge_segments` helper.
-- `gemini.py` — Gemini 3 Flash/Pro backend. Model is overridable via `--model`.
-- `ollama.py` — local Qwen2.5-VL fallback.
+- `gemini.py` — Gemini 3 Flash backend used by Stage 0. Character tags are inferred automatically when the model is confident.
+- `ollama.py` — removed.
 
 ### `app/tools/transcribe_audio.py`
 

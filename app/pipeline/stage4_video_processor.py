@@ -29,6 +29,7 @@ from app.pipeline.common.video_encoder import (
     DEFAULT_ENCODER,
     ENCODER_CHOICES,
     encoder_ffmpeg_args,
+    hwaccel_decode_args,
     resolve_encoder,
 )
 
@@ -182,6 +183,7 @@ def extract_clip(video_path: Path, start_s: float, end_s: float, out_path: Path,
         "-y",
         "-loglevel",
         "error",
+        *hwaccel_decode_args(codec),
         "-ss",
         seconds_to_timestamp(start_s),
         "-i",
@@ -195,12 +197,13 @@ def extract_clip(video_path: Path, start_s: float, end_s: float, out_path: Path,
     subprocess.run(cmd, check=True)
 
 
-def extract_keyframe(video_path: Path, at_s: float, out_path: Path) -> None:
+def extract_keyframe(video_path: Path, at_s: float, out_path: Path, codec: str = "libx264") -> None:
     cmd = [
         "ffmpeg",
         "-y",
         "-loglevel",
         "error",
+        *hwaccel_decode_args(codec),
         "-ss",
         seconds_to_timestamp(at_s),
         "-i",
@@ -342,7 +345,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not args.skip_keyframes and clip_plan is not None:
             keyframe_path = keyframes_dir / f"keyframe_{scene.index:03d}.jpg"
             try:
-                extract_keyframe(video_path, timestamp_to_seconds(clip_plan.keyframe_time), keyframe_path)
+                extract_keyframe(video_path, timestamp_to_seconds(clip_plan.keyframe_time), keyframe_path, codec)
             except subprocess.CalledProcessError as exc:
                 print(f"  ffmpeg failed: {exc}", file=sys.stderr)
                 failures += 1

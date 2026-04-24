@@ -29,6 +29,34 @@ def nvenc_available() -> bool:
     return "h264_nvenc" in result.stdout
 
 
+@lru_cache(maxsize=1)
+def cuda_decode_available() -> bool:
+    """Return True when the local ffmpeg lists cuda as a hwaccel."""
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-hwaccels"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+    return "cuda" in result.stdout
+
+
+def hwaccel_decode_args(codec: str) -> list[str]:
+    """Return ffmpeg input-decoder flags. Must be placed before each ``-i``.
+
+    Only enabled when the chosen encoder is NVENC and the local ffmpeg
+    advertises cuda. Decoding in software while encoding on NVENC still
+    works, but we prefer full GPU when available — it halves wallclock on
+    long re-encodes and keeps the CPU free for everything else.
+    """
+    if codec == "h264_nvenc" and cuda_decode_available():
+        return ["-hwaccel", "cuda"]
+    return []
+
+
 def resolve_encoder(requested: str) -> str:
     """Map an --encoder flag value to the concrete ffmpeg codec name."""
     if requested == "auto":

@@ -22,6 +22,7 @@ from app.pipeline.common.video_encoder import (
     DEFAULT_ENCODER,
     ENCODER_CHOICES,
     encoder_ffmpeg_args,
+    hwaccel_decode_args,
     resolve_encoder,
 )
 
@@ -80,6 +81,7 @@ def render_excerpt(
     """
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
+        *hwaccel_decode_args(codec),
         "-ss", f"{max(0.0, start_s):.3f}",
         "-i", str(source_path),
         "-t", f"{target_duration:.3f}",

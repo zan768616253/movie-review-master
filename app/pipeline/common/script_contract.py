@@ -204,8 +204,7 @@ class VisualSegmentDiagnostics:
 
 def validate_visual_segments(
     segments: list[dict[str, object]],
-    video_duration_s: float,
-    max_segment_duration_s: float = MAX_VISUAL_SEGMENT_DURATION_S,
+    video_duration_s: float,    
 ) -> tuple[list[dict[str, object]], VisualSegmentDiagnostics]:
     """Clamp and filter visual segments against the real video duration.
 
@@ -239,7 +238,7 @@ def validate_visual_segments(
             segment["end"] = seconds_to_timestamp(end_s)
             diagnostics.clamped_to_eof += 1
 
-        if (end_s - start_s) > max_segment_duration_s:
+        if (end_s - start_s) > MAX_VISUAL_SEGMENT_DURATION_S:
             diagnostics.dropped_too_long += 1
             continue
 

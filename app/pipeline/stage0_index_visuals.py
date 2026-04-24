@@ -1,5 +1,5 @@
 """Stage 0: Visual Indexing.
-Split a long movie into chunks, use Gemini 3 Flash or Ollama local models to index visual segments,
+Split a long movie into chunks, use Gemini 3 Flash to index visual segments,
 and merge them into a single visual_segments.json.
 """
 
@@ -10,34 +10,18 @@ from typing import Sequence
 
 from app.pipeline.common.json_io import dump_json
 from app.pipeline.common.script_contract import get_video_duration, validate_visual_segments
-from app.pipeline.stage0_indexers import GeminiStrategy, OllamaStrategy
+from app.pipeline.stage0_indexers import GeminiStrategy
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="index-visuals",
-        description="Stage 0: Index visuals using Gemini or Ollama.",
+        description="Stage 0: Index visuals using Gemini.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--video", type=Path, required=True, help="Path to full movie file")
     parser.add_argument("--output", type=Path, help="Path to output visual_segments.json")
-    parser.add_argument("--characters", type=str, help="Comma-separated list of characters to identify")
-    parser.add_argument("--chunk-minutes", type=int, default=10, help="Split movie into X minute chunks")
     parser.add_argument("--tmp-dir", type=Path, default=Path("tmp/indexing"), help="Temp directory for chunks")
-
-    parser.add_argument(
-        "--strategy",
-        type=str,
-        choices=["gemini", "ollama"],
-        default="gemini",
-        help="Backend strategy to use for visual extraction",
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default=None,
-        help="Override the default model name for the chosen strategy (e.g. gemini-3-pro-preview)",
-    )
     return parser
 
 
@@ -49,16 +33,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Error: Video file not found: {video_path}")
         return 1
 
-    characters = [c.strip() for c in args.characters.split(",")] if args.characters else []
     args.tmp_dir.mkdir(parents=True, exist_ok=True)
 
-    if args.strategy == "gemini":
-        strategy = GeminiStrategy(model_name=args.model) if args.model else GeminiStrategy()
-    else:
-        strategy = OllamaStrategy()
+    strategy = GeminiStrategy()
 
     try:
-        raw_segments = strategy.index_video(video_path, characters, args.chunk_minutes, args.tmp_dir)
+        raw_segments = strategy.index_video(video_path, args.tmp_dir)
 
         video_duration_s = get_video_duration(video_path)
         segments, diagnostics = validate_visual_segments(raw_segments, video_duration_s)
@@ -68,7 +48,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_path = args.output if args.output else video_path.parent / "visual_segments.json"
         dump_json(output_path, segments)
 
-        print(f"\nSuccess! Kept {len(segments)}/{len(raw_segments)} segments using {args.strategy} strategy -> {output_path}")
+        print(f"\nSuccess! Kept {len(segments)}/{len(raw_segments)} segments -> {output_path}")
     except Exception as e:
         print(f"Error during processing: {e}")
         return 1

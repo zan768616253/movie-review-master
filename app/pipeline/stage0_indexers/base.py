@@ -35,8 +35,6 @@ class VisualIndexerStrategy(ABC):
     def index_video(
         self,
         video_path: Path,
-        characters: List[str],
-        chunk_minutes: int,
         tmp_dir: Path,
     ) -> List[Dict]:
         """Index visual segments from a video and return a merged list of JSON segments."""
