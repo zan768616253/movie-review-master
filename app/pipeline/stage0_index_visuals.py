@@ -4,11 +4,11 @@ and merge them into a single visual_segments.json.
 """
 
 import argparse
-import json
 import sys
 from pathlib import Path
 from typing import Sequence
 
+from app.pipeline.common.json_io import dump_json
 from app.pipeline.common.script_contract import get_video_duration, validate_visual_segments
 from app.pipeline.stage0_indexers import GeminiStrategy, OllamaStrategy
 
@@ -66,7 +66,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Visual segment validation: {diagnostics.as_summary()} (movie duration {video_duration_s:.1f}s)")
 
         output_path = args.output if args.output else video_path.parent / "visual_segments.json"
-        output_path.write_text(json.dumps(segments, indent=2, ensure_ascii=False), encoding="utf-8")
+        dump_json(output_path, segments)
 
         print(f"\nSuccess! Kept {len(segments)}/{len(raw_segments)} segments using {args.strategy} strategy -> {output_path}")
     except Exception as e:

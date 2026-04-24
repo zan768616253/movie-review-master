@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import argparse
 import sys
-import json
 from pathlib import Path
 from typing import Any
 
+from app.pipeline.common.json_io import load_json
 from app.pipeline.common.script_contract import seconds_to_timestamp
 from app.pipeline.stage1_parse_subtitles import parse_subtitles
 
@@ -54,7 +54,7 @@ def build_srt_reference(subtitle_srt_path: Path) -> str:
 
 
 def build_visual_reference(visual_segments_path: Path) -> str:
-    segments: list[dict[str, Any]] = json.loads(visual_segments_path.read_text(encoding="utf-8"))
+    segments: list[dict[str, Any]] = load_json(visual_segments_path)
     lines = []
     for index, segment in enumerate(segments, 1):
         segment_id = str(segment.get("id") or f"visual:{index:03d}")

@@ -10,14 +10,14 @@ Priority when narration outlasts the requested hero scene:
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-from app.pipeline.common.script_contract import load_visual_segments, timestamp_to_seconds
+from app.pipeline.common.json_io import load_json
+from app.pipeline.common.script_contract import get_video_duration, load_visual_segments, timestamp_to_seconds
 from app.pipeline.common.video_encoder import (
     DEFAULT_ENCODER,
     ENCODER_CHOICES,
@@ -54,22 +54,7 @@ ACTION_HINTS = (
 
 
 def probe_duration(path: Path) -> float:
-    out = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            str(path),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return float(out.stdout.strip())
+    return get_video_duration(path)
 
 
 def normalize_scale_filter() -> str:
@@ -142,7 +127,7 @@ def default_clip_manifest_path(clips_dir: Path) -> Path:
 def load_clip_manifest(path: Path | None) -> dict[int, dict[str, object]]:
     if path is None or not path.exists():
         return {}
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = load_json(path)
     return {int(entry["index"]): entry for entry in payload}
 
 
@@ -394,7 +379,7 @@ def main(argv=None) -> int:
         print(f"Visual segments not found: {args.visual_segments}", file=sys.stderr)
         return 1
 
-    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    manifest = load_json(args.manifest)
     clip_manifest = load_clip_manifest(args.clip_manifest)
     visual_segments = load_visual_segments(args.visual_segments)
     codec = resolve_encoder(args.encoder)

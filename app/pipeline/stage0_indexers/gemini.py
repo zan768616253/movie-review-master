@@ -9,7 +9,7 @@ from google import genai
 
 from .base import VisualIndexerStrategy, get_video_duration, merge_segments
 
-DEFAULT_MODEL = "gemini-3-flash-preview"
+DEFAULT_MODEL = "gemini-3-flash"
 DEFAULT_SEGMENT_PACE = "3"
 
 

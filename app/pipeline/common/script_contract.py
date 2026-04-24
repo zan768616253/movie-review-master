@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import json
 import re
 import shlex
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
+
+from app.pipeline.common.json_io import load_json
 
 
 LEGACY_SCENE_RE = re.compile(
@@ -171,7 +172,7 @@ def overlapping_visual_segments(
 def load_visual_segments(path: Path | None) -> list[dict[str, object]]:
     if path is None or not path.exists():
         return []
-    segments: list[dict[str, object]] = json.loads(path.read_text(encoding="utf-8"))
+    segments: list[dict[str, object]] = load_json(path)
     for index, segment in enumerate(segments, 1):
         segment.setdefault("id", f"visual:{index:03d}")
     return segments
@@ -248,13 +249,31 @@ def validate_visual_segments(
     return validated, diagnostics
 
 
-def get_video_duration(video_path: Path) -> float:
+def probe_media_duration(media_path: Path) -> float | None:
     cmd = [
         "ffprobe",
         "-v", "error",
         "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1",
-        str(video_path),
+        str(media_path),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    return float(result.stdout.strip())
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+    output = result.stdout.strip()
+    if not output:
+        return None
+
+    try:
+        return float(output)
+    except ValueError:
+        return None
+
+
+def get_video_duration(video_path: Path) -> float:
+    duration = probe_media_duration(video_path)
+    if duration is None:
+        raise RuntimeError(f"Unable to determine media duration for {video_path}")
+    return duration

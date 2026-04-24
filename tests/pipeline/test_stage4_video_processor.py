@@ -1,4 +1,5 @@
 import json
+import tempfile
 from pathlib import Path
 
 from app.pipeline.stage4_video_processor import (
@@ -75,9 +76,7 @@ def test_load_visual_segments_assigns_default_ids(tmp_path: Path) -> None:
 
 
 def parse_scene_markers_from_text(text: str):
-    path = Path(__file__).with_name("_tmp_scene_script.txt")
-    path.write_text(text, encoding="utf-8")
-    try:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "script.txt"
+        path.write_text(text, encoding="utf-8")
         return parse_scene_markers(path)
-    finally:
-        path.unlink(missing_ok=True)

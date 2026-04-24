@@ -8,7 +8,6 @@ available, extended to the nearest safe visual boundary.
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
@@ -25,6 +24,7 @@ from app.pipeline.common.script_contract import (
     seconds_to_timestamp,
     timestamp_to_seconds,
 )
+from app.pipeline.common.json_io import dump_json
 from app.pipeline.common.video_encoder import (
     DEFAULT_ENCODER,
     ENCODER_CHOICES,
@@ -216,10 +216,7 @@ def extract_keyframe(video_path: Path, at_s: float, out_path: Path) -> None:
 
 def write_clip_manifest(output_dir: Path, clip_plans: list[ClipPlan], file_name: str) -> Path:
     manifest_path = output_dir / file_name
-    manifest_path.write_text(
-        json.dumps([asdict(plan) for plan in clip_plans], indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    dump_json(manifest_path, [asdict(plan) for plan in clip_plans])
     return manifest_path
 
 

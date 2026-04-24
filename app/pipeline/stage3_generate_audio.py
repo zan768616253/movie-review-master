@@ -8,7 +8,6 @@ manifest that keeps the render sync contract intact.
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import sys
 import time
@@ -19,12 +18,14 @@ from typing import Optional
 import numpy as np
 import torch
 
+from app.pipeline.common.json_io import dump_json, load_json
 from app.pipeline.common.script_contract import (
     BROLL_LINE_RE,
     STRUCTURAL_MARKER_RE,
     SceneMarker,
     parse_broll_ranges,
     parse_scene_marker,
+    probe_media_duration,
 )
 
 
@@ -183,32 +184,7 @@ def load_model():
 
 
 def probe_audio_duration(audio_path: Path) -> float | None:
-    try:
-        result = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
-                str(audio_path),
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
-
-    text = result.stdout.strip()
-    if not text:
-        return None
-    try:
-        return float(text)
-    except ValueError:
-        return None
+    return probe_media_duration(audio_path)
 
 
 def resolve_voice_clone_mode(
@@ -415,14 +391,11 @@ def write_manifest(
     audio_ranges: list[tuple[float, float]],
     out_path: Path,
 ) -> None:
-    out_path.write_text(
-        json.dumps(build_manifest_payload(chunks, audio_ranges), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    dump_json(out_path, build_manifest_payload(chunks, audio_ranges))
 
 
 def load_manifest_timings(manifest_path: Path) -> list[tuple[float, float]]:
-    existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+    existing = load_json(manifest_path)
     return [
         (float(entry["audio_start_s"]), float(entry["audio_end_s"]))
         for entry in existing
