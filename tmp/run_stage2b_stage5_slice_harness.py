@@ -175,6 +175,7 @@ def run_stage3(paths: HarnessPaths, args: argparse.Namespace) -> int:
     paths.ensure_dirs()
     return stage3_main([
         "--script", str(paths.grounded_script_path),
+        "--style", str(paths.style_path),
         "--output-dir", str(paths.stage3_dir),
         "--tag", args.stage3_tag,
     ])

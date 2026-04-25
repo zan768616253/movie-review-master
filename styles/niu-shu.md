@@ -10,7 +10,8 @@ This is not a plot summary. It is an **audience-retention machine**. Every rule 
 
 **Perspective:** Third-person omniscient, detached narrator
 **Tone:** Deadpan, fast-paced, highly sarcastic — *tuned to the movie's genre* (see Section 5.5)
-**Target Duration:** 7-12 minutes (~1,800-2,800 Chinese characters)
+**Target Duration:** 7-12 minutes
+**Character-count Window:** ~1,800-2,800 Chinese characters — calibrated for this style's dense, fast-paced delivery (long sentences, minimal breath pauses, ~240-260 chars/min via Qwen3-TTS Voice Clone on the Niu Shu base voice). Different styles will need different windows; see `_style_contract.md` §4 #5.
 **Language:** Chinese (Mandarin) by default; English adaptation supported
 
 > **Style pairing:** This is the *external observer* style — detached, sarcastic. For the intimate confessional alternative, see [`first-person-pov.md`](first-person-pov.md). The two styles have **opposite rules** on character naming (archetypes vs. original names) and narrator stance (sarcastic vs. sincere) — do not mix them within a single script.
@@ -355,42 +356,44 @@ These rules cannot be broken under any circumstances:
 
 ## 10. Script Output Format
 
-When generating the script, output as plain text with scene timestamp markers (required by the pipeline — `stage5_render_video.py` uses these to pull video clips):
+This style file is consumed by Stage 2's **writer pass**. Writer-pass output uses `[BEAT N]` markers, not timestamps. The grounder pass replaces each `[BEAT N]` with a `[SCENE …]` marker — that contract is owned by `app/pipeline/stage2_generate_script.py`'s grounder prompt, not this style file.
+
+The structural skeleton:
 
 ```
 [TITLE] 注意看，[short hook summary that becomes the video title]
 
 [HOOK]
-[SCENE: HH:MM:SS-HH:MM:SS]
+[BEAT 1]
 注意看，这个男人叫小帅...
 
 [ACT 1 - SETUP]
-[SCENE: HH:MM:SS-HH:MM:SS]
-(narrative text, ~480 characters)
+[BEAT 2]
+(narrative text)
+[BEAT 3]
+(narrative text — Act 1 totals ~480 characters)
 
 [ACT 2 - ESCALATION]
-[SCENE: HH:MM:SS-HH:MM:SS]
-(narrative text, ~720 characters — break into multiple [SCENE] blocks if the act spans non-contiguous movie timestamps)
+[BEAT N]
+(narrative text — Act 2 totals ~720 characters)
 
 [ACT 3 - CLIMAX]
-[SCENE: HH:MM:SS-HH:MM:SS]
-(narrative text, ~720 characters)
+[BEAT N]
+(narrative text — Act 3 totals ~720 characters)
 
 [ACT 4 - RESOLUTION]
-[SCENE: HH:MM:SS-HH:MM:SS]
-(narrative text, ~480 characters)
+[BEAT N]
+(narrative text — Act 4 totals ~480 characters)
 
 [CLOSING]
+[BEAT N]
 我们下期再见。
 ```
 
-**Rules for `[SCENE]` markers:**
-- Every narration block must be preceded by a `[SCENE: start-end]` marker referencing the movie's original timestamps (not the review's timestamps).
-- Markers are stripped from the final voiceover text but consumed by `stage5_render_video.py` to select video clips.
-- A single paragraph may need multiple `[SCENE]` markers if it covers non-contiguous movie segments.
-- Act markers `[ACT X]`, `[HOOK]`, `[CLOSING]` are also stripped from voiceover but kept for agent/human review.
-
-The final `script_clean.txt` (after stripping all markers) should read as one continuous narration.
+**Rules for markers:**
+- Each beat is one breathable spoken sentence or a short paragraph (~30-90 Chinese characters). Aim for 30-60 beats total across the script.
+- Structural markers `[TITLE]`, `[HOOK]`, `[ACT N]`, `[CLOSING]` and `[BEAT N]` markers are stripped from the final voiceover but kept for downstream stages and human review.
+- Do NOT emit `[SCENE …]` or `[BROLL]` markers in the writer pass — the grounder pass adds those after evidence-based alignment to the SRT and visual-segment indexes.
 
 ---
 

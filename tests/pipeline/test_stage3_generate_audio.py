@@ -3,31 +3,107 @@ from pathlib import Path
 import pytest
 
 from app.pipeline.stage3_generate_audio import (
-    DEFAULT_REF_AUDIO,
-    DEFAULT_REF_TEXT,
+    DEFAULT_STYLE_PATH,
     build_voice_prompt,
     main,
     parse_script_chunks,
-    prepare_reference_audio_for_prompt,
-    resolve_voice_clone_mode,
+    resolve_output_tag,
+    resolve_voice_reference,
 )
 
 
-def test_default_reference_files_exist() -> None:
-    assert DEFAULT_REF_AUDIO.exists()
-    assert DEFAULT_REF_TEXT.exists()
+def test_default_style_reference_files_exist() -> None:
+    voice_reference = resolve_voice_reference(DEFAULT_STYLE_PATH, None, None)
+
+    assert DEFAULT_STYLE_PATH.exists()
+    assert voice_reference.reference_dir == DEFAULT_STYLE_PATH.parent / "voice-assets" / "niu-shu" / "reference"
+    assert voice_reference.audio_path.exists()
+    assert voice_reference.text_path.exists()
 
 
-def test_main_allows_dry_run_without_explicit_reference_paths(tmp_path: Path) -> None:
+def test_resolve_voice_reference_uses_style_stem_directory() -> None:
+    voice_reference = resolve_voice_reference(Path("styles/first-person-pov.md"), None, None)
+
+    assert voice_reference.reference_dir == Path("styles/voice-assets/first-person-pov/reference")
+    assert voice_reference.audio_path == Path("styles/voice-assets/first-person-pov/reference/clone_reference.mp3")
+    assert voice_reference.text_path == Path("styles/voice-assets/first-person-pov/reference/clone_reference.txt")
+
+
+def test_resolve_voice_reference_prefers_explicit_overrides(tmp_path: Path) -> None:
+    ref_audio = tmp_path / "custom.mp3"
+    ref_text = tmp_path / "custom.txt"
+    ref_audio.write_bytes(b"audio")
+    ref_text.write_text("hello", encoding="utf-8")
+
+    voice_reference = resolve_voice_reference(DEFAULT_STYLE_PATH, ref_audio, ref_text)
+
+    assert voice_reference.audio_path == ref_audio.resolve()
+    assert voice_reference.text_path == ref_text.resolve()
+
+
+def test_resolve_output_tag_defaults_to_style_stem() -> None:
+    assert resolve_output_tag(Path("styles/first-person-pov.md"), None) == "first-person-pov"
+    assert resolve_output_tag(Path("styles/first-person-pov.md"), "custom-tag") == "custom-tag"
+
+
+def test_main_uses_style_default_reference_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script_path = tmp_path / "script.txt"
+    script_path.write_text(
+        "[TITLE] Demo\n[SCENE: 00:00:01 - 00:00:10]\n一段旁白\n",
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr("app.pipeline.stage3_generate_audio.load_model", lambda: object())
+
+    def fake_build_voice_prompt(model, ref_audio, ref_text_path):
+        captured["model"] = model
+        captured["ref_audio"] = ref_audio
+        captured["ref_text_path"] = ref_text_path
+        return {"prompt": True}
+
+    def fake_run_full_generation(model, chunks, voice_prompt, mp3_path, manifest_path):
+        captured["run_model"] = model
+        captured["chunks"] = chunks
+        captured["voice_prompt"] = voice_prompt
+        captured["mp3_path"] = mp3_path
+        captured["manifest_path"] = manifest_path
+
+    monkeypatch.setattr("app.pipeline.stage3_generate_audio.build_voice_prompt", fake_build_voice_prompt)
+    monkeypatch.setattr("app.pipeline.stage3_generate_audio.run_full_generation", fake_run_full_generation)
+
+    result = main(["--script", str(script_path), "--output-dir", str(tmp_path)])
+    voice_reference = resolve_voice_reference(DEFAULT_STYLE_PATH, None, None)
+
+    assert result == 0
+    assert captured["ref_audio"] == voice_reference.audio_path
+    assert captured["ref_text_path"] == voice_reference.text_path
+
+
+def test_main_reports_missing_style_reference_audio(tmp_path: Path, capsys) -> None:
     script_path = tmp_path / "script.txt"
     script_path.write_text(
         "[TITLE] Demo\n[SCENE: 00:00:01 - 00:00:10]\n一段旁白\n",
         encoding="utf-8",
     )
 
-    result = main(["--script", str(script_path), "--output-dir", str(tmp_path), "--dry-run"])
+    result = main([
+        "--script",
+        str(script_path),
+        "--style",
+        str(Path("styles/first-person-pov.md")),
+        "--output-dir",
+        str(tmp_path),
+    ])
 
-    assert result == 0
+    captured = capsys.readouterr()
+    assert result == 1
+    assert "Reference audio not found:" in captured.err
+    assert "styles/voice-assets/first-person-pov/reference" in captured.err
+    assert "pass --ref-audio" in captured.err
 
 
 def test_parse_script_chunks_supports_grounded_scene_attributes() -> None:
@@ -58,92 +134,7 @@ def test_parse_script_chunks_supports_grounded_scene_attributes() -> None:
     assert chunks[2].scene_source is None
 
 
-def test_main_rejects_grounding_prompt_instead_of_final_script(tmp_path: Path, capsys) -> None:
-    script_path = tmp_path / "script.txt"
-    script_path.write_text(
-        """
-# Role
-alignment editor
-
-<<<BEATS_START>>>
-[TITLE] Demo
-[HOOK]
-[BEAT 1] 第一段
-<<<BEATS_END>>>
-
-<<<SRT_REFERENCE_START>>>
-[srt:001] 00:00:01.000 --> 00:00:03.000 :: 台词
-<<<SRT_REFERENCE_END>>>
-""".strip(),
-        encoding="utf-8",
-    )
-
-    result = main(["--script", str(script_path), "--output-dir", str(tmp_path), "--dry-run"])
-
-    captured = capsys.readouterr()
-    assert result == 1
-    assert "looks like the Stage 2 grounding prompt" in captured.err
-
-
-def test_resolve_voice_clone_mode_auto_falls_back_to_x_vector_for_long_reference(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "app.pipeline.stage3_generate_audio.probe_audio_duration",
-        lambda _path: 682.15,
-    )
-
-    mode = resolve_voice_clone_mode(Path("dummy.mp3"), "auto", 30.0)
-
-    assert mode == "x-vector"
-
-
-def test_resolve_voice_clone_mode_auto_keeps_icl_for_short_reference(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "app.pipeline.stage3_generate_audio.probe_audio_duration",
-        lambda _path: 12.5,
-    )
-
-    mode = resolve_voice_clone_mode(Path("dummy.mp3"), "auto", 30.0)
-
-    assert mode == "icl"
-
-
-def test_prepare_reference_audio_for_prompt_trims_long_xvector_reference(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    ref_audio = tmp_path / "ref.mp3"
-    ref_audio.write_bytes(b"dummy")
-    ffmpeg_calls: list[list[str]] = []
-
-    monkeypatch.setattr(
-        "app.pipeline.stage3_generate_audio.probe_audio_duration",
-        lambda _path: 682.15,
-    )
-
-    def fake_run(command: list[str], check: bool) -> None:
-        assert check is True
-        ffmpeg_calls.append(command)
-        Path(command[-1]).write_bytes(b"trimmed")
-
-    monkeypatch.setattr("app.pipeline.stage3_generate_audio.subprocess.run", fake_run)
-
-    prepared_ref_audio, duration_s = prepare_reference_audio_for_prompt(
-        ref_audio,
-        "x-vector",
-        30.0,
-        tmp_path,
-    )
-
-    assert duration_s == 682.15
-    assert prepared_ref_audio == tmp_path / "ref.xvector_30s.wav"
-    assert ffmpeg_calls
-    assert ffmpeg_calls[0][-1] == str(prepared_ref_audio)
-
-
-def test_build_voice_prompt_ignores_missing_transcript_in_xvector_mode(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_build_voice_prompt_passes_full_transcript_text(tmp_path: Path) -> None:
     class DummyModel:
         def __init__(self) -> None:
             self.calls: list[dict[str, object]] = []
@@ -154,31 +145,36 @@ def test_build_voice_prompt_ignores_missing_transcript_in_xvector_mode(
 
     ref_audio = tmp_path / "ref.wav"
     ref_audio.write_bytes(b"audio")
-    trimmed_audio = tmp_path / "trimmed.wav"
-    trimmed_audio.write_bytes(b"trimmed")
-
-    monkeypatch.setattr(
-        "app.pipeline.stage3_generate_audio.resolve_voice_clone_mode",
-        lambda _ref_audio, _requested_mode, _max_seconds: "x-vector",
-    )
-    monkeypatch.setattr(
-        "app.pipeline.stage3_generate_audio.prepare_reference_audio_for_prompt",
-        lambda _ref_audio, _resolved_mode, _max_seconds, _scratch_dir: (trimmed_audio, 682.15),
-    )
+    ref_text = tmp_path / "ref.txt"
+    ref_text.write_text("完整参考文本", encoding="utf-8")
 
     model = DummyModel()
     result = build_voice_prompt(
         model,
         ref_audio,
-        tmp_path / "missing.txt",
-        tmp_path,
+        ref_text,
     )
 
     assert result == {"ok": True}
     assert model.calls == [
         {
-            "ref_audio": str(trimmed_audio),
-            "ref_text": None,
-            "x_vector_only_mode": True,
+            "ref_audio": str(ref_audio),
+            "ref_text": "完整参考文本",
         }
     ]
+
+
+def test_build_voice_prompt_requires_transcript_file(tmp_path: Path) -> None:
+    class DummyModel:
+        def create_voice_clone_prompt(self, **kwargs: object) -> dict[str, object]:
+            raise AssertionError("create_voice_clone_prompt should not be called when the transcript is missing")
+
+    ref_audio = tmp_path / "ref.wav"
+    ref_audio.write_bytes(b"audio")
+
+    with pytest.raises(FileNotFoundError):
+        build_voice_prompt(
+            DummyModel(),
+            ref_audio,
+            tmp_path / "missing.txt",
+        )

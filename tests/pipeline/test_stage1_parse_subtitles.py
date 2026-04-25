@@ -108,20 +108,6 @@ def test_main_writes_default_output(tmp_path: Path, monkeypatch, capsys):
     assert f"Generated subtitle script: {expected_output_path}" in captured.out
 
 
-def test_main_prints_to_stdout(tmp_path: Path, monkeypatch, capsys):
-    sample_movie_path = copy_fixture(tmp_path, "sample_movie.ass")
-
-    monkeypatch.setattr(sys, "argv", ["parse-subtitles", str(sample_movie_path), "--stdout"])
-
-    exit_code = main()
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured.out == EXPECTED_SAMPLE_MOVIE_ASS_SCRIPTS + "\n"
-    assert captured.err == ""
-    assert not sample_movie_path.with_suffix(".txt").exists()
-
-
 def test_main_writes_custom_output_path(tmp_path: Path, monkeypatch):
     sample_movie_path = copy_fixture(tmp_path, "sample_movie.srt")
     output_path = tmp_path / "custom_output.txt"
@@ -161,6 +147,7 @@ def test_main_reports_unsupported_format(tmp_path: Path, monkeypatch, capsys):
 
     assert exit_code == 1
     assert "Unsupported subtitle format" in captured.err
+
 
 @pytest.mark.parametrize(
     ("fixture_name", "expected_texts"),

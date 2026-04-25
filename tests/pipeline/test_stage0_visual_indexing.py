@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from app.pipeline.stage0_indexers.base import (
     seconds_to_timestamp,
+    snap_to_shot_boundaries,
     timestamp_to_seconds,
     merge_segments,
 )
@@ -65,6 +66,32 @@ class TestMergeSegments:
         assert merged[0]["extra"] == "kept"
 
 
+class TestSnapToShotBoundaries:
+    def test_snaps_start_and_end_within_tolerance(self):
+        segments = [{"start": "00:00:04.800", "end": "00:00:09.300", "summary": "x"}]
+        snapped = snap_to_shot_boundaries(segments, [5.0, 9.0], tolerance_s=0.5)
+        assert snapped[0]["start"] == "00:00:05.000"
+        assert snapped[0]["end"] == "00:00:09.000"
+
+    def test_leaves_timestamps_alone_when_no_boundary_is_within_tolerance(self):
+        segments = [{"start": "00:00:02.000", "end": "00:00:07.000", "summary": "x"}]
+        snapped = snap_to_shot_boundaries(segments, [5.0], tolerance_s=0.5)
+        assert snapped[0]["start"] == "00:00:02.000"
+        assert snapped[0]["end"] == "00:00:07.000"
+
+    def test_empty_boundaries_is_noop(self):
+        segments = [{"start": "00:00:02.000", "end": "00:00:07.000", "summary": "x"}]
+        assert snap_to_shot_boundaries(segments, [], tolerance_s=1.5) == segments
+
+    def test_keeps_originals_when_snap_would_invert_segment(self):
+        # Both start and end would snap to 5.0, which would zero-length the
+        # segment; the helper must keep the originals in that case.
+        segments = [{"start": "00:00:05.200", "end": "00:00:05.600", "summary": "x"}]
+        snapped = snap_to_shot_boundaries(segments, [5.0], tolerance_s=1.5)
+        assert snapped[0]["start"] == "00:00:05.200"
+        assert snapped[0]["end"] == "00:00:05.600"
+
+
 # ---------------------------------------------------------------------------
 # Gemini strategy unit tests
 # ---------------------------------------------------------------------------
@@ -85,18 +112,21 @@ def _build_fake_gemini_client(response_text: str) -> MagicMock:
 
 
 class TestGeminiStrategy:
+    @patch("app.pipeline.stage0_indexers.gemini.detect_shot_boundaries", return_value=[])
     @patch("app.pipeline.stage0_indexers.gemini.genai")
     @patch("app.pipeline.stage0_indexers.gemini.get_video_duration")
     @patch.object(GeminiStrategy, "_extract_chunk")
-    def test_index_video_splits_and_merges(self, mock_extract, mock_duration, mock_genai, tmp_path):
+    def test_index_video_splits_and_merges(
+        self, mock_extract, mock_duration, mock_genai, mock_boundaries, tmp_path,
+    ):
         tmp_idx_dir = tmp_path / "tmp"
         tmp_idx_dir.mkdir()
 
-        mock_duration.return_value = 900.0  # 15 mins -> 2 chunks
+        mock_duration.return_value = 600.0  # 10 mins -> 2 chunks of 5 minutes
 
         response_text = json.dumps([{
             "start": "00:00:00.000", "end": "00:00:03.000", "summary": "test",
-            "ocr_text": "", "is_action": True, "confidence": 0.9, "characters": []
+            "ocr_text": "", "characters": []
         }])
         mock_genai.Client.return_value = _build_fake_gemini_client(response_text)
 
@@ -106,12 +136,15 @@ class TestGeminiStrategy:
         assert len(results) == 2
         assert mock_extract.call_count == 2
         assert results[0]["start"] == "00:00:00.000"
-        assert results[1]["start"] == "00:10:00.000"
+        assert results[1]["start"] == "00:05:00.000"
 
+    @patch("app.pipeline.stage0_indexers.gemini.detect_shot_boundaries", return_value=[])
     @patch("app.pipeline.stage0_indexers.gemini.genai")
     @patch("app.pipeline.stage0_indexers.gemini.get_video_duration")
     @patch.object(GeminiStrategy, "_extract_chunk")
-    def test_prompt_requests_automatic_character_identification(self, mock_extract, mock_duration, mock_genai, tmp_path):
+    def test_prompt_contract_covers_timestamps_characters_and_dialogue_skip(
+        self, mock_extract, mock_duration, mock_genai, mock_boundaries, tmp_path,
+    ):
         tmp_idx_dir = tmp_path / "tmp"
         tmp_idx_dir.mkdir()
         mock_duration.return_value = 60.0  # 1 min -> 1 chunk
@@ -123,5 +156,11 @@ class TestGeminiStrategy:
         strategy.index_video(tmp_path / "m.mp4", tmp_idx_dir)
 
         prompt_text = mock_client.models.generate_content.call_args.kwargs["contents"][1]
-        assert "Identify recurring or visually obvious characters" in prompt_text
-        assert 'leave "characters" empty' in prompt_text
+        # Timestamps: model is told to read burned-in values, not estimate.
+        assert "burned into the TOP-LEFT corner" in prompt_text
+        assert "Do NOT estimate or round timestamps" in prompt_text
+        # Dialogue skip keeps Stage 0 focused on visual-only events.
+        assert "shot-reverse-shot dialogue" in prompt_text
+        # Characters: no guessing without visual re-identification.
+        assert "visually re-identify" in prompt_text
+        assert "NEVER guess" in prompt_text

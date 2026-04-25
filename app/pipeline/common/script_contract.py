@@ -178,9 +178,10 @@ def load_visual_segments(path: Path | None) -> list[dict[str, object]]:
     return segments
 
 
-# Upper bound for a single visual segment. The VLM is instructed to emit 3-15s
-# shot-level segments; anything longer is almost always a hallucinated end
-# timestamp (we have seen Gemini return 9-hour segments on a 2-hour movie).
+# Upper bound for a single visual segment. The VLM is instructed to emit
+# event-based segments capped at 12s; anything beyond this safety margin is
+# almost always a hallucinated end timestamp (we have seen Gemini return
+# 9-hour segments on a 2-hour movie).
 MAX_VISUAL_SEGMENT_DURATION_S = 30.0
 
 

@@ -18,10 +18,12 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Any
 
-from app.pipeline.common.json_io import load_json
-from app.pipeline.common.script_contract import seconds_to_timestamp
+from app.pipeline.common.script_contract import (
+    load_visual_segments,
+    seconds_to_timestamp,
+    timestamp_to_seconds,
+)
 from app.pipeline.stage1_parse_subtitles import parse_subtitles
 
 
@@ -35,11 +37,22 @@ GROUNDING_EDITOR_ROLE = (
     "each narration beat to either the SRT or the visual segment index, cite the "
     "evidence, and mark uncertain beats as ungrounded instead of inventing times."
 )
-SRT_PREVIEW_LINES = 40
+DEFAULT_GENRE = "general"
 
 
 def collapse_whitespace(text: str) -> str:
     return " ".join(text.split())
+
+
+def get_segment_characters(segment: dict[str, object]) -> list[str]:
+    raw_characters = segment.get("characters")
+    if not isinstance(raw_characters, list):
+        return []
+    return [character for character in raw_characters if isinstance(character, str)]
+
+
+def infer_movie_title(subtitle_srt_path: Path, explicit_title: str | None) -> str:
+    return explicit_title or subtitle_srt_path.stem
 
 
 def build_srt_reference(subtitle_srt_path: Path) -> str:
@@ -54,53 +67,84 @@ def build_srt_reference(subtitle_srt_path: Path) -> str:
 
 
 def build_visual_reference(visual_segments_path: Path) -> str:
-    segments: list[dict[str, Any]] = load_json(visual_segments_path)
+    segments = load_visual_segments(visual_segments_path)
     lines = []
     for index, segment in enumerate(segments, 1):
         segment_id = str(segment.get("id") or f"visual:{index:03d}")
-        characters = "|".join(segment.get("characters") or []) or "-"
-        confidence = float(segment.get("confidence") or 0.0)
+        characters = "|".join(get_segment_characters(segment)) or "-"
         summary = collapse_whitespace(str(segment.get("summary") or ""))
         ocr_text = collapse_whitespace(str(segment.get("ocr_text") or ""))
-        action_flag = "true" if segment.get("is_action") else "false"
         suffix = f" | ocr={ocr_text}" if ocr_text else ""
         lines.append(
-            f"[{segment_id}] {segment['start']} --> {segment['end']} | chars={characters} "
-            f"| action={action_flag} | confidence={confidence:.2f} | summary={summary}{suffix}"
+            f"[{segment_id}] {segment['start']} --> {segment['end']} "
+            f"| chars={characters} | summary={summary}{suffix}"
         )
     return "\n".join(lines)
 
 
+def build_merged_timeline(subtitle_srt_path: Path, visual_segments_path: Path) -> str:
+    """Interleave subtitle dialogue and visual-segment action by timestamp.
+
+    The merged timeline is the writer pass's single plot source: a chronological
+    ledger that exposes both spoken dialogue and silent / visual-only beats so
+    the writer can anchor narration to either anchor type.
+    """
+    subtitles = parse_subtitles(subtitle_srt_path)
+    segments = load_visual_segments(visual_segments_path)
+
+    events: list[tuple[float, str]] = []
+
+    for index, subtitle in enumerate(subtitles, 1):
+        speaker_part = f"{subtitle.speaker}: " if subtitle.speaker else ""
+        text = collapse_whitespace(subtitle.text)
+        line = (
+            f"[srt:{index:03d}] "
+            f"{seconds_to_timestamp(subtitle.start)} --> "
+            f"{seconds_to_timestamp(subtitle.end)} :: "
+            f"{speaker_part}{text}"
+        )
+        events.append((subtitle.start, line))
+
+    for index, segment in enumerate(segments, 1):
+        try:
+            start_seconds = timestamp_to_seconds(str(segment["start"]))
+        except (KeyError, ValueError):
+            continue
+
+        characters = "|".join(get_segment_characters(segment))
+        chars_part = f"chars={characters} | " if characters else ""
+        summary = collapse_whitespace(str(segment.get("summary") or ""))
+        ocr_text = collapse_whitespace(str(segment.get("ocr_text") or ""))
+        ocr_part = f" | ocr={ocr_text}" if ocr_text else ""
+        seg_id = str(segment.get("id") or f"visual:{index:03d}")
+        line = (
+            f"[{seg_id}] "
+            f"{segment['start']} --> {segment['end']} :: "
+            f"{chars_part}{summary}{ocr_part}"
+        )
+        events.append((start_seconds, line))
+
+    events.sort(key=lambda event: event[0])
+    return "\n".join(line for _, line in events)
+
+
 def build_writer_prompt(
     style_path: Path,
-    subtitle_text_path: Path,
+    subtitle_srt_path: Path,
+    visual_segments_path: Path,
     movie_title: str,
     genre: str,
-    subtitle_srt_path: Path | None = None,
 ) -> str:
     style_text = style_path.read_text(encoding="utf-8")
-    plot_text = subtitle_text_path.read_text(encoding="utf-8")
-    srt_preview = ""
-    if subtitle_srt_path is not None:
-        srt_text = subtitle_srt_path.read_text(encoding="utf-8")
-        srt_preview = "\n".join(srt_text.splitlines()[:SRT_PREVIEW_LINES])
-
-    optional_srt_section = ""
-    if srt_preview:
-        optional_srt_section = f"""
-# SRT Preview — first {SRT_PREVIEW_LINES} lines
-This is reference-only context. Do not emit timestamps or [SCENE] markers in this pass.
-<<<SRT_PREVIEW_START>>>
-{srt_preview}
-<<<SRT_PREVIEW_END>>>
-"""
+    merged_timeline = build_merged_timeline(subtitle_srt_path, visual_segments_path)
 
     return f"""# Role
 {SCRIPT_WRITER_ROLE}
 
 # Style Rulebook
-The rulebook below is the single source of truth for tone, structure,
-character naming, and genre modulation. Follow every rule exactly.
+The rulebook below is the single source of truth for tone, structure, beat
+density, character naming, length window (target duration AND character-count
+window), and genre modulation. Follow every rule exactly.
 
 <<<STYLE_RULEBOOK_START>>>
 {style_text}
@@ -110,24 +154,36 @@ character naming, and genre modulation. Follow every rule exactly.
 Title: {movie_title}
 Genre: {genre}
 
-# Plot Source — parsed subtitle plain text, in movie order
-<<<PLOT_START>>>
-{plot_text}
-<<<PLOT_END>>>
-{optional_srt_section}
+# Plot Source — chronological timeline merging dialogue (SRT) and on-screen action (visual segments)
+Each line is one event in movie order. `[srt:NNN]` lines are spoken dialogue;
+`[visual:NNN]` lines are silent or visual-only beats with character presence
+and a one-phrase action summary. Use both: dialogue lines for plot and emotional
+beats, visual lines for action beats, transitions, and re-engagement moments
+that have no dialogue. Timestamps are reference context only — do NOT emit them
+in your output.
+
+<<<TIMELINE_START>>>
+{merged_timeline}
+<<<TIMELINE_END>>>
 
 # Output requirements
 
-1. Length target: 7-12 minutes of spoken Chinese, approximately 1,800-2,800 Chinese characters.
-2. Keep the structural markers:
+1. Length target: follow the Style Rulebook's "Target Duration" and
+   "Character-count Window" frontmatter exactly.
+2. Keep the structural markers prescribed by the rulebook:
    [TITLE], [HOOK], [ACT 1 - SETUP], [ACT 2 - ESCALATION],
    [ACT 3 - CLIMAX], [ACT 4 - RESOLUTION], [CLOSING].
-3. Under each section, break the narration into short beats using explicit markers:
-   [BEAT 1], [BEAT 2], [BEAT 3], ...
-4. Each beat should contain one sentence or one short paragraph only.
+   The exact suffix after "ACT N -" may follow the rulebook (e.g. some styles
+   use "REVEAL + CLIMAX" instead of "CLIMAX").
+3. Under each section, break the narration into short beats using explicit
+   markers: [BEAT 1], [BEAT 2], [BEAT 3], ... numbered continuously across
+   the whole script.
+4. Aim for 30-60 beats total. Each beat is one breathable spoken sentence or
+   a short paragraph (~30-90 Chinese characters).
 5. Do not output any [SCENE] or [BROLL] markers in this pass.
 6. Do not guess timestamps. Ignore clip timing entirely.
-7. The [CLOSING] section still contains narration beats, but no visual marker of any kind.
+7. The [CLOSING] section still contains narration beats, but no visual marker
+   of any kind.
 
 # Produce
 Output only the beat draft itself. No preamble. No code fences.
@@ -175,7 +231,7 @@ Use this only for non-dialogue beats: action, reactions, transitions, and establ
 
 1. Classify each beat as DIALOGUE or ACTION.
 2. If DIALOGUE: search the SRT reference first. Choose the best matching subtitle evidence and use that timestamp window.
-3. If ACTION: search the visual segment reference. Prefer character overlap, then semantic match, then action=true when motion is described.
+3. If ACTION: search the visual segment reference. Prefer character overlap, then semantic match.
 4. If the best candidate is weak, emit the beat as ungrounded instead of hallucinating a timestamp.
 5. Preserve the section structure and narration text from the beat draft.
 
@@ -203,19 +259,36 @@ def build_parser() -> argparse.ArgumentParser:
         description="Print the Stage 2 writer or grounding prompt to stdout.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument(
-        "--mode",
-        choices=["writer", "grounder"],
-        default="writer",
-        help="Writer builds the beat-draft prompt; grounder builds the alignment prompt.",
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    writer_parser = subparsers.add_parser(
+        "writer",
+        help="Build the writer-pass prompt.",
     )
-    parser.add_argument("--style", type=Path, help="Path to the style .md file")
-    parser.add_argument("--subtitle-text", type=Path, help="Parsed plain-text plot (from Stage 1)")
-    parser.add_argument("--subtitle-srt", type=Path, help="Source subtitle file (.srt or .ass)")
-    parser.add_argument("--movie-title", help="Movie title with optional language")
-    parser.add_argument("--genre", help="Genre keyword for the writer pass")
-    parser.add_argument("--beats", type=Path, help="Beat draft produced by the writer pass")
-    parser.add_argument("--visual-segments", type=Path, help="visual_segments.json from Stage 0")
+    writer_parser.add_argument("style", type=Path, help="Path to the style .md file")
+    writer_parser.add_argument("subtitle_srt", type=Path, help="Source subtitle file (.srt or .ass)")
+    writer_parser.add_argument("visual_segments", type=Path, help="visual_segments.json from Stage 0")
+    writer_parser.add_argument(
+        "--movie-title",
+        help="Movie title with optional language. Defaults to the subtitle filename stem.",
+    )
+    writer_parser.add_argument(
+        "--genre",
+        default=DEFAULT_GENRE,
+        help="Genre keyword for the writer pass.",
+    )
+
+    grounder_parser = subparsers.add_parser(
+        "grounder",
+        help="Build the grounding-pass prompt.",
+    )
+    grounder_parser.add_argument("beats", type=Path, help="Beat draft produced by the writer pass")
+    grounder_parser.add_argument("subtitle_srt", type=Path, help="Source subtitle file (.srt or .ass)")
+    grounder_parser.add_argument("visual_segments", type=Path, help="visual_segments.json from Stage 0")
+    grounder_parser.add_argument(
+        "--movie-title",
+        help="Movie title with optional language. Defaults to the subtitle filename stem.",
+    )
     return parser
 
 
@@ -228,67 +301,42 @@ def report_missing_paths(missing: list[Path]) -> None:
         print(f"Input not found: {path_arg}", file=sys.stderr)
 
 
-def main(argv=None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
-    if args.mode == "writer":
-        missing = [
-            flag_name
-            for flag_name, value in (
-                ("--style", args.style),
-                ("--subtitle-text", args.subtitle_text),
-                ("--movie-title", args.movie_title),
-                ("--genre", args.genre),
-            )
-            if value is None
-        ]
-        if missing:
-            print(f"Writer mode requires: {', '.join(missing)}", file=sys.stderr)
-            return 1
-        existing_paths = [args.style, args.subtitle_text]
-        if args.subtitle_srt is not None:
-            existing_paths.append(args.subtitle_srt)
-        missing_paths = missing_input_paths(existing_paths)
+    if args.command == "writer":
+        missing_paths = missing_input_paths(
+            [args.style, args.subtitle_srt, args.visual_segments]
+        )
         if missing_paths:
             report_missing_paths(missing_paths)
             return 1
+        movie_title = infer_movie_title(args.subtitle_srt, args.movie_title)
         print(
             build_writer_prompt(
                 style_path=args.style,
-                subtitle_text_path=args.subtitle_text,
                 subtitle_srt_path=args.subtitle_srt,
-                movie_title=args.movie_title,
+                visual_segments_path=args.visual_segments,
+                movie_title=movie_title,
                 genre=args.genre,
             )
         )
         return 0
-
-    missing = [
-        flag_name
-        for flag_name, value in (
-            ("--beats", args.beats),
-            ("--subtitle-srt", args.subtitle_srt),
-            ("--visual-segments", args.visual_segments),
-            ("--movie-title", args.movie_title),
+    else:
+        missing_paths = missing_input_paths([args.beats, args.subtitle_srt, args.visual_segments])
+        if missing_paths:
+            report_missing_paths(missing_paths)
+            return 1
+        movie_title = infer_movie_title(args.subtitle_srt, args.movie_title)
+        print(
+            build_grounding_prompt(
+                beats_path=args.beats,
+                subtitle_srt_path=args.subtitle_srt,
+                visual_segments_path=args.visual_segments,
+                movie_title=movie_title,
+            )
         )
-        if value is None
-    ]
-    if missing:
-        print(f"Grounder mode requires: {', '.join(missing)}", file=sys.stderr)
-        return 1
-    missing_paths = missing_input_paths([args.beats, args.subtitle_srt, args.visual_segments])
-    if missing_paths:
-        report_missing_paths(missing_paths)
-        return 1
-    print(
-        build_grounding_prompt(
-            beats_path=args.beats,
-            subtitle_srt_path=args.subtitle_srt,
-            visual_segments_path=args.visual_segments,
-            movie_title=args.movie_title,
-        )
-    )
-    return 0
+        return 0
 
 
 if __name__ == "__main__":

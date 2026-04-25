@@ -1,6 +1,6 @@
 {
-  "audio_path": "/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/voice-assets/uncle_niu/reference/clone_reference.mp3",
-  "transcript_path": "/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/voice-assets/uncle_niu/reference/clone_reference.txt",
+  "audio_path": "/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/styles/voice-assets/niu-shu/reference/clone_reference.mp3",
+  "transcript_path": "/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/styles/voice-assets/niu-shu/reference/clone_reference.txt",
   "sample_rate": 48000,
   "chinese_char_count": 3952,
   "speaking_rate_chars_per_sec": 5.9,

@@ -18,33 +18,22 @@ from typing import Optional
 import numpy as np
 import torch
 
-from app.pipeline.common.json_io import dump_json, load_json
+from app.pipeline.common.json_io import dump_json
 from app.pipeline.common.script_contract import (
     BROLL_LINE_RE,
     STRUCTURAL_MARKER_RE,
     SceneMarker,
     parse_broll_ranges,
     parse_scene_marker,
-    probe_media_duration,
 )
 
 
 BASE_MODEL_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 REPO_ROOT = Path(__file__).resolve().parents[2]
-VOICE_ASSETS_DIR = REPO_ROOT / "voice-assets"
-DEFAULT_REF_AUDIO = VOICE_ASSETS_DIR / "uncle_niu" / "reference" / "clone_reference.mp3"
-DEFAULT_REF_TEXT = VOICE_ASSETS_DIR / "uncle_niu" / "reference" / "clone_reference.txt"
-DEFAULT_VOICE_CLONE_MODE = "auto"
-DEFAULT_MAX_ICL_REFERENCE_SECONDS = 30.0
-DEFAULT_MAX_XVECTOR_REFERENCE_SECONDS = 30.0
-PROMPT_TEMPLATE_MARKERS = (
-    "<<<BEATS_START>>>",
-    "<<<SRT_REFERENCE_START>>>",
-    "<<<VISUAL_REFERENCE_START>>>",
-    "# Grounding algorithm",
-    "# Output contract",
-)
-MAX_CHARS_PER_CHUNK = 12000
+STYLES_DIR = REPO_ROOT / "styles"
+DEFAULT_STYLE_PATH = STYLES_DIR / "niu-shu.md"
+REFERENCE_AUDIO_FILENAME = "clone_reference.mp3"
+REFERENCE_TEXT_FILENAME = "clone_reference.txt"
 
 
 @dataclass
@@ -80,6 +69,44 @@ class Chunk:
         return list(self.scene.characters) if self.scene else []
 
 
+@dataclass(frozen=True)
+class VoiceReference:
+    style_path: Path
+    reference_dir: Path
+    audio_path: Path
+    text_path: Path
+
+
+def resolve_optional_path(path: Optional[Path]) -> Optional[Path]:
+    if path is None:
+        return None
+    return path.expanduser().resolve()
+
+
+def resolve_reference_dir(style_path: Path) -> Path:
+    return style_path.parent / "voice-assets" / style_path.stem / "reference"
+
+
+def resolve_voice_reference(
+    style_path: Path,
+    ref_audio: Optional[Path],
+    ref_text: Optional[Path],
+) -> VoiceReference:
+    reference_dir = resolve_reference_dir(style_path)
+    return VoiceReference(
+        style_path=style_path,
+        reference_dir=reference_dir,
+        audio_path=resolve_optional_path(ref_audio) or reference_dir / REFERENCE_AUDIO_FILENAME,
+        text_path=resolve_optional_path(ref_text) or reference_dir / REFERENCE_TEXT_FILENAME,
+    )
+
+
+def resolve_output_tag(style_path: Path, explicit_tag: Optional[str]) -> str:
+    if explicit_tag:
+        return explicit_tag
+    return style_path.stem
+
+
 def parse_script_chunks(script_text: str) -> list[Chunk]:
     """Split a marked script into narration chunks."""
     chunks: list[Chunk] = []
@@ -89,7 +116,7 @@ def parse_script_chunks(script_text: str) -> list[Chunk]:
     in_script = False
 
     def flush() -> None:
-        nonlocal pending_lines, pending_broll, current_scene
+        nonlocal pending_lines, pending_broll
         if pending_lines:
             chunks.append(Chunk(
                 index=len(chunks) + 1,
@@ -136,39 +163,6 @@ def parse_script_chunks(script_text: str) -> list[Chunk]:
     return chunks
 
 
-def count_scene_markers(script_text: str) -> int:
-    return sum(1 for raw in script_text.splitlines() if parse_scene_marker(raw.strip()) is not None)
-
-
-def validate_script_input(script_path: Path, script_text: str, chunks: list[Chunk]) -> None:
-    if any(marker in script_text for marker in PROMPT_TEMPLATE_MARKERS):
-        raise ValueError(
-            f"{script_path} looks like the Stage 2 grounding prompt, not the final grounded script. "
-            "Paste only the grounder model's final output into grounded_script.txt. "
-            "Do not include prompt headers, SRT references, visual references, or <<<...>>> blocks."
-        )
-
-    if "[BEAT " in script_text:
-        raise ValueError(
-            f"{script_path} still contains [BEAT N] markers. Stage 3 expects the final grounded script "
-            "with [SCENE ...] markers replacing every beat."
-        )
-
-    if count_scene_markers(script_text) == 0:
-        raise ValueError(
-            f"{script_path} contains no [SCENE ...] markers. Stage 3 expects the grounded Stage 2 output, "
-            "not the writer draft or a prompt file."
-        )
-
-    longest_chunk = max(chunks, key=lambda chunk: len(chunk.text), default=None)
-    if longest_chunk is not None and len(longest_chunk.text) > MAX_CHARS_PER_CHUNK:
-        raise ValueError(
-            f"{script_path} contains an oversized narration chunk ({len(longest_chunk.text)} chars in chunk "
-            f"{longest_chunk.index}). This usually means prompt/reference text was pasted into the grounded "
-            "script file instead of only final narration."
-        )
-
-
 def load_model():
     from qwen_tts import Qwen3TTSModel as LoadedQwen3TTSModel
 
@@ -183,100 +177,16 @@ def load_model():
     return model
 
 
-def probe_audio_duration(audio_path: Path) -> float | None:
-    return probe_media_duration(audio_path)
-
-
-def resolve_voice_clone_mode(
-    ref_audio: Path,
-    requested_mode: str,
-    max_icl_reference_seconds: float,
-) -> str:
-    if requested_mode != "auto":
-        return requested_mode
-
-    duration_s = probe_audio_duration(ref_audio)
-    if duration_s is None:
-        return "icl"
-    if duration_s > max_icl_reference_seconds:
-        print(
-            f"[prompt] reference audio is {duration_s:.1f}s, which exceeds the ICL-safe threshold "
-            f"of {max_icl_reference_seconds:.1f}s; switching to x-vector-only voice cloning"
-        )
-        return "x-vector"
-    return "icl"
-
-
-def prepare_reference_audio_for_prompt(
-    ref_audio: Path,
-    resolved_mode: str,
-    max_xvector_reference_seconds: float,
-    scratch_dir: Path,
-) -> tuple[Path, float | None]:
-    duration_s = probe_audio_duration(ref_audio)
-    if (
-        resolved_mode != "x-vector"
-        or duration_s is None
-        or max_xvector_reference_seconds <= 0
-        or duration_s <= max_xvector_reference_seconds
-    ):
-        return ref_audio, duration_s
-
-    scratch_dir.mkdir(parents=True, exist_ok=True)
-    trimmed_ref_audio = scratch_dir / f"{ref_audio.stem}.xvector_{int(max_xvector_reference_seconds)}s.wav"
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-loglevel",
-            "error",
-            "-i",
-            str(ref_audio),
-            "-t",
-            str(max_xvector_reference_seconds),
-            "-ac",
-            "1",
-            "-ar",
-            "24000",
-            str(trimmed_ref_audio),
-        ],
-        check=True,
-    )
-    print(
-        f"[prompt] x-vector mode still embeds the reference waveform; trimming {ref_audio.name} "
-        f"from {duration_s:.1f}s to {max_xvector_reference_seconds:.1f}s before prompt creation"
-    )
-    return trimmed_ref_audio, duration_s
-
-
 def build_voice_prompt(
     model,
     ref_audio: Path,
     ref_text_path: Path,
-    scratch_dir: Path,
-    voice_clone_mode: str = DEFAULT_VOICE_CLONE_MODE,
-    max_icl_reference_seconds: float = DEFAULT_MAX_ICL_REFERENCE_SECONDS,
-    max_xvector_reference_seconds: float = DEFAULT_MAX_XVECTOR_REFERENCE_SECONDS,
 ) -> object:
-    resolved_mode = resolve_voice_clone_mode(ref_audio, voice_clone_mode, max_icl_reference_seconds)
-    prepared_ref_audio, _duration_s = prepare_reference_audio_for_prompt(
-        ref_audio,
-        resolved_mode,
-        max_xvector_reference_seconds,
-        scratch_dir,
-    )
-    if resolved_mode == "x-vector":
-        print(
-            f"[prompt] ref audio {prepared_ref_audio.name}, transcript ignored, mode={resolved_mode}"
-        )
-        return model.create_voice_clone_prompt(
-            ref_audio=str(prepared_ref_audio),
-            ref_text=None,
-            x_vector_only_mode=True,
-        )
+    if not ref_text_path.exists():
+        raise FileNotFoundError(f"Reference transcript not found: {ref_text_path}")
     ref_text = ref_text_path.read_text(encoding="utf-8").strip()
     print(
-        f"[prompt] ref audio {prepared_ref_audio.name}, transcript {len(ref_text)} chars, mode={resolved_mode}"
+        f"[prompt] ref audio {ref_audio.name}, transcript {len(ref_text)} chars, mode=icl"
     )
     return model.create_voice_clone_prompt(ref_audio=str(ref_audio), ref_text=ref_text)
 
@@ -362,44 +272,28 @@ def concat_and_normalize(
     return audio_ranges
 
 
-def build_manifest_payload(
-    chunks: list[Chunk],
-    audio_ranges: list[tuple[float, float]],
-) -> list[dict[str, object]]:
-    payload: list[dict[str, object]] = []
-    for chunk, (start_s, end_s) in zip(chunks, audio_ranges):
-        payload.append(
-            {
-                "index": chunk.index,
-                "scene_start": chunk.scene_start,
-                "scene_end": chunk.scene_end,
-                "scene_source": chunk.scene_source,
-                "scene_confidence": chunk.scene_confidence,
-                "scene_evidence": chunk.scene_evidence,
-                "scene_characters": chunk.scene_characters,
-                "text": chunk.text,
-                "broll": [[start, end] for (start, end) in chunk.broll],
-                "audio_start_s": start_s,
-                "audio_end_s": end_s,
-            }
-        )
-    return payload
-
-
 def write_manifest(
     chunks: list[Chunk],
     audio_ranges: list[tuple[float, float]],
     out_path: Path,
 ) -> None:
-    dump_json(out_path, build_manifest_payload(chunks, audio_ranges))
-
-
-def load_manifest_timings(manifest_path: Path) -> list[tuple[float, float]]:
-    existing = load_json(manifest_path)
-    return [
-        (float(entry["audio_start_s"]), float(entry["audio_end_s"]))
-        for entry in existing
+    payload = [
+        {
+            "index": chunk.index,
+            "scene_start": chunk.scene_start,
+            "scene_end": chunk.scene_end,
+            "scene_source": chunk.scene_source,
+            "scene_confidence": chunk.scene_confidence,
+            "scene_evidence": chunk.scene_evidence,
+            "scene_characters": chunk.scene_characters,
+            "text": chunk.text,
+            "broll": [[start, end] for (start, end) in chunk.broll],
+            "audio_start_s": start_s,
+            "audio_end_s": end_s,
+        }
+        for chunk, (start_s, end_s) in zip(chunks, audio_ranges)
     ]
+    dump_json(out_path, payload)
 
 
 def print_chunk_summary(script_path: Path, chunks: list[Chunk]) -> None:
@@ -415,32 +309,13 @@ def print_chunk_summary(script_path: Path, chunks: list[Chunk]) -> None:
         print(f"  ... ({len(chunks) - 5} more)")
 
 
-def rewrite_manifest_only(chunks: list[Chunk], manifest_path: Path) -> int:
-    if not manifest_path.exists():
-        print(f"Manifest not found: {manifest_path}. Run without --manifest-only first.", file=sys.stderr)
-        return 1
-
-    audio_ranges = load_manifest_timings(manifest_path)
-    if len(audio_ranges) != len(chunks):
-        print(
-            f"Chunk count mismatch: script has {len(chunks)}, manifest has {len(audio_ranges)}. "
-            f"Full TTS rerun required.",
-            file=sys.stderr,
-        )
-        return 1
-
-    write_manifest(chunks, audio_ranges, manifest_path)
-    print(f"[done] manifest-only update: {manifest_path}")
-    return 0
-
-
 def run_full_generation(
     model,
     chunks: list[Chunk],
     voice_prompt: object,
     mp3_path: Path,
     manifest_path: Path,
-) -> float:
+) -> None:
     wavs, sample_rate = generate_chunks(model, chunks, voice_prompt)
     audio_ranges = concat_and_normalize(wavs, sample_rate, mp3_path)
     write_manifest(chunks, audio_ranges, manifest_path)
@@ -449,10 +324,9 @@ def run_full_generation(
     print(f"\n[done] {len(chunks)} chunks -> {total_audio_s:.1f}s audio ({total_audio_s / 60:.1f} min)")
     print(f"[done] {mp3_path}")
     print(f"[done] {manifest_path}")
-    return total_audio_s
 
 
-def main(argv=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="generate-audio",
         description="Stage 3: TTS a marked script into one voiceover and manifest.",
@@ -460,61 +334,69 @@ def main(argv=None) -> int:
     )
     parser.add_argument("--script", type=Path, required=True)
     parser.add_argument(
+        "--style",
+        type=Path,
+        default=DEFAULT_STYLE_PATH,
+        help="Style .md file used in Stage 2. It also selects default reference assets from styles/voice-assets/<style>/reference/ and the default output tag.",
+    )
+    parser.add_argument(
         "--ref-audio",
         type=Path,
-        default=DEFAULT_REF_AUDIO,
-        help="Voice clone reference.",
+        default=None,
+        help="Optional reference-audio override. Defaults to styles/voice-assets/<style>/reference/clone_reference.mp3.",
     )
     parser.add_argument(
         "--ref-text",
         type=Path,
-        default=DEFAULT_REF_TEXT,
-        help="Transcript of reference audio.",
+        default=None,
+        help="Optional transcript override for --ref-audio. Defaults to styles/voice-assets/<style>/reference/clone_reference.txt.",
     )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument(
         "--tag",
-        default="niu-shu",
-        help="Filename tag, used in voiceover_<tag>_voiceclone.{mp3,manifest.json}",
+        default=None,
+        help="Optional filename tag. Defaults to the style filename stem.",
     )
-    parser.add_argument("--dry-run", action="store_true", help="Print the chunk summary, skip TTS")
-    parser.add_argument("--limit", type=int, default=None, help="Only process the first N chunks")
-    parser.add_argument(
-        "--manifest-only",
-        action="store_true",
-        help="Skip TTS and rewrite the manifest using existing timings. Requires the same chunk count.",
+    return parser
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
+
+    style_path = args.style.expanduser().resolve()
+    if not style_path.exists():
+        print(f"Style file not found: {style_path}", file=sys.stderr)
+        return 1
+
+    voice_reference = resolve_voice_reference(
+        style_path,
+        args.ref_audio,
+        args.ref_text,
     )
-    parser.add_argument(
-        "--voice-clone-mode",
-        choices=["auto", "icl", "x-vector"],
-        default=DEFAULT_VOICE_CLONE_MODE,
-        help="Voice-clone prompt mode. 'auto' switches long reference clips to x-vector-only mode.",
-    )
-    parser.add_argument(
-        "--max-icl-reference-seconds",
-        type=float,
-        default=DEFAULT_MAX_ICL_REFERENCE_SECONDS,
-        help="When --voice-clone-mode=auto, reference clips longer than this fall back to x-vector-only mode.",
-    )
-    parser.add_argument(
-        "--max-xvector-reference-seconds",
-        type=float,
-        default=DEFAULT_MAX_XVECTOR_REFERENCE_SECONDS,
-        help="When x-vector mode is used, cap the reference clip to this duration before speaker embedding.",
-    )
-    args = parser.parse_args(argv)
+    if not voice_reference.audio_path.exists():
+        if args.ref_audio is None:
+            print(
+                f"Reference audio not found: {voice_reference.audio_path}. "
+                f"Add {REFERENCE_AUDIO_FILENAME} under {voice_reference.reference_dir} or pass --ref-audio.",
+                file=sys.stderr,
+            )
+        else:
+            print(f"Reference audio not found: {voice_reference.audio_path}", file=sys.stderr)
+        return 1
+
+    if not voice_reference.text_path.exists():
+        if args.ref_text is None:
+            print(
+                f"Reference transcript not found: {voice_reference.text_path}. "
+                f"Add {REFERENCE_TEXT_FILENAME} under {voice_reference.reference_dir} or pass --ref-text.",
+                file=sys.stderr,
+            )
+        else:
+            print(f"Reference transcript not found: {voice_reference.text_path}", file=sys.stderr)
+        return 1
 
     script_text = args.script.read_text(encoding="utf-8")
     chunks = parse_script_chunks(script_text)
-
-    try:
-        validate_script_input(args.script, script_text, chunks)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
-
-    if args.limit is not None:
-        chunks = chunks[: args.limit]
 
     print_chunk_summary(args.script, chunks)
 
@@ -522,15 +404,10 @@ def main(argv=None) -> int:
         print(f"No narration chunks found in {args.script}", file=sys.stderr)
         return 1
 
-    if args.dry_run:
-        return 0
-
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    mp3_path = args.output_dir / f"voiceover_{args.tag}_voiceclone.mp3"
-    manifest_path = args.output_dir / f"voiceover_{args.tag}_voiceclone.manifest.json"
-
-    if args.manifest_only:
-        return rewrite_manifest_only(chunks, manifest_path)
+    output_tag = resolve_output_tag(style_path, args.tag)
+    mp3_path = args.output_dir / f"voiceover_{output_tag}_voiceclone.mp3"
+    manifest_path = args.output_dir / f"voiceover_{output_tag}_voiceclone.manifest.json"
 
     if torch.cuda.is_available():
         print(
@@ -542,12 +419,8 @@ def main(argv=None) -> int:
     model = load_model()
     voice_prompt = build_voice_prompt(
         model,
-        args.ref_audio,
-        args.ref_text,
-        args.output_dir,
-        voice_clone_mode=args.voice_clone_mode,
-        max_icl_reference_seconds=args.max_icl_reference_seconds,
-        max_xvector_reference_seconds=args.max_xvector_reference_seconds,
+        voice_reference.audio_path,
+        voice_reference.text_path,
     )
     run_full_generation(model, chunks, voice_prompt, mp3_path, manifest_path)
     print(f"[done] wall time {(time.time() - total_t0) / 60:.1f} min")

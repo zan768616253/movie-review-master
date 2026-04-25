@@ -44,8 +44,6 @@ def test_select_semantic_broll_segments_prefers_matching_characters_and_avoids_s
             "end": "00:00:08.000",
             "summary": "hero attacks villain",
             "ocr_text": "",
-            "is_action": True,
-            "confidence": 0.99,
             "characters": ["Hero"],
         },
         {
@@ -54,8 +52,6 @@ def test_select_semantic_broll_segments_prefers_matching_characters_and_avoids_s
             "end": "00:00:13.000",
             "summary": "hero chases villain down the street",
             "ocr_text": "",
-            "is_action": True,
-            "confidence": 0.85,
             "characters": ["Hero"],
         },
         {
@@ -64,8 +60,6 @@ def test_select_semantic_broll_segments_prefers_matching_characters_and_avoids_s
             "end": "00:00:18.000",
             "summary": "quiet room with teacher",
             "ocr_text": "",
-            "is_action": False,
-            "confidence": 0.95,
             "characters": ["Teacher"],
         },
     ]

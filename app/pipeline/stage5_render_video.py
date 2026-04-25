@@ -32,28 +32,6 @@ TARGET_HEIGHT = 1080
 TARGET_FPS = 30
 DEFAULT_CLIP_MANIFEST = "clip_manifest.json"
 TOKEN_RE = re.compile(r"[a-z0-9]+|[\u4e00-\u9fff]", re.IGNORECASE)
-ACTION_HINTS = (
-    "fight",
-    "attack",
-    "run",
-    "chase",
-    "kill",
-    "explosion",
-    "shoot",
-    "punch",
-    "slash",
-    "battle",
-    "打",
-    "杀",
-    "跑",
-    "追",
-    "战",
-    "爆",
-    "砍",
-    "冲",
-)
-
-
 def probe_duration(path: Path) -> float:
     return get_video_duration(path)
 
@@ -145,11 +123,6 @@ def text_similarity(left: str, right: str) -> float:
     return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
 
 
-def looks_action_like(text: str) -> bool:
-    lowered = text.lower()
-    return any(hint in lowered for hint in ACTION_HINTS)
-
-
 def plan_primary_window(clip_metadata: dict[str, object], target_duration: float) -> tuple[float, float, float]:
     """Return (start_offset, clip_duration, leftover) for the hero clip.
 
@@ -187,9 +160,7 @@ def score_visual_segment(
     ocr_text = str(segment.get("ocr_text") or "")
     similarity = text_similarity(narration_text, f"{summary} {ocr_text}")
     character_score = 1.0 if required_characters else 0.0
-    action_score = 1.0 if segment.get("is_action") and looks_action_like(narration_text) else 0.0
-    confidence = float(segment.get("confidence") or 0.0)
-    return (0.35 * similarity) + (0.30 * character_score) + (0.15 * action_score) + (0.20 * confidence)
+    return (0.55 * similarity) + (0.45 * character_score)
 
 
 def select_semantic_broll_segments(

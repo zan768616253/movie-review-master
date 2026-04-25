@@ -97,15 +97,21 @@ The logical pipeline has six stages.
 
 Purpose:
 
-- provide fine-grained visual search metadata for the full movie
-- generate `visual_segments.json` containing shot-level non-dialogue segments, typically a few seconds long
-- solve the visual grounding gap by providing timestamps for action beats, reactions, transitions, and establishing shots
+- provide visual-only search metadata for the full movie
+- generate `visual_segments.json` containing event-based segments (typical 2-8s, hard cap 12s) that cover action beats, reactions, transitions, and establishing shots
 
 Grounding strategy:
 
 - subtitles are the primary anchor for dialogue; Stage 0 exists to cover the non-dialogue gap, not to redescribe subtitle-covered moments
-- VLM chunking is only an input batching concern; a full movie should still yield many shot-level candidates rather than a handful of broad summaries
-- downstream matching works best when each segment describes one distinct visual beat with characters, action, and OCR when available
+- the VLM is explicitly told to skip shot-reverse-shot dialogue scenes, since dialogue beats are grounded via SRT
+- VLM chunking is only an input batching concern; a full movie should still yield many event-level candidates rather than a handful of broad summaries
+- downstream matching works best when each segment describes one distinct visual event with characters and OCR when available
+
+Timestamp accuracy (Gemini Fast):
+
+- each chunk has its chunk-local PTS (HH:MM:SS.mmm) burned into the top-left corner of every frame so the VLM reads timestamps off the image instead of estimating them
+- after inference, every segment's `start` and `end` are snapped to the nearest ffmpeg-detected shot cut within 1.5s; outside that tolerance the original timestamp is kept
+- chunks are 5 minutes each to reduce context drift; this also gives the validator less room for long-range hallucinated spans
 
 VLM trust boundary:
 
@@ -140,7 +146,7 @@ Two-pass grounding strategy:
 - writer pass produces beat-level narration only; it ignores timestamps and focuses on tone, plot, and pacing
 - grounding pass classifies each beat as dialogue or action before assigning any timing
 - dialogue beats search the full SRT first and use subtitle timestamps whenever spoken lines are the real anchor
-- action beats search `visual_segments.json`, favoring character overlap, semantic similarity, and `is_action` when motion is described
+- action beats search `visual_segments.json`, favoring character overlap and semantic similarity
 - weak matches stay `ungrounded`; the system must not hallucinate precise timestamps
 - final output is an evidence-bearing grounded script, not raw prose
 
@@ -262,7 +268,8 @@ These are the cross-project decisions that should stay consistent unless deliber
   - Custom Voice: use built-in preset speakers
   - Voice Design: synthesize a voice from a natural-language description
 - Style A currently standardizes on Qwen3-TTS Voice Clone on the Base model, not Custom Voice and not Voice Design
-- Style A reference audio should come from `voice-assets/uncle_niu/reference/`
+- Stage 3 should receive the same `--style` input used in Stage 2, then default the voice reference from `styles/voice-assets/<style>/reference/`
+- styles without a canonical `reference/clone_reference.{mp3,txt}` pair yet still need explicit `--ref-audio` / `--ref-text` overrides
 - narration should be generated chunk-by-chunk on script scene boundaries, then concatenated into one voiceover file plus one manifest
 - long-form output should be loudness-normalized before render assembly
 - fallback hosted/preset TTS is acceptable only when the main local path is unavailable
@@ -281,6 +288,8 @@ Useful distilled knowledge from the earlier validation work:
 - some older Uncle Niu sample files are mislabeled by nominal duration, so filenames alone are not a reliable measurement source
 - background music in source samples can distort pitch and pause analysis
 - if voice analysis is needed again, use a cleaner harmonic-focused measurement path instead of trusting raw full-mix readings
+- a good fresh voice-clone reference should stay relatively short and clean; the current repo policy targets a 90-second single-speaker dialogue reference for ICL preparation, but shorter clips are still preferable when they capture the voice well
+- Stage 3 now expects a prepared short transcript-conditioned ICL reference rather than trying to adapt long clips at runtime
 
 ### Video Processing
 
@@ -321,17 +330,20 @@ movies/<title>/
     final_video.mp4
 ```
 
-Shared voice assets live outside per-movie folders:
+Shared voice assets live under the `styles/` tree rather than inside per-movie folders:
 
 ```text
-voice-assets/
-  uncle_niu/
-    analysis/
-    reference/
-  first_person_pov/
-    analysis/
-  xiaodao/
-    analysis/
+styles/
+  niu-shu.md
+  first-person-pov.md
+  voice-assets/
+    niu-shu/
+      analysis/
+      reference/
+    first-person-pov/
+      analysis/
+    xiao-dao/
+      analysis/
 ```
 
 Naming rules:
@@ -340,8 +352,8 @@ Naming rules:
 - manifest filename must track the voiceover filename
 - output assets stay grouped under the movie directory, not in a global build folder
 - `analysis/` holds audio and transcript pairs used for style study
-- `reference/` holds the canonical clone source for a reusable voice profile
-- Style A defaults to `voice-assets/uncle_niu/reference/clone_reference.{mp3,txt}`
+- `reference/` holds the canonical clone source for a style when that style has a default reusable voice
+- the default Stage 3 output tag should match the style filename stem unless the caller explicitly overrides it
 
 ## 9. Environment Rules
 

@@ -44,17 +44,17 @@ movie-review-master/
       __init__.py
       transcribe_audio.py
       voice_analysis.py
-  voice-assets/
-    uncle_niu/
-      analysis/
-      reference/
-    first_person_pov/
-      analysis/
-    xiaodao/
-      analysis/
   styles/
     niu-shu.md
     first-person-pov.md
+    voice-assets/
+      niu-shu/
+        analysis/
+        reference/
+      first-person-pov/
+        analysis/
+      xiao-dao/
+        analysis/
   tests/
     pipeline/
       test_stage1_parse_subtitles.py
@@ -82,7 +82,7 @@ Purpose:
 
 - parse `.srt` and `.ass` subtitles
 - normalize text
-- export plain text or JSON
+- write normalized plain-text or JSON files
 
 Current state:
 
@@ -107,7 +107,7 @@ Current state:
 
 - implemented as a manual two-pass prompt assembler
 - exposes `generate-script` entry point that prints either prompt to stdout
-- supports `--mode writer` and `--mode grounder`
+- supports `writer` and `grounder` subcommands; movie title is inferred from the subtitle filename when omitted, and writer genre defaults to `general`
 - Stage 2 is still run manually today; the repo owns the prompt contract, while the actual model execution remains outside the codebase
 
 Key public pieces:
@@ -127,9 +127,11 @@ Purpose:
 
 Current state:
 
-- implemented for the current Style A production path
+- implemented for the current Stage 2 -> Stage 3 pipeline path
 - exposes `generate-audio` entry point
-- defaults to the Style A reference pair at `voice-assets/uncle_niu/reference/clone_reference.{mp3,txt}`
+- accepts the same `--style` input used in Stage 2 to derive both the default output tag and the default reference path under `styles/voice-assets/<style>/reference/`
+- always uses transcript-conditioned ICL voice cloning from `reference/clone_reference.{mp3,txt}`
+- still accepts `--ref-audio` / `--ref-text` overrides for styles that do not have a canonical reference pair yet
 
 Important contract:
 
@@ -218,6 +220,20 @@ Current state:
 - implemented utility (not a pipeline stage)
 - not part of the main pipeline contract
 
+### `app/tools/prepare_voice_reference.py`
+
+Purpose:
+
+- prepare the canonical `styles/voice-assets/<style>/reference/clone_reference.*` bundle for Stage 3 ICL voice cloning
+- enforce the current 90-second ICL reference target by requiring either a source clip already within that target or an explicit `--start` / `--end` selection from a longer file
+- reuse the existing transcription and voice-analysis utilities so the prepared bundle includes `clone_reference.mp3`, `clone_reference.txt`, and `clone_reference.analysis.json`
+
+Current state:
+
+- implemented utility (not a pipeline stage)
+- exposes `prepare-voice-reference` entry point
+- covered by focused tests with injected ffmpeg, transcription, and analysis dependencies
+
 ## 5. Planned But Not Yet Implemented
 
 These components are part of the project design but are not yet present as first-class production modules:
@@ -297,11 +313,11 @@ This manifest is the primary sync contract for `stage5_render_video.py`.
 - `end` (HH:MM:SS.mmm, clamped to video duration, always greater than `start`)
 - `summary`
 - `ocr_text`
-- `is_action`
-- `confidence`
 - `characters`
 
-These segments exist for non-dialogue grounding. Dialogue beats should anchor to SRT instead of requiring duplicate Stage 0 coverage.
+These segments exist for non-dialogue grounding. Dialogue beats should anchor to SRT instead of requiring duplicate Stage 0 coverage. The VLM is instructed to emit event-based segments (typically 2-8s, hard cap 12s) and to skip shot-reverse-shot dialogue where nothing visual changes.
+
+Each Stage 0 chunk has its chunk-local PTS burned into the top-left corner so the VLM reads timestamps off the frame rather than estimating them. After inference, segment `start`/`end` are snapped to ffmpeg-detected shot boundaries within a 1.5s tolerance; anything outside tolerance is left untouched.
 
 Every segment in the written file has already passed `validate_visual_segments()`. Downstream stages should not re-check bounds but may call the validator again defensively.
 
@@ -333,6 +349,7 @@ Configured in `pyproject.toml`:
 - `video-processor = app.pipeline.stage4_video_processor:main`
 - `render-video = app.pipeline.stage5_render_video:main`
 - `transcribe = app.tools.transcribe_audio:main`
+- `prepare-voice-reference = app.tools.prepare_voice_reference:main`
 
 ## 8. Testing Baseline
 
@@ -342,6 +359,7 @@ Automated coverage currently exists for:
 - subtitle CLI behavior
 - transcription input collection
 - transcription CLI flow with a fake model
+- reference-preparation CLI flow with injected ffmpeg, transcription, and analysis helpers
 
 Verified baseline on 2026-04-21:
 

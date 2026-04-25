@@ -10,7 +10,8 @@ This is not a plot retelling. It is a **confession that the viewer cannot stop l
 
 **Perspective:** First-person ("我") — narrated by the **protagonist**, in their own voice
 **Tone:** Emotional, immersive, confessional — *tuned to the movie's genre* (see Section 5.5)
-**Target Duration:** 7-12 minutes (~1,800-2,800 Chinese characters)
+**Target Duration:** 7-12 minutes
+**Character-count Window:** ~1,800-2,800 Chinese characters — **provisional**, copied from Niu Shu and not yet re-calibrated. This style uses short breathable sentences (majority under 15 chars, see §6) with frequent line-break pauses, so the spoken time per character is longer than Niu Shu's; the upper end of this window may overshoot 12 min. Recalibrate against the first real TTS render and tighten this range. See `_style_contract.md` §4 #5.
 **Language:** Chinese (Mandarin) by default; English adaptation supported
 
 > **Style pairing:** This is the *intimate confessional* style. For the detached sarcastic alternative, see [`niu-shu.md`](niu-shu.md). The two styles have **opposite rules** on character naming (original names vs. archetypes) and narrator stance (sincere vs. sarcastic) — do not mix them within a single script.
@@ -405,45 +406,48 @@ These rules cannot be broken under any circumstances:
 
 ## 10. Script Output Format
 
+This style file is consumed by Stage 2's **writer pass**. Writer-pass output uses `[BEAT N]` markers, not timestamps. The grounder pass replaces each `[BEAT N]` with a `[SCENE …]` marker — that contract is owned by `app/pipeline/stage2_generate_script.py`'s grounder prompt, not this style file.
+
+The `我叫[name]` self-introduction (Section 2) lives **inside** `[ACT 1 - SETUP]` as the act's opening beats — it is **not** a peer structural marker. The pipeline parser (`script_contract.py:STRUCTURAL_MARKER_RE`) recognizes only `[TITLE]`, `[HOOK]`, `[ACT N - …]`, and `[CLOSING]` as structural.
+
+The structural skeleton:
+
 ```
 [TITLE] [short hook summary that becomes the video title]
 
 [HOOK]
-[SCENE: HH:MM:SS-HH:MM:SS]
+[BEAT 1]
 (in-medias-res opening, 3-6 lines from protagonist's POV)
 
-[SELF-INTRO]
-[SCENE: HH:MM:SS-HH:MM:SS]
-我叫[name]
-(3-6 lines establishing identity + "before" life)
-
 [ACT 1 - SETUP]
-[SCENE: HH:MM:SS-HH:MM:SS]
-(narrative text, ~400 characters — rewind to beginning, inciting incident)
+[BEAT 2]
+我叫[name]
+[BEAT 3]
+(3-6 lines establishing identity + "before" life)
+[BEAT 4]
+(rewind to beginning, inciting incident — Act 1 totals ~480 characters)
 
 [ACT 2 - ESCALATION]
-[SCENE: HH:MM:SS-HH:MM:SS]
-(narrative text, ~720 characters — complications, relationships, wrong coping)
+[BEAT N]
+(complications, relationships, wrong coping — Act 2 totals ~720 characters)
 
 [ACT 3 - REVEAL + CLIMAX]
-[SCENE: HH:MM:SS-HH:MM:SS]
-(narrative text, ~720 characters — truth lands, emotional peak, choice)
+[BEAT N]
+(truth lands, emotional peak, choice — Act 3 totals ~720 characters)
 
 [ACT 4 - AFTERMATH]
-[SCENE: HH:MM:SS-HH:MM:SS]
-(narrative text, ~300-400 characters — resolution)
+[BEAT N]
+(resolution — Act 4 totals ~300-400 characters)
 
 [CLOSING]
-(register shift: reflection / identity / blessing / dark image, ~100-200 characters — no [SCENE] marker needed; use the final movie frame or a held keyframe)
+[BEAT N]
+(register shift: reflection / identity / blessing / dark image, ~100-200 characters)
 ```
 
-**Rules for `[SCENE]` markers:**
-- Every narration block must be preceded by a `[SCENE: start-end]` marker referencing the movie's original timestamps (not the review's timestamps).
-- Markers are stripped from the final voiceover text but consumed by `stage5_render_video.py` to select video clips.
-- A single paragraph may need multiple `[SCENE]` markers if it covers non-contiguous movie segments.
-- Act markers `[ACT X]`, `[HOOK]`, `[SELF-INTRO]`, `[CLOSING]` are stripped from voiceover but kept for agent/human review.
-
-The final `script_clean.txt` (after stripping all markers) should read as one continuous first-person narration.
+**Rules for markers:**
+- Each beat is one breathable spoken line or a short stanza. This style favors short sentences (majority under 15 characters — see §6), so a single `[BEAT N]` may contain a stanza of several short lines that together form one breath group. Aim for 30-60 beats total across the script.
+- Structural markers `[TITLE]`, `[HOOK]`, `[ACT N]`, `[CLOSING]` and `[BEAT N]` markers are stripped from the final voiceover but kept for downstream stages and human review.
+- Do NOT emit `[SCENE …]` or `[BROLL]` markers in the writer pass — the grounder pass adds those after evidence-based alignment to the SRT and visual-segment indexes.
 
 ---
 

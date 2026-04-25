@@ -158,7 +158,7 @@ def parse_subtitles(file_name: str | Path) -> list[Subtitle]:
 def main() -> int:
     arg_parser = argparse.ArgumentParser(
         prog="parse-subtitles",
-        description="Parse .ass or .srt subtitles into a text file.",
+        description="Parse .ass or .srt subtitles into a normalized text or JSON file.",
     )
 
     arg_parser.add_argument("input", type=Path, help="Path to subtitle file (.ass or .srt)")
@@ -169,17 +169,11 @@ def main() -> int:
         default="txt",
         help="Output format (default: txt)",
     )
-    output_group = arg_parser.add_mutually_exclusive_group()
-    output_group.add_argument(
+    arg_parser.add_argument(
         "-o",
         "--output",
         type=Path,
         help="Output path (default: <input>.txt next to input)",
-    )
-    output_group.add_argument(
-        "--stdout",
-        action="store_true",
-        help="Print to stdout instead of writing a file",
     )
     args = arg_parser.parse_args()
     
@@ -194,13 +188,12 @@ def main() -> int:
         return 1
 
     if args.format == "txt":
-        output_text = "\n".join(subtitle.text for subtitle in subtitles)
+        output_text = "\n".join(
+            f"{subtitle.speaker}: {subtitle.text}" if subtitle.speaker else subtitle.text
+            for subtitle in subtitles
+        )
     else:
         output_text = json.dumps([asdict(subtitle) for subtitle in subtitles], ensure_ascii=False, indent=2)
-
-    if args.stdout:
-        print(output_text)
-        return 0
 
     if args.output is not None:
         output_path = args.output
