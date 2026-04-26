@@ -26,8 +26,6 @@ from app.pipeline.common.script_contract import (
 )
 from app.pipeline.common.json_io import dump_json
 from app.pipeline.common.video_encoder import (
-    DEFAULT_ENCODER,
-    ENCODER_CHOICES,
     encoder_ffmpeg_args,
     hwaccel_decode_args,
     resolve_encoder,
@@ -45,8 +43,6 @@ class Scene:
     marker_start: str | None
     marker_end: str | None
     marker_source: str | None
-    marker_confidence: float | None
-    marker_evidence: str | None
     marker_characters: list[str] = field(default_factory=list)
     broll: list[tuple[str, str]] = field(default_factory=list)
     line_no: int = 0
@@ -62,8 +58,6 @@ class ClipPlan:
     scene_start: str
     scene_end: str
     scene_source: str | None
-    scene_confidence: float | None
-    scene_evidence: str | None
     scene_characters: list[str]
     extracted_start: str
     extracted_end: str
@@ -87,8 +81,6 @@ def parse_scene_markers(script_path: Path) -> list[Scene]:
                 marker_start=marker.start,
                 marker_end=marker.end,
                 marker_source=marker.source,
-                marker_confidence=marker.confidence,
-                marker_evidence=marker.evidence,
                 marker_characters=list(marker.characters),
                 line_no=line_no,
             )
@@ -106,12 +98,8 @@ def find_supporting_visual_segment(
 ) -> dict[str, object] | None:
     if not visual_segments or scene.marker_start is None or scene.marker_end is None:
         return None
-
-    evidence = scene.marker_evidence
-    if evidence is not None:
-        for segment in visual_segments:
-            if str(segment.get("id")) == evidence:
-                return segment
+    if (scene.marker_source or "").lower() != "visual":
+        return None
 
     overlaps = overlapping_visual_segments(
         visual_segments,
@@ -120,13 +108,15 @@ def find_supporting_visual_segment(
     )
     if not overlaps:
         return None
+    # Extend to the latest overlapping visual boundary so a visual-grounded
+    # scene does not cut off mid-action when Stage 0 split the beat.
     return max(overlaps, key=lambda segment: timestamp_to_seconds(str(segment["end"])))
 
 
 def build_scene_clip_plan(
     scene: Scene,
     handle_seconds: float,
-    visual_segments: list[dict[str, object]] | None = None,
+    visual_segments: list[dict[str, object]],
     max_extension_seconds: float = DEFAULT_MAX_EXTENSION_SECONDS,
     video_duration_s: float | None = None,
 ) -> ClipPlan | None:
@@ -162,8 +152,6 @@ def build_scene_clip_plan(
         scene_start=scene.marker_start,
         scene_end=scene.marker_end,
         scene_source=scene.marker_source,
-        scene_confidence=scene.marker_confidence,
-        scene_evidence=scene.marker_evidence,
         scene_characters=list(scene.marker_characters),
         extracted_start=seconds_to_timestamp(extracted_start_s),
         extracted_end=seconds_to_timestamp(extracted_end_s),
@@ -197,7 +185,7 @@ def extract_clip(video_path: Path, start_s: float, end_s: float, out_path: Path,
     subprocess.run(cmd, check=True)
 
 
-def extract_keyframe(video_path: Path, at_s: float, out_path: Path, codec: str = "libx264") -> None:
+def extract_keyframe(video_path: Path, at_s: float, out_path: Path, codec: str) -> None:
     cmd = [
         "ffmpeg",
         "-y",
@@ -217,8 +205,8 @@ def extract_keyframe(video_path: Path, at_s: float, out_path: Path, codec: str =
     subprocess.run(cmd, check=True)
 
 
-def write_clip_manifest(output_dir: Path, clip_plans: list[ClipPlan], file_name: str) -> Path:
-    manifest_path = output_dir / file_name
+def write_clip_manifest(output_dir: Path, clip_plans: list[ClipPlan]) -> Path:
+    manifest_path = output_dir / DEFAULT_CLIP_MANIFEST
     dump_json(manifest_path, [asdict(plan) for plan in clip_plans])
     return manifest_path
 
@@ -229,27 +217,29 @@ def build_parser() -> argparse.ArgumentParser:
         description="Extract re-encoded hero clips, B-roll, and keyframes from grounded SCENE markers.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--script", type=Path, required=True)
-    parser.add_argument("--video", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--visual-segments", type=Path, help="Optional visual_segments.json for safe-boundary extension")
-    parser.add_argument("--handle-seconds", type=float, default=DEFAULT_HANDLE_SECONDS)
     parser.add_argument(
-        "--max-extension-seconds",
-        type=float,
-        default=DEFAULT_MAX_EXTENSION_SECONDS,
-        help="Cap on safe-boundary extension beyond scene end. Prevents hallucinated visual segments from producing multi-minute clips.",
+        "--script",
+        type=Path,
+        required=True,
+        help="Grounded Stage 2 script containing [SCENE] markers and optional [BROLL] ranges.",
     )
     parser.add_argument(
-        "--encoder",
-        choices=ENCODER_CHOICES,
-        default=DEFAULT_ENCODER,
-        help="Video encoder. 'auto' picks h264_nvenc when available, otherwise libx264.",
+        "--video",
+        type=Path,
+        required=True,
+        help="Source movie file used to extract hero clips, B-roll clips, and keyframes.",
     )
-    parser.add_argument("--clip-manifest-name", default=DEFAULT_CLIP_MANIFEST)
-    parser.add_argument("--skip-clips", action="store_true")
-    parser.add_argument("--skip-keyframes", action="store_true")
-    parser.add_argument("--skip-broll", action="store_true")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Directory where clips/, keyframes/, and clip_manifest.json will be written.",
+    )
+    parser.add_argument(
+        "--visual-segments",
+        type=Path,
+        help="Optional Stage 0 visual_segments.json, used only as a boundary hint for visual-grounded scenes.",
+    )
     return parser
 
 
@@ -274,21 +264,23 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     visual_segments = load_visual_segments(args.visual_segments)
     video_duration_s = get_video_duration(video_path)
-    codec = resolve_encoder(args.encoder)
+    try:
+        codec = resolve_encoder()
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     clips_dir = output_dir / "clips"
     keyframes_dir = output_dir / "keyframes"
-    if not args.skip_clips or not args.skip_broll:
-        clips_dir.mkdir(parents=True, exist_ok=True)
-    if not args.skip_keyframes:
-        keyframes_dir.mkdir(parents=True, exist_ok=True)
+    clips_dir.mkdir(parents=True, exist_ok=True)
+    keyframes_dir.mkdir(parents=True, exist_ok=True)
 
     clip_plans: list[ClipPlan] = []
     for scene in scenes:
         plan = build_scene_clip_plan(
             scene,
-            args.handle_seconds,
+            DEFAULT_HANDLE_SECONDS,
             visual_segments,
-            max_extension_seconds=args.max_extension_seconds,
+            max_extension_seconds=DEFAULT_MAX_EXTENSION_SECONDS,
             video_duration_s=video_duration_s,
         )
         if plan is not None:
@@ -297,35 +289,34 @@ def main(argv: Sequence[str] | None = None) -> int:
     broll_total = sum(len(s.broll) for s in scenes)
     print(
         f"Found {len(scenes)} [SCENE] markers and {broll_total} explicit [BROLL] ranges in {script_path.name}"
-        f" (encoder={codec}, max-extension={args.max_extension_seconds:.1f}s, movie={video_duration_s:.1f}s)"
+        f" (encoder={codec}, handle={DEFAULT_HANDLE_SECONDS:.1f}s, max-extension={DEFAULT_MAX_EXTENSION_SECONDS:.1f}s, movie={video_duration_s:.1f}s)"
     )
 
     failures = 0
     for scene in scenes:
         clip_plan = plan_by_index.get(scene.index)
 
-        if not args.skip_clips:
-            if clip_plan is None:
-                print(f"[clip {scene.index:>3}] no timed scene marker, skipping primary extraction")
-            else:
-                clip_path = clips_dir / clip_plan.clip_path
-                print(
-                    f"[clip {scene.index:>3}] {clip_plan.scene_start}->{clip_plan.scene_end} "
-                    f"with handles {clip_plan.extracted_start}->{clip_plan.extracted_end}  {clip_path.name}"
+        if clip_plan is None:
+            print(f"[clip {scene.index:>3}] no timed scene marker, skipping primary extraction")
+        else:
+            clip_path = clips_dir / clip_plan.clip_path
+            print(
+                f"[clip {scene.index:>3}] {clip_plan.scene_start}->{clip_plan.scene_end} "
+                f"with handles {clip_plan.extracted_start}->{clip_plan.extracted_end}  {clip_path.name}"
+            )
+            try:
+                extract_clip(
+                    video_path,
+                    timestamp_to_seconds(clip_plan.extracted_start),
+                    timestamp_to_seconds(clip_plan.extracted_end),
+                    clip_path,
+                    codec,
                 )
-                try:
-                    extract_clip(
-                        video_path,
-                        timestamp_to_seconds(clip_plan.extracted_start),
-                        timestamp_to_seconds(clip_plan.extracted_end),
-                        clip_path,
-                        codec,
-                    )
-                except subprocess.CalledProcessError as exc:
-                    print(f"  ffmpeg failed: {exc}", file=sys.stderr)
-                    failures += 1
+            except subprocess.CalledProcessError as exc:
+                print(f"  ffmpeg failed: {exc}", file=sys.stderr)
+                failures += 1
 
-        if not args.skip_broll and scene.broll:
+        if scene.broll:
             for i, (bs, be) in enumerate(scene.broll):
                 suffix = chr(ord("a") + i)
                 broll_path = clips_dir / f"broll_{scene.index:03d}_{suffix}.mp4"
@@ -342,7 +333,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     print(f"  ffmpeg failed: {exc}", file=sys.stderr)
                     failures += 1
 
-        if not args.skip_keyframes and clip_plan is not None:
+        if clip_plan is not None:
             keyframe_path = keyframes_dir / f"keyframe_{scene.index:03d}.jpg"
             try:
                 extract_keyframe(video_path, timestamp_to_seconds(clip_plan.keyframe_time), keyframe_path, codec)
@@ -351,7 +342,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 failures += 1
 
     if clip_plans:
-        manifest_path = write_clip_manifest(output_dir, clip_plans, args.clip_manifest_name)
+        manifest_path = write_clip_manifest(output_dir, clip_plans)
         print(f"Clip manifest -> {manifest_path}")
 
     return 1 if failures else 0

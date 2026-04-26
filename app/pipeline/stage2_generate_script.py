@@ -6,8 +6,7 @@ two explicit passes:
 1. Writer pass (`--mode writer`): produce narration beats with no timing.
 2. Grounding pass (`--mode grounder`): consume the beat draft, full SRT,
     and `visual_segments.json`, then emit the final grounded script using
-    `[SCENE start=... end=... source=... confidence=... evidence=...]`
-    markers.
+    `[SCENE start=... end=... source=...]` markers.
 
 The goal is to keep Stage 2's human/LLM handoff reproducible while Stage 4
 and Stage 5 operate on a precise grounding contract.
@@ -34,8 +33,9 @@ SCRIPT_WRITER_ROLE = (
 )
 GROUNDING_EDITOR_ROLE = (
     "You are the alignment editor for a movie-review pipeline. You must anchor "
-    "each narration beat to either the SRT or the visual segment index, cite the "
-    "evidence, and mark uncertain beats as ungrounded instead of inventing times."
+    "each narration beat to either the SRT or the visual segment index, use the "
+    "reference blocks to choose the best timestamp window, and mark uncertain beats "
+    "as ungrounded instead of inventing times."
 )
 DEFAULT_GENRE = "general"
 
@@ -230,7 +230,7 @@ Use this only for non-dialogue beats: action, reactions, transitions, and establ
 # Grounding algorithm
 
 1. Classify each beat as DIALOGUE or ACTION.
-2. If DIALOGUE: search the SRT reference first. Choose the best matching subtitle evidence and use that timestamp window.
+2. If DIALOGUE: search the SRT reference first. Choose the best matching subtitle timestamp window.
 3. If ACTION: search the visual segment reference. Prefer character overlap, then semantic match.
 4. If the best candidate is weak, emit the beat as ungrounded instead of hallucinating a timestamp.
 5. Preserve the section structure and narration text from the beat draft.
@@ -239,9 +239,9 @@ Use this only for non-dialogue beats: action, reactions, transitions, and establ
 
 1. Replace every [BEAT N] marker with a grounded [SCENE ...] marker immediately above the beat text.
 2. Use this exact attribute form for grounded beats:
-   [SCENE start=HH:MM:SS.mmm end=HH:MM:SS.mmm source=srt|visual confidence=0.00 evidence=srt:NNN|visual:NNN]
+    [SCENE start=HH:MM:SS.mmm end=HH:MM:SS.mmm source=srt|visual]
 3. When a beat is ungrounded, use:
-   [SCENE source=ungrounded confidence=0.00 evidence=none]
+    [SCENE source=ungrounded]
 4. If character identity is clear and useful for fallback B-roll selection, add:
    characters="Name A|Name B"
 5. Keep [TITLE], [HOOK], [ACT ...], and [CLOSING].

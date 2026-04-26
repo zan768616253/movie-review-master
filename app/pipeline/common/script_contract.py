@@ -25,8 +25,6 @@ class SceneMarker:
     start: str | None
     end: str | None
     source: str | None = None
-    confidence: float | None = None
-    evidence: str | None = None
     characters: list[str] = field(default_factory=list)
     raw: str | None = None
 
@@ -102,15 +100,11 @@ def parse_scene_marker(line: str) -> SceneMarker | None:
 
     start = normalize_timestamp(attributes.get("start"))
     end = normalize_timestamp(attributes.get("end"))
-    confidence_raw = attributes.get("confidence")
-    confidence = float(confidence_raw) if confidence_raw is not None else None
     characters = split_packed_list(attributes.get("characters"))
     return SceneMarker(
         start=start,
         end=end,
         source=attributes.get("source"),
-        confidence=confidence,
-        evidence=attributes.get("evidence"),
         characters=characters,
         raw=stripped,
     )
@@ -127,10 +121,6 @@ def format_scene_marker(marker: SceneMarker) -> str:
         parts.append(f"end={marker.end}")
     if marker.source:
         parts.append(f"source={marker.source}")
-    if marker.confidence is not None:
-        parts.append(f"confidence={marker.confidence:.2f}")
-    if marker.evidence:
-        parts.append(f"evidence={quote_attr(marker.evidence)}")
     if marker.characters:
         parts.append(f"characters={quote_attr('|'.join(marker.characters))}")
     return f"[SCENE {' '.join(parts)}]"

@@ -91,7 +91,7 @@ def test_build_grounding_prompt_serializes_srt_and_visual_references(tmp_path: P
     assert "| action=" not in prompt
     assert "| confidence=" not in prompt
     assert "[SCENE start=HH:MM:SS.mmm end=HH:MM:SS.mmm source=srt|visual" in prompt
-    assert "[SCENE source=ungrounded confidence=0.00 evidence=none]" in prompt
+    assert "[SCENE source=ungrounded]" in prompt
 
 
 def test_main_writer_subcommand_defaults_movie_title_and_genre(tmp_path: Path, capsys) -> None:

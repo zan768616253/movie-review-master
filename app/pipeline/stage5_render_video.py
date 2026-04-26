@@ -19,8 +19,6 @@ from pathlib import Path
 from app.pipeline.common.json_io import load_json
 from app.pipeline.common.script_contract import get_video_duration, load_visual_segments, timestamp_to_seconds
 from app.pipeline.common.video_encoder import (
-    DEFAULT_ENCODER,
-    ENCODER_CHOICES,
     encoder_ffmpeg_args,
     hwaccel_decode_args,
     resolve_encoder,
@@ -129,9 +127,10 @@ def plan_primary_window(clip_metadata: dict[str, object], target_duration: float
     Splits any extra time needed between the pre- and post-roll handles, then
     spills over into whichever side still has room if the other is saturated.
     """
-    requested = float(clip_metadata.get("requested_duration_s") or 0.0)
-    pre_handle = float(clip_metadata.get("pre_handle_s") or 0.0)
-    extracted = float(clip_metadata.get("extracted_duration_s") or 0.0)
+    
+    requested = float(clip_metadata.get("requested_duration_s") or 0.0) # type: ignore
+    pre_handle = float(clip_metadata.get("pre_handle_s") or 0.0) # type: ignore
+    extracted = float(clip_metadata.get("extracted_duration_s") or 0.0) # type: ignore
     post_handle = max(0.0, extracted - pre_handle - requested)
 
     if target_duration <= requested:
@@ -152,7 +151,7 @@ def score_visual_segment(
     narration_text: str,
     required_characters: set[str],
 ) -> float | None:
-    segment_characters = {str(character) for character in segment.get("characters") or []}
+    segment_characters = {str(character) for character in segment.get("characters") or []} # type: ignore
     if required_characters and not required_characters.issubset(segment_characters):
         return None
 
@@ -168,9 +167,8 @@ def select_semantic_broll_segments(
     visual_segments: list[dict[str, object]],
     used_segment_ids: set[str],
 ) -> list[dict[str, object]]:
-    required_characters = {str(character) for character in entry.get("scene_characters") or []}
+    required_characters = {str(character) for character in entry.get("scene_characters") or []} # type: ignore
     narration_text = str(entry.get("text") or "")
-    exclude_evidence = str(entry.get("scene_evidence") or "")
     exclude_start = entry.get("scene_start")
     exclude_end = entry.get("scene_end")
     exclude_range = None
@@ -180,7 +178,7 @@ def select_semantic_broll_segments(
     ranked: list[tuple[float, dict[str, object]]] = []
     for index, segment in enumerate(visual_segments, 1):
         segment_id = str(segment.get("id") or f"visual:{index:03d}")
-        if segment_id == exclude_evidence or segment_id in used_segment_ids:
+        if segment_id in used_segment_ids:
             continue
 
         segment_start = timestamp_to_seconds(str(segment["start"]))
@@ -199,9 +197,9 @@ def select_semantic_broll_segments(
 
 def collect_manual_broll_paths(entry: dict[str, object], clips_dir: Path) -> list[Path]:
     broll_paths: list[Path] = []
-    for i, _ in enumerate(entry.get("broll") or []):
+    for i, _ in enumerate(entry.get("broll") or []): # type: ignore
         suffix = chr(ord("a") + i)
-        broll_path = clips_dir / f"broll_{int(entry['index']):03d}_{suffix}.mp4"
+        broll_path = clips_dir / f"broll_{int(entry['index']):03d}_{suffix}.mp4" # type: ignore
         if broll_path.exists():
             broll_paths.append(broll_path)
     return broll_paths
@@ -313,12 +311,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.5,
         help="Warn when freeze fallback exceeds this duration in seconds",
     )
-    parser.add_argument(
-        "--encoder",
-        choices=ENCODER_CHOICES,
-        default=DEFAULT_ENCODER,
-        help="Video encoder. 'auto' picks h264_nvenc when available, otherwise libx264.",
-    )
     return parser
 
 
@@ -355,7 +347,11 @@ def main(argv=None) -> int:
     manifest = load_json(args.manifest)
     clip_manifest = load_clip_manifest(args.clip_manifest)
     visual_segments = load_visual_segments(args.visual_segments)
-    codec = resolve_encoder(args.encoder)
+    try:
+        codec = resolve_encoder()
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     used_segment_ids: set[str] = set()
     print(f"Manifest: {len(manifest)} chunks (encoder={codec})")
 

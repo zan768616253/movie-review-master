@@ -57,14 +57,6 @@ class Chunk:
         return self.scene.source if self.scene else None
 
     @property
-    def scene_confidence(self) -> Optional[float]:
-        return self.scene.confidence if self.scene else None
-
-    @property
-    def scene_evidence(self) -> Optional[str]:
-        return self.scene.evidence if self.scene else None
-
-    @property
     def scene_characters(self) -> list[str]:
         return list(self.scene.characters) if self.scene else []
 
@@ -283,8 +275,6 @@ def write_manifest(
             "scene_start": chunk.scene_start,
             "scene_end": chunk.scene_end,
             "scene_source": chunk.scene_source,
-            "scene_confidence": chunk.scene_confidence,
-            "scene_evidence": chunk.scene_evidence,
             "scene_characters": chunk.scene_characters,
             "text": chunk.text,
             "broll": [[start, end] for (start, end) in chunk.broll],

@@ -110,9 +110,9 @@ def test_parse_script_chunks_supports_grounded_scene_attributes() -> None:
     script_text = """
 [TITLE] Demo
 [HOOK]
-[SCENE start=00:00:01.500 end=00:00:06.250 source=srt confidence=0.97 evidence=srt:12 characters="Yuta|Gojo"]
+[SCENE start=00:00:01.500 end=00:00:06.250 source=srt characters="Yuta|Gojo"]
 一段旁白
-[SCENE source=ungrounded confidence=0.20 evidence=none characters="Yuta"]
+[SCENE source=ungrounded characters="Yuta"]
 另一段旁白
 [CLOSING]
 结尾
@@ -124,8 +124,6 @@ def test_parse_script_chunks_supports_grounded_scene_attributes() -> None:
     assert chunks[0].scene_start == "00:00:01.500"
     assert chunks[0].scene_end == "00:00:06.250"
     assert chunks[0].scene_source == "srt"
-    assert chunks[0].scene_confidence == 0.97
-    assert chunks[0].scene_evidence == "srt:12"
     assert chunks[0].scene_characters == ["Yuta", "Gojo"]
     assert chunks[1].scene_start is None
     assert chunks[1].scene_source == "ungrounded"

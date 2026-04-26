@@ -8,7 +8,7 @@ def test_plan_primary_window_uses_handles_before_leftover() -> None:
         "extracted_duration_s": 6.0,
     }
 
-    start_offset, clip_duration, leftover = plan_primary_window(clip_metadata, 5.0)
+    start_offset, clip_duration, leftover = plan_primary_window(clip_metadata, 5.0) # type: ignore
 
     assert start_offset == 0.5
     assert clip_duration == 5.0
@@ -22,7 +22,7 @@ def test_plan_primary_window_leaves_leftover_after_handles_are_spent() -> None:
         "extracted_duration_s": 5.0,
     }
 
-    start_offset, clip_duration, leftover = plan_primary_window(clip_metadata, 6.0)
+    start_offset, clip_duration, leftover = plan_primary_window(clip_metadata, 6.0) # type: ignore
 
     assert start_offset == 0.0
     assert clip_duration == 5.0
@@ -33,7 +33,6 @@ def test_select_semantic_broll_segments_prefers_matching_characters_and_avoids_s
     entry = {
         "text": "主角开始追杀敌人",
         "scene_characters": ["Hero"],
-        "scene_evidence": "visual:001",
         "scene_start": "00:00:05.000",
         "scene_end": "00:00:08.000",
     }
