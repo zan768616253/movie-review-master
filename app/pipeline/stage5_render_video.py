@@ -10,6 +10,7 @@ Priority when narration outlasts the requested hero scene:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -102,11 +103,86 @@ def default_clip_manifest_path(clips_dir: Path) -> Path:
     return clips_dir.parent / DEFAULT_CLIP_MANIFEST
 
 
+def coerce_manifest_index(value: object, *, context: str) -> int:
+    if not isinstance(value, (int, str)):
+        raise ValueError(f"{context} must be an integer")
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"{context} must be an integer") from exc
+
+
+def coerce_manifest_seconds(value: object, *, context: str) -> float:
+    if not isinstance(value, (int, float, str)):
+        raise ValueError(f"{context} must be numeric")
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise ValueError(f"{context} must be numeric") from exc
+
+
+def load_render_manifest(path: Path) -> list[dict[str, object]]:
+    try:
+        payload = load_json(path)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Invalid manifest JSON in {path}: {exc}") from exc
+
+    if not isinstance(payload, list):
+        raise ValueError(f"Manifest payload must be a JSON array: {path}")
+
+    manifest: list[dict[str, object]] = []
+    for entry_number, entry in enumerate(payload, 1):
+        if not isinstance(entry, dict):
+            raise ValueError(f"Manifest entry {entry_number} must be a JSON object: {path}")
+
+        missing = [field for field in ("index", "audio_start_s", "audio_end_s") if field not in entry]
+        if missing:
+            raise ValueError(
+                f"Manifest entry {entry_number} missing required fields {', '.join(missing)}: {path}"
+            )
+
+        try:
+            coerce_manifest_index(entry["index"], context=f"Manifest entry {entry_number} index")
+            coerce_manifest_seconds(
+                entry["audio_start_s"],
+                context=f"Manifest entry {entry_number} audio_start_s",
+            )
+            coerce_manifest_seconds(
+                entry["audio_end_s"],
+                context=f"Manifest entry {entry_number} audio_end_s",
+            )
+        except ValueError as exc:
+            raise ValueError(f"{exc}: {path}") from exc
+
+        manifest.append(entry)
+
+    return manifest
+
+
 def load_clip_manifest(path: Path | None) -> dict[int, dict[str, object]]:
     if path is None or not path.exists():
         return {}
-    payload = load_json(path)
-    return {int(entry["index"]): entry for entry in payload}
+    try:
+        payload = load_json(path)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Invalid clip manifest JSON in {path}: {exc}") from exc
+
+    if not isinstance(payload, list):
+        raise ValueError(f"Clip manifest payload must be a JSON array: {path}")
+
+    manifest: dict[int, dict[str, object]] = {}
+    for entry_number, entry in enumerate(payload, 1):
+        if not isinstance(entry, dict):
+            raise ValueError(f"Clip manifest entry {entry_number} must be a JSON object: {path}")
+        if "index" not in entry:
+            raise ValueError(f"Clip manifest entry {entry_number} missing required field index: {path}")
+
+        try:
+            manifest[coerce_manifest_index(entry["index"], context=f"Clip manifest entry {entry_number} index")] = entry
+        except ValueError as exc:
+            raise ValueError(f"{exc}: {path}") from exc
+
+    return manifest
 
 
 def tokenize_text(text: str) -> set[str]:
@@ -344,8 +420,12 @@ def main(argv=None) -> int:
         print(f"Visual segments not found: {args.visual_segments}", file=sys.stderr)
         return 1
 
-    manifest = load_json(args.manifest)
-    clip_manifest = load_clip_manifest(args.clip_manifest)
+    try:
+        manifest = load_render_manifest(args.manifest)
+        clip_manifest = load_clip_manifest(args.clip_manifest)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     visual_segments = load_visual_segments(args.visual_segments)
     try:
         codec = resolve_encoder()
@@ -363,8 +443,11 @@ def main(argv=None) -> int:
     last_clip_number: int | None = None
 
     for entry in manifest:
-        idx = entry["index"]
-        target_dur = entry["audio_end_s"] - entry["audio_start_s"]
+        idx = coerce_manifest_index(entry["index"], context="Manifest index")
+        target_dur = coerce_manifest_seconds(entry["audio_end_s"], context="Manifest audio_end_s") - coerce_manifest_seconds(
+            entry["audio_start_s"],
+            context="Manifest audio_start_s",
+        )
         if target_dur <= 0:
             print(f"  skipping chunk {idx}: zero-duration narration")
             continue

@@ -9,6 +9,7 @@ from app.pipeline.stage0_indexers.base import (
     merge_segments,
 )
 from app.pipeline.stage0_indexers.gemini import GeminiStrategy
+from app.pipeline.stage0_indexers.gemini import build_timestamp_drawtext_filter
 
 
 # ---------------------------------------------------------------------------
@@ -164,3 +165,28 @@ class TestGeminiStrategy:
         # Characters: no guessing without visual re-identification.
         assert "visually re-identify" in prompt_text
         assert "NEVER guess" in prompt_text
+
+
+def test_build_timestamp_drawtext_filter_omits_fontfile_when_default_font_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "app.pipeline.stage0_indexers.gemini.DEFAULT_TIMESTAMP_FONT_PATH",
+        tmp_path / "missing-font.ttf",
+    )
+
+    drawtext_filter = build_timestamp_drawtext_filter()
+
+    assert "fontfile=" not in drawtext_filter
+    assert drawtext_filter.startswith("drawtext=text=")
+
+
+@patch("app.pipeline.stage0_indexers.gemini.genai")
+def test_index_chunk_deletes_uploaded_file_when_json_parse_fails(mock_genai, tmp_path):
+    mock_client = _build_fake_gemini_client("not valid json")
+    mock_genai.Client.return_value = mock_client
+
+    strategy = GeminiStrategy(api_key="fake")
+
+    with pytest.raises(json.JSONDecodeError):
+        strategy._index_chunk(tmp_path / "chunk.mp4")
+
+    mock_client.files.delete.assert_called_once()

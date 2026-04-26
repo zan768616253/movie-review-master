@@ -137,10 +137,13 @@ def run_stage0(paths: HarnessPaths, args: argparse.Namespace) -> int:
 def run_stage2_writer(paths: HarnessPaths, args: argparse.Namespace) -> int:
     paths.ensure_dirs()
     seed_placeholders(paths)
+    if not paths.visual_segments_path.exists():
+        print(f"Stage 0 visual_segments.json missing: {paths.visual_segments_path}")
+        return 1
     prompt = writer_override(args) + build_writer_prompt(
         style_path=paths.style_path,
-        subtitle_text_path=paths.subtitle_text_path,
         subtitle_srt_path=paths.subtitle_srt_path,
+        visual_segments_path=paths.visual_segments_path,
         movie_title=args.movie_title,
         genre=args.genre,
     )

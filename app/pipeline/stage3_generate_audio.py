@@ -155,6 +155,13 @@ def parse_script_chunks(script_text: str) -> list[Chunk]:
     return chunks
 
 
+def validate_script_input(script_path: Path, script_text: str, chunks: list[Chunk]) -> None:
+    if not script_text.strip():
+        raise ValueError(f"Script is empty: {script_path}")
+    if not chunks:
+        raise ValueError(f"No narration chunks found in {script_path}")
+
+
 def load_model():
     from qwen_tts import Qwen3TTSModel as LoadedQwen3TTSModel
 
@@ -353,7 +360,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
 
+    script_path = args.script.expanduser().resolve()
+    output_dir = args.output_dir.expanduser().resolve()
     style_path = args.style.expanduser().resolve()
+
+    if not script_path.exists():
+        print(f"Script file not found: {script_path}", file=sys.stderr)
+        return 1
     if not style_path.exists():
         print(f"Style file not found: {style_path}", file=sys.stderr)
         return 1
@@ -385,19 +398,21 @@ def main(argv=None) -> int:
             print(f"Reference transcript not found: {voice_reference.text_path}", file=sys.stderr)
         return 1
 
-    script_text = args.script.read_text(encoding="utf-8")
+    script_text = script_path.read_text(encoding="utf-8")
     chunks = parse_script_chunks(script_text)
 
-    print_chunk_summary(args.script, chunks)
+    print_chunk_summary(script_path, chunks)
 
-    if not chunks:
-        print(f"No narration chunks found in {args.script}", file=sys.stderr)
+    try:
+        validate_script_input(script_path, script_text, chunks)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
         return 1
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
     output_tag = resolve_output_tag(style_path, args.tag)
-    mp3_path = args.output_dir / f"voiceover_{output_tag}_voiceclone.mp3"
-    manifest_path = args.output_dir / f"voiceover_{output_tag}_voiceclone.manifest.json"
+    mp3_path = output_dir / f"voiceover_{output_tag}_voiceclone.mp3"
+    manifest_path = output_dir / f"voiceover_{output_tag}_voiceclone.manifest.json"
 
     if torch.cuda.is_available():
         print(

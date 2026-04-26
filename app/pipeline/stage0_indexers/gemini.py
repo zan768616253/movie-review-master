@@ -24,15 +24,21 @@ DEFAULT_MODEL = "gemini-3-flash-preview"
 DEFAULT_CHUNK_MINUTES = 5
 DEFAULT_SHOT_SNAP_TOLERANCE_S = 1.5
 DEFAULT_SHOT_DETECT_THRESHOLD = 0.3
-TIMESTAMP_FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
+DEFAULT_TIMESTAMP_FONT_PATH = Path("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf")
 
-TIMESTAMP_DRAWTEXT_FILTER = (
-    f"drawtext=fontfile={TIMESTAMP_FONT_PATH}:"
-    r"text='%{pts\:hms}':"
-    "x=12:y=12:"
-    "fontsize=28:fontcolor=white:"
-    "box=1:boxcolor=black@0.7:boxborderw=6"
-)
+
+def build_timestamp_drawtext_filter() -> str:
+    font_prefix = ""
+    if DEFAULT_TIMESTAMP_FONT_PATH.exists():
+        font_prefix = f"fontfile={DEFAULT_TIMESTAMP_FONT_PATH}:"
+    return (
+        "drawtext="
+        f"{font_prefix}"
+        r"text='%{pts\:hms}':"
+        "x=12:y=12:"
+        "fontsize=28:fontcolor=white:"
+        "box=1:boxcolor=black@0.7:boxborderw=6"
+    )
 
 
 _SEGMENT_ITEM_SCHEMA = types.Schema(
@@ -108,7 +114,7 @@ class GeminiStrategy(VisualIndexerStrategy):
             *hwaccel_decode_args(codec),
             "-ss", str(start_s), "-t", str(duration_s),
             "-i", str(video_path),
-            "-vf", TIMESTAMP_DRAWTEXT_FILTER,
+            "-vf", build_timestamp_drawtext_filter(),
             *video_args,
             "-c:a", "aac", "-b:a", "128k",
             str(out_path),
@@ -129,42 +135,46 @@ class GeminiStrategy(VisualIndexerStrategy):
             raise ValueError(f"Uploaded file missing name: {video_file}")
         video_file_name = video_file.name
 
-        while state_name == "PROCESSING":
-            time.sleep(3)
-            video_file = self.client.files.get(name=video_file_name)
-            state = video_file.state
-            if state is None:
-                raise ValueError(f"Unexpected missing state for uploaded file: {video_file}")
-            state_name = state.name
-            if state_name is None:
-                raise ValueError(f"Unexpected missing state for uploaded file: {video_file}")
-            if video_file.name is None:
-                raise ValueError(f"Uploaded file missing name: {video_file}")
-            video_file_name = video_file.name
-
-        if state_name == "FAILED":
-            raise ValueError(f"Video processing failed for {video_chunk_path}")
-
-        print(f"Requesting inference for {video_chunk_path.name}...")
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=[video_file, PROMPT],
-            config=types.GenerateContentConfig(
-                thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.HIGH),
-                response_mime_type="application/json",
-                response_schema=_RESPONSE_SCHEMA,
-            ),
-        )
-        if not response.text:
-            raise ValueError(f"Empty response for {video_chunk_path}")
-
-        self.client.files.delete(name=video_file_name)
-
         try:
-            return json.loads(response.text)
-        except json.JSONDecodeError as e:
-            print(f"Failed to parse JSON for {video_chunk_path.name}. Raw text snippet: {response.text[:200]}")
-            raise e
+            while state_name == "PROCESSING":
+                time.sleep(3)
+                video_file = self.client.files.get(name=video_file_name)
+                state = video_file.state
+                if state is None:
+                    raise ValueError(f"Unexpected missing state for uploaded file: {video_file}")
+                state_name = state.name
+                if state_name is None:
+                    raise ValueError(f"Unexpected missing state for uploaded file: {video_file}")
+                if video_file.name is None:
+                    raise ValueError(f"Uploaded file missing name: {video_file}")
+                video_file_name = video_file.name
+
+            if state_name == "FAILED":
+                raise ValueError(f"Video processing failed for {video_chunk_path}")
+
+            print(f"Requesting inference for {video_chunk_path.name}...")
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=[video_file, PROMPT],
+                config=types.GenerateContentConfig(
+                    thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.HIGH),
+                    response_mime_type="application/json",
+                    response_schema=_RESPONSE_SCHEMA,
+                ),
+            )
+            if not response.text:
+                raise ValueError(f"Empty response for {video_chunk_path}")
+
+            try:
+                return json.loads(response.text)
+            except json.JSONDecodeError as e:
+                print(f"Failed to parse JSON for {video_chunk_path.name}. Raw text snippet: {response.text[:200]}")
+                raise e
+        finally:
+            try:
+                self.client.files.delete(name=video_file_name)
+            except Exception:
+                pass
 
     def index_video(self, video_path: Path, tmp_dir: Path) -> List[Dict]:
         duration = get_video_duration(video_path)

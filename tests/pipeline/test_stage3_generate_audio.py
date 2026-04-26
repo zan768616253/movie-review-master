@@ -83,6 +83,46 @@ def test_main_uses_style_default_reference_paths(
     assert captured["ref_text_path"] == voice_reference.text_path
 
 
+def test_main_expands_user_script_and_output_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script_path = tmp_path / "script.txt"
+    script_path.write_text(
+        "[TITLE] Demo\n[SCENE: 00:00:01 - 00:00:10]\n一段旁白\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(tmp_path))
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr("app.pipeline.stage3_generate_audio.load_model", lambda: object())
+    monkeypatch.setattr(
+        "app.pipeline.stage3_generate_audio.build_voice_prompt",
+        lambda model, ref_audio, ref_text_path: {"prompt": True},
+    )
+
+    def fake_print_chunk_summary(script_file: Path, chunks: list[object]) -> None:
+        captured["script_path"] = script_file
+        captured["chunk_count"] = len(chunks)
+
+    def fake_run_full_generation(model, chunks, voice_prompt, mp3_path, manifest_path):
+        captured["mp3_path"] = mp3_path
+        captured["manifest_path"] = manifest_path
+
+    monkeypatch.setattr("app.pipeline.stage3_generate_audio.print_chunk_summary", fake_print_chunk_summary)
+    monkeypatch.setattr("app.pipeline.stage3_generate_audio.run_full_generation", fake_run_full_generation)
+
+    result = main(["--script", "~/script.txt", "--output-dir", "~/stage3-out"])
+
+    assert result == 0
+    assert captured["script_path"] == script_path.resolve()
+    assert captured["chunk_count"] == 1
+    assert captured["mp3_path"] == (tmp_path / "stage3-out" / "voiceover_niu-shu_voiceclone.mp3").resolve()
+    assert captured["manifest_path"] == (
+        tmp_path / "stage3-out" / "voiceover_niu-shu_voiceclone.manifest.json"
+    ).resolve()
+
+
 def test_main_reports_missing_style_reference_audio(tmp_path: Path, capsys) -> None:
     script_path = tmp_path / "script.txt"
     script_path.write_text(
