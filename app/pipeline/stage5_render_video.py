@@ -2,9 +2,10 @@
 
 Priority when narration outlasts the requested hero scene:
 1. Use the exact hero window.
-2. Expand into extracted handles and any safe-boundary extension.
-3. Append explicit or semantic B-roll.
-4. Freeze only as the last fallback.
+2. Expand into extracted handles (pre_handle, post_handle) on the cut clip.
+3. Continue forward in the source movie past scene_end (scene extension).
+4. Append explicit or semantic B-roll.
+5. Freeze only as the last fallback.
 """
 
 from __future__ import annotations
@@ -222,6 +223,42 @@ def plan_primary_window(clip_metadata: dict[str, object], target_duration: float
     return pre_handle - pre_use, clip_duration, leftover
 
 
+def plan_scene_extension(
+    entry: dict[str, object],
+    clip_metadata: dict[str, object] | None,
+    video_duration_s: float,
+    remaining: float,
+    budget: float,
+) -> tuple[float, float]:
+    """Return (extension_start_s, extension_duration) sourced from the original movie.
+
+    Continues forward in source time from where the cut clip stops — i.e. past
+    any post_handle that plan_primary_window has already consumed — so the
+    extension never repeats footage that was already played from clip_path.
+    Returns a zero duration when extension is not possible (closing chunk,
+    no scene_end, no leftover, or no headroom in the source video).
+    """
+    if remaining <= 0.01 or budget <= 0.0:
+        return 0.0, 0.0
+    scene_end_raw = entry.get("scene_end")
+    if scene_end_raw is None:
+        return 0.0, 0.0
+    scene_end_s = timestamp_to_seconds(str(scene_end_raw))
+
+    if clip_metadata is not None:
+        extracted = float(clip_metadata.get("extracted_duration_s") or 0.0)  # type: ignore
+        pre_handle = float(clip_metadata.get("pre_handle_s") or 0.0)  # type: ignore
+        requested = float(clip_metadata.get("requested_duration_s") or 0.0)  # type: ignore
+        post_handle = max(0.0, extracted - pre_handle - requested)
+        start_s = scene_end_s + post_handle
+    else:
+        start_s = scene_end_s
+
+    headroom = max(0.0, video_duration_s - start_s)
+    duration = min(remaining, budget, headroom)
+    return start_s, max(0.0, duration)
+
+
 def score_visual_segment(
     segment: dict[str, object],
     narration_text: str,
@@ -387,6 +424,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.5,
         help="Warn when freeze fallback exceeds this duration in seconds",
     )
+    parser.add_argument(
+        "--scene-extension-budget",
+        type=float,
+        default=6.0,
+        help="When narration outlasts the hero clip, continue forward in the source movie past scene_end for up to this many seconds before falling back to B-roll.",
+    )
     return parser
 
 
@@ -433,6 +476,7 @@ def main(argv=None) -> int:
         print(str(exc), file=sys.stderr)
         return 1
     used_segment_ids: set[str] = set()
+    video_duration_s = probe_duration(args.video) if args.video is not None else 0.0
     print(f"Manifest: {len(manifest)} chunks (encoder={codec})")
 
     segments_dir = args.output.parent / "segments"
@@ -485,6 +529,22 @@ def main(argv=None) -> int:
                 render_excerpt(clip_path, start_offset, primary_duration, part_path, codec)
                 part_paths.append(part_path)
                 part_index += 1
+                last_clip_number = idx
+
+        if remaining > 0.01 and args.video is not None:
+            ext_start_s, ext_duration = plan_scene_extension(
+                entry,
+                clip_metadata,
+                video_duration_s,
+                remaining,
+                args.scene_extension_budget,
+            )
+            if ext_duration > 0.01:
+                part_path = segments_dir / f"segment_{idx:03d}_part{part_index:02d}_extension.mp4"
+                render_excerpt(args.video, ext_start_s, ext_duration, part_path, codec)
+                part_paths.append(part_path)
+                part_index += 1
+                remaining -= ext_duration
                 last_clip_number = idx
 
         manual_broll_paths = collect_manual_broll_paths(entry, args.clips_dir)
@@ -547,6 +607,8 @@ def main(argv=None) -> int:
         descriptor = []
         if clip_path.exists():
             descriptor.append(clip_path.name)
+        if any("extension" in path.name for path in part_paths):
+            descriptor.append("scene extension")
         if manual_broll_paths:
             descriptor.append(f"{len(manual_broll_paths)} manual B-roll")
         if any("semantic" in path.name for path in part_paths):

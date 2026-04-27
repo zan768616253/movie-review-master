@@ -2,7 +2,12 @@ from pathlib import Path
 
 from app.pipeline.common.json_io import dump_json
 from app.pipeline.stage3_generate_audio import parse_script_chunks, write_manifest
-from app.pipeline.stage5_render_video import main, plan_primary_window, select_semantic_broll_segments
+from app.pipeline.stage5_render_video import (
+    main,
+    plan_primary_window,
+    plan_scene_extension,
+    select_semantic_broll_segments,
+)
 
 
 def test_plan_primary_window_uses_handles_before_leftover() -> None:
@@ -31,6 +36,37 @@ def test_plan_primary_window_leaves_leftover_after_handles_are_spent() -> None:
     assert start_offset == 0.0
     assert clip_duration == 5.0
     assert leftover == 1.0
+
+
+def test_plan_scene_extension_starts_after_consumed_post_handle() -> None:
+    entry = {"scene_end": "00:00:10.000"}
+    clip_metadata = {
+        "requested_duration_s": 5.0,
+        "pre_handle_s": 1.0,
+        "extracted_duration_s": 8.0,
+    }
+
+    start_s, duration = plan_scene_extension(entry, clip_metadata, video_duration_s=600.0, remaining=4.0, budget=6.0) # type: ignore
+
+    assert start_s == 12.0
+    assert duration == 4.0
+
+
+def test_plan_scene_extension_caps_by_budget_and_video_headroom() -> None:
+    entry = {"scene_end": "00:00:55.000"}
+
+    start_s, duration = plan_scene_extension(entry, clip_metadata=None, video_duration_s=58.0, remaining=10.0, budget=6.0) # type: ignore
+
+    assert start_s == 55.0
+    assert duration == 3.0
+
+
+def test_plan_scene_extension_returns_zero_for_closing_chunk() -> None:
+    start_s, duration = plan_scene_extension(
+        {"scene_end": None}, clip_metadata=None, video_duration_s=600.0, remaining=4.0, budget=6.0,
+    )
+
+    assert duration == 0.0
 
 
 def test_select_semantic_broll_segments_prefers_matching_characters_and_avoids_scene_overlap() -> None:

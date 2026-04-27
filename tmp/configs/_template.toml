@@ -1,0 +1,16 @@
+# Template for a new movie. Copy this file to <movie_slug>.toml and fill in.
+# Paths are relative to the repo root.
+
+[common]
+movie_slug    = "TODO_short_slug_no_spaces"      # used as the work folder name under tmp/work/
+movie_dir     = "movies/TODO_movie_folder_name"
+movie_title   = "TODO Display Title"
+video_file    = "TODO.mkv"
+subtitle_file = "TODO.srt"
+style_path    = "styles/niu-shu.md"
+genre         = "action"                          # action / drama / etc — used in the Stage 2 prompt
+
+target_seconds = 300.0
+
+[stage3]
+# tag = "custom_tag"
