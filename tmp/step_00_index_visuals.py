@@ -4,7 +4,7 @@ Reads:  <movie>.mkv
 Writes: tmp/work/<movie_slug>/stage0/visual_segments.json
 
 Run this file directly in VSCode (the ▶ button uses the "Current File"
-launch config). To switch movies, change CONFIG below.
+launch config). To switch movies, edit tmp/configs/current_movie.toml.
 """
 
 from __future__ import annotations
@@ -13,11 +13,11 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import banner, build_paths, ensure_stage_dirs, fail, load_config
+from _common import DEFAULT_CONFIG, banner, build_paths, ensure_stage_dirs, fail, load_config
 
 from app.pipeline.stage0_index_visuals import main as stage0_main
 
-CONFIG = "configs/jujutsu_kaisen_0.toml"
+CONFIG = DEFAULT_CONFIG
 
 
 def run() -> int:

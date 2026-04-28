@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import (
+    DEFAULT_CONFIG,
     PLACEHOLDER_ANCHORED,
     banner,
     build_paths,
@@ -39,7 +40,7 @@ from app.pipeline.common.script_contract import (
 from app.pipeline.stage1_parse_subtitles import parse_subtitles
 from app.pipeline.stage2_generate_script import build_planner_prompt
 
-CONFIG = "configs/jujutsu_kaisen_0.toml"
+CONFIG = DEFAULT_CONFIG
 
 
 def seed_placeholders(paths) -> None:

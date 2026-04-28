@@ -168,7 +168,7 @@ Purpose:
 - read the voiceover manifest
 - render per-chunk video segments
 - concatenate segments
-- mux the narration track into `final_video.mp4`
+- mux the narration track into `review.mp4`
 
 Current state:
 
@@ -185,6 +185,19 @@ Current stage-1 characteristics:
 Key CLI flags:
 
 - `--encoder {auto,nvenc,libx264}` (default `auto`) — same selector used by Stage 4. Used for hero slices, manual B-roll re-encodes, semantic B-roll re-encodes, and still-frame segments.
+
+### `app/pipeline/stage6_finalize_video.py`
+
+Purpose:
+
+- take the Stage 5 draft render as the locked picture source
+- take the Stage 3 voiceover as the authoritative narration source
+- emit `final_video.mp4` with `+faststart` for direct upload
+
+Current state:
+
+- implemented
+- exposes `finalize-video` entry point
 
 ### `app/pipeline/common/`
 
@@ -340,6 +353,7 @@ movies/<title>/
     clips/broll_NNN_a.mp4
     keyframes/keyframe_NNN.jpg
     segments/segment_NNN.mp4
+    review.mp4
     final_video.mp4
 ```
 
@@ -353,6 +367,7 @@ Configured in `pyproject.toml`:
 - `generate-audio = app.pipeline.stage3_generate_audio:main`
 - `video-processor = app.pipeline.stage4_video_processor:main`
 - `render-video = app.pipeline.stage5_render_video:main`
+- `finalize-video = app.pipeline.stage6_finalize_video:main`
 - `transcribe = app.tools.transcribe_audio:main`
 - `prepare-voice-reference = app.tools.prepare_voice_reference:main`
 

@@ -39,6 +39,7 @@ generate-script = "app.pipeline.stage2_generate_script:main"
 generate-audio = "app.pipeline.stage3_generate_audio:main"
 video-processor = "app.pipeline.stage4_video_processor:main"
 render-video = "app.pipeline.stage5_render_video:main"
+finalize-video = "app.pipeline.stage6_finalize_video:main"
 transcribe = "app.tools.transcribe_audio:main"
 prepare-voice-reference = "app.tools.prepare_voice_reference:main"
 

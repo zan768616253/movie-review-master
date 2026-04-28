@@ -94,11 +94,11 @@ The manifest is the sync contract between audio generation and rendering. It rec
 
 ### Draft Render
 
-`final_video.mp4` is a watchable draft. It is intentionally not the project’s final master. The master is expected to be produced after manual finishing.
+`review.mp4` is the Stage 5 watchable draft. `final_video.mp4` is the Stage 6 upload-ready master created by remuxing the Stage 5 picture lock with the Stage 3 narration track.
 
 ## 5. End-to-End Pipeline Design
 
-The logical pipeline has six stages.
+The logical pipeline has seven stages.
 
 ### Stage 0: Visual Indexing
 
@@ -213,6 +213,20 @@ Stable render rules:
 - B-roll is a style tool; hard freezes are a grounding failure signal and should stay rare
 - the first working render can favor determinism over polish
 - later iterations add transitions, subtitles, and richer audio mixing
+
+### Stage 6: Upload Finalize
+
+Purpose:
+
+- preserve the Stage 5 picture lock
+- remux the Stage 3 narration track onto that draft
+- emit an upload-ready MP4 with `+faststart`
+
+Stable finalize rules:
+
+- Stage 6 takes video from `review.mp4`, not from the source movie
+- Stage 6 takes audio from the Stage 3 voiceover, even if the Stage 5 draft already has muxed narration
+- the final master should be directly playable and ready for YouTube upload without a manual remux step
 
 ### Post-Pipeline: DaVinci Handoff
 

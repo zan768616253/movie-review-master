@@ -1,4 +1,4 @@
-"""Render the final review video from anchored manifests.
+"""Render the draft review video from anchored manifests.
 
 Reads the Stage 3 voice manifest (`ranges` per chunk + audio timing) and
 the Stage 4 clip manifest (one or more pre-extracted clips per chunk),
@@ -16,7 +16,7 @@ audio — narration is sacred.
 
 Outputs:
 
-    <output_dir>/review.mp4               final video
+    <output_dir>/review.mp4               draft review video
     <output_dir>/segments/segment_NNN.mp4 per-chunk visuals (kept on disk)
     <output_dir>/segments/segment_NNN.mp3 per-chunk audio split from voiceover
     <output_dir>/edit_manifest.json       handoff manifest for manual NLE editing
@@ -489,7 +489,7 @@ def write_edit_manifest(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="render-video",
-        description="Render the final review by playing per-anchor hero clips trimmed to match audio.",
+        description="Render the Stage 5 draft review by playing per-anchor hero clips trimmed to match audio.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--manifest", type=Path, required=True,
@@ -505,7 +505,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--visual-segments", type=Path,
                         help="Optional Stage 0 visual_segments.json — used for shot-aware smart-trim.")
     parser.add_argument("--output", type=Path, required=True,
-                        help="Final review.mp4 path.")
+                        help="Draft review.mp4 path.")
     return parser
 
 

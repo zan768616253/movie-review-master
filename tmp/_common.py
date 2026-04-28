@@ -17,6 +17,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TMP_ROOT = REPO_ROOT / "tmp"
 WORK_ROOT = TMP_ROOT / "work"
+DEFAULT_CONFIG = "configs/current_movie.toml"
 
 PLACEHOLDER_ANCHORED = "<REPLACE_WITH_STAGE2_PLANNER_OUTPUT>\n"
 
@@ -36,6 +37,7 @@ class Paths:
     stage3_dir: Path
     stage4_dir: Path
     stage5_dir: Path
+    stage6_dir: Path
 
     # Stage 0
     visual_segments: Path
@@ -59,7 +61,11 @@ class Paths:
     stage4_clip_manifest: Path
 
     # Stage 5
+    stage5_review_video: Path
+
+    # Stage 6
     final_video: Path
+    final_video_manifest: Path
 
 
 def load_config(config_path: str | Path) -> dict:
@@ -89,6 +95,7 @@ def build_paths(config: dict) -> Paths:
     stage3_dir = work_dir / "stage3"
     stage4_dir = work_dir / "stage4"
     stage5_dir = work_dir / "stage5"
+    stage6_dir = work_dir / "stage6"
 
     tag = stage3_cfg.get("tag") or style.stem
 
@@ -103,6 +110,7 @@ def build_paths(config: dict) -> Paths:
         stage3_dir=stage3_dir,
         stage4_dir=stage4_dir,
         stage5_dir=stage5_dir,
+        stage6_dir=stage6_dir,
         visual_segments=stage0_dir / "visual_segments.json",
         subtitles_text=stage1_dir / "subtitles.txt",
         planner_prompt=stage2_dir / "planner_prompt.txt",
@@ -113,7 +121,9 @@ def build_paths(config: dict) -> Paths:
         stage4_clips_dir=stage4_dir / "clips",
         stage4_keyframes_dir=stage4_dir / "keyframes",
         stage4_clip_manifest=stage4_dir / "clip_manifest.json",
-        final_video=stage5_dir / "review.mp4",
+        stage5_review_video=stage5_dir / "review.mp4",
+        final_video=stage6_dir / "final_video.mp4",
+        final_video_manifest=stage6_dir / "delivery_manifest.json",
     )
 
 
@@ -125,6 +135,7 @@ def ensure_stage_dirs(paths: Paths) -> None:
         paths.stage3_dir,
         paths.stage4_dir,
         paths.stage5_dir,
+        paths.stage6_dir,
     ):
         d.mkdir(parents=True, exist_ok=True)
 

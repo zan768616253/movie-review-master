@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import (
+    DEFAULT_CONFIG,
     PLACEHOLDER_ANCHORED,
     banner,
     build_paths,
@@ -25,7 +26,7 @@ from _common import (
 
 from app.pipeline.stage3_generate_audio import main as stage3_main
 
-CONFIG = "configs/jujutsu_kaisen_0.toml"
+CONFIG = DEFAULT_CONFIG
 
 
 def run() -> int:

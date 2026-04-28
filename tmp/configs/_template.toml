@@ -1,4 +1,4 @@
-# Template for a new movie. Copy this file to <movie_slug>.toml and fill in.
+# Template for the active movie. Copy this file to current_movie.toml and fill in.
 # Paths are relative to the repo root.
 
 [common]
