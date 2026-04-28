@@ -39,18 +39,31 @@ Scan the whole movie for candidate hook moments. Rank them by these criteria and
 4. **冲突与矛盾 (Conflict & impossibility)** — betrayal mid-kiss, friend turns enemy, impossible setup
 5. **悬念 (Pure suspense)** — unanswered question that forces the viewer to keep watching
 
-### The 注意看 Formula
+### Hook Archetypes (5 types — pick the best fit)
 
+**Type A: 注意看 Formula (Classic)** — Pull the most shocking scene out of sequence.
 ```
 注意看，这个[descriptor]叫[archetype name]，[shocking/intriguing situation]
 ```
-
-### Strong Hook Examples
-
 - `注意看，这个男人叫小帅，他刚刚把一具尸体塞进了后备箱`
-- `眼前这个女人叫小美，她和她的男朋友小帅，就在刚刚，亲手杀了自己的邻居`
 - `注意看，这个看起来人畜无害的小女孩，手里正拿着一把沾满鲜血的刀`
-- `注意看，这个男人叫小帅，他刚刚发现自己怀孕了，而他是个一米八五的肌肉猛男`
+
+**Type B: Premise-Paradox Hook (矛盾前提钩)** — State a ludicrous premise that creates a cognitive gap. Works best for comedies and absurd premises.
+- `韩国出了名的丑汉...电影名叫帅哥们，但咱们不用管，这俩人确实丑`
+- `办公室僵尸起义...除非变成僵尸，否则尔等社畜根本不敢起义`
+- `专做网络视频，但事实上根本没有那么多好人，老板只能让他做假`
+
+**Type C: Meta-Commentary Hook (元评论钩)** — Comment on the movie/genre itself before starting the story. Works best when the movie has obvious flaws or genre-bending qualities.
+- `韩国编剧确实是会缝合的，把各种题材都能给你传到一起`
+- `后续电影口碑就越来越崩坏了...男女主角那叫一个辣眼睛，简直太正确了`
+- `差点逼得李安吸引，但这都不是绿巨人的错`
+
+**Type D: Rhetorical Question Hook (设问钩)** — Ask the viewer a question only the movie can answer.
+- `女人你该如何靠自己的行动逆天改命？不会的话跟安娜学`
+- `这位大叔可牛逼了，可以凭空创造任何怪物，那么这个计划会成功吗？`
+
+**Type E: Cold-Open Action Hook (冷启动动作钩)** — Drop the viewer into violence/action with zero setup.
+- `男人被一喷子喷进了水里，但好在他有不死之身，瞬间满血复活`
 
 ### Hook Failure Modes (what NOT to open with)
 
@@ -71,40 +84,55 @@ Keep the rewind transition to a single line — do not linger before returning t
 
 ---
 
-## 2. Character Archetype Table (角色代号表)
+## 2. Character Naming System (角色命名系统)
 
-**RULE: Original character names are FORBIDDEN.** Every character must be assigned an archetype name from this table. This is non-negotiable — it is the defining feature of this style, and also does two jobs at once:
-1. **Cognitive load reduction** — the viewer doesn't have to remember unfamiliar foreign names
-2. **Instant comic coloring** — `小帅` is funnier than `John`, `丧彪` is funnier than `Viktor`
+**RULE: Original character names are FORBIDDEN.** Every character must be renamed using one of the two systems below. This is non-negotiable — it makes every movie feel like a Chinese village drama, which is the soul of this style.
 
-### Primary Archetypes
+### 2A. Chinese Villager Names (中国化命名) — PREFERRED
 
-| Archetype | Chinese | Pinyin | Assign To |
-|-----------|---------|--------|-----------|
-| Xiaoshuai | 小帅 | xiǎo shuài | Default male protagonist — the main guy |
-| Xiaomei | 小美 | xiǎo měi | Default female protagonist — the main girl |
-| Dazhuang | 大壮 | dà zhuàng | Muscular, physically strong, or tough male character |
-| Sangbiao | 丧彪 | sàng biāo | Primary villain or antagonist |
-| FBL | 佛波勒 | fó bō lè | Any law enforcement: police, FBI, agents (deliberate mispronunciation of FBI) |
-| Xiakalami | 小卡拉米 | xiǎo kǎ lā mǐ | Unimportant extras, cannon fodder, nobodies (Dongbei dialect slang) |
-| Qiantiaoshu | 千条叔 | qiān tiáo shū | Experienced older male — mentor, father figure, grizzled veteran |
-| Huzige | 胡子哥 | hú zi gē | Any bearded male character |
-| Dapiaoliang | 大漂亮 | dà piào liang | Attractive secondary character (either gender) |
-| Jinfamei | 金发妹 | jīn fà mèi | Any blonde female character |
-| Qiantiaojie | 千条姐 | qiān tiáo jiě | Experienced older female — female version of 千条叔 |
+The **dominant** naming pattern in real Niu Shu scripts. Assign characters **full Chinese personal names** as if they were residents of a Chinese village, regardless of the character's actual nationality. A Russian spy, a Korean gangster, and an American soldier all get Chinese rural/working-class names.
 
-### Secondary Archetypes (for larger casts)
+| Name | Chinese | Default Role | Notes |
+|------|---------|-------------|-------|
+| Yongqiang | 永强 | Male protagonist (most common) | The go-to male lead name across genres |
+| Liuying / Yingzi | 刘盈 / 英子 | Female protagonist | 英子 is the casual/cute variant |
+| Tiedan / Tieniu | 铁蛋 / 铁牛 | Male rival or brother | Literally "Iron Egg" / "Iron Bull" — comic contrast |
+| Damei | 大美 | Female supporting (attractive) | Literally "Big Beauty" |
+| Gangzi | 钢子 | Tough male friend | Usually the one who gets hurt first |
+| Yutian | 玉田 | Male friend/victim | Often the first casualty |
+| Changui | 常桂 / 常规 | Authority figure (boss, general, official) | The one giving orders |
+| Pige | 皮革 / 皮哥 | Boss or villain | Leather-tough, in-charge |
+| Xiaozhi | 小芝 / 小植 | Love interest (tragic) | Used for doomed romance |
+| Adai | 阿呆 | Comic sidekick | Literally "Dummy" — loyal but dense |
+
+**Usage:** When a movie has a clear ensemble feel (comedy, action, adventure), prefer Chinese Villager Names. They create an instant "village drama transplant" comedy effect that is uniquely Niu Shu.
+
+### 2B. Archetype Labels (代号表) — FALLBACK
+
+Use these when the cast is large and roles need instant identification, or when the Villager Name system creates confusion (e.g., too many characters need unique names).
 
 | Archetype | Chinese | Assign To |
 |-----------|---------|-----------|
-| Gangdan | 钢蛋 | Secondary male — replacing a Western male name |
-| Cuihua | 翠花 | Secondary female — replacing a Western female name |
-| Xiaobai | 小白 | Naive, innocent, or inexperienced character |
-| Daqiang | 大强 | Strong-willed or aggressive supporting male |
-| Dashan | 大山 | Quiet, reliable, mountain-of-a-man type |
-| Azhen | 阿珍 | Generic supporting female |
-| Aqiang | 阿强 | Generic supporting male |
-| Dameili | 大美丽 | Second attractive female if 大漂亮 is taken |
+| 小帅 | xiǎo shuài | Default male protagonist |
+| 小美 | xiǎo měi | Default female protagonist |
+| 大壮 | dà zhuàng | Muscular, physically strong male |
+| 丧彪 | sàng biāo | Primary villain or antagonist |
+| 佛波勒 | fó bō lè | Law enforcement (deliberate FBI mispronunciation) |
+| 小卡拉米 | xiǎo kǎ lā mǐ | Extras, cannon fodder, nobodies |
+| 千条叔 / 千条姐 | qiān tiáo shū/jiě | Experienced elder (male/female) |
+| 胡子哥 | hú zi gē | Any bearded male |
+| 大漂亮 | dà piào liang | Attractive secondary character |
+| 金发妹 | jīn fà mèi | Any blonde female |
+| 钢蛋 / 翠花 | gāng dàn / cuì huā | Generic secondary male / female |
+| 铁柱 | tiě zhù | Stubborn or tough but slow-witted male |
+| 炮子 / 彪子 | pào zi / biāo zi | Reckless or thuggish secondary males |
+
+### 2C. Dynamic Situational Nicknames (动态外号)
+Beyond static names, invent internet-slang or RPG-style titles based on a character's current state:
+- **Skill-based:** A hacker → `键盘侠`, a useless fighter → `战无能`.
+- **Status-based:** A guy protecting family → `家人侠`, a bunker dweller → `地堡女孩`.
+- **Transformation:** Announce role shifts like game class changes: `小透明化身副手狂魔`.
+- **Descriptive tags from script context:** A supermodel spy → `一米八的大长腿`, a fat student → `充满爱的肥仔`.
 
 ### Assignment Rules
 
@@ -151,6 +179,15 @@ The hook gets them to watch. This keeps them watching.
 | **假成语 (Pseudo-idiom)** | Fake classical Chinese gravitas | 1-2 |
 | **Shock beat** | Unexpected violence/twist/reveal | 2-3 |
 | **Dialogue punch** | A single quoted line delivered as a drop | 2-3 |
+| **Fourth Wall Break (打破第四面墙)** | Narrator addresses production reality | 1-2 |
+| **Deflationary Undercut (消气式幽默)** | Build dramatic tension then immediately deflate with mundane reality | 2-3 |
+| **Refrain Anchor (复读锚点)** | Repeat a comic phrase with slight variation to build rhythm | 1-2 |
+
+**Fourth Wall Break examples:** `怎么感觉同时在解说两部电影呢`, `这个片段能剪出来的镜头实在不多，有些地方大家脑补吧`, `观众朋友们别看这段剧情挺三俗的`.
+
+**Deflationary Undercut examples:** Build up a romantic rescue moment → `可没想到人家只是想拿回兜里的手机`. Build up a dramatic self-sacrifice → `你别问一个姑娘的枪法能这么准吗，这时候谁来了谁都准`.
+
+**Refrain Anchor examples:** Repeat `能不疯吗` after each escalating absurdity. Repeat `能不让别人误会吗` when innocent actions keep being misread. The refrain creates a rhythmic comic anchor that makes each recurrence funnier.
 
 Distribute these across acts — do not cluster them all in Act 3. The viewer who makes it past minute 4 still needs a reason to stay for minute 5.
 
@@ -168,6 +205,12 @@ The narrator tells the most absurd, violent, or emotional events with the same f
 
 **DO:** `小帅二话不说，掏出一把枪就把丧彪给崩了，然后若无其事地去吃了碗面`
 **DON'T:** `天哪！小帅竟然开枪了！这太令人震惊了！！！`
+
+### Internet Slang & Hyperbole (网感词汇与夸张修辞)
+The true soul of Uncle Niu's pacing lies in modern internet slang. Treat the movie's events like a video game or a meme compilation. Use highly compressed, visual internet catchphrases to describe complex emotions or actions:
+- **Mental states:** `大脑彻底死机` (Brain completely blue-screened), `心态崩了` (Mentality collapsed), `整不会了` (Doesn't know how to react).
+- **Game terminology:** `经验值拉满` (Experience points maxed out), `直接开挂` (Turned on cheats), `领了盒饭` (Got their lunchbox / died).
+- **Plot twists:** `神助攻` (God-tier assist), `叠中叠5.0` (Plot twist inception version 5.0), `直接捅了马蜂窝` (Poked the hornet's nest).
 
 ### 废话文学 (Nonsense Literature / Redundant Phrasing)
 
@@ -294,9 +337,21 @@ A 2-hour movie compressed to 7-12 minutes. Compression decisions serve the three
 2. **Merge minor characters.** If three characters serve the same narrative function, combine them into one archetype.
 3. **Skip establishing shots.** Don't describe scenery, costumes, or atmosphere unless it's plot-critical.
 4. **Summarize montages.** Training sequences, travel scenes, and "passage of time" montages get one sentence maximum.
-5. **Preserve twists and reveals.** These are the payoff — compress the setup, but never skip the twist.
-6. **Preserve the ending.** Uncle Niu style tells the COMPLETE story including the ending. The viewer should feel they've "watched" the whole movie.
-7. **Preserve any scene strong enough to be the hook.** If you demoted it from opener to act-3, still give it full weight when it arrives.
+5. **Preserve twists and reveals.** These are the payoff — compress the setup, but never skip the twist. Introduce twists casually but with hyperbolic impact: `谁能想到，这直接把剧情推向新高峰`.
+6. **Climax Action Execution.** During the climax, describe action as casually brutal. Treat extreme violence or epic battles like an everyday inconvenience: `遇神杀神遇佛杀佛`, `手起刀落就剁掉大好头颅`. The contrast between epic visuals and dismissive narration is key. For extended boss fights, use **multi-phase narration**: power display → obstacle escalation → casual kill → victory undercut.
+7. **Preserve the ending.** Uncle Niu style tells the COMPLETE story including the ending. The viewer should feel they've "watched" the whole movie.
+8. **Preserve any scene strong enough to be the hook.** If you demoted it from opener to act-3, still give it full weight when it arrives.
+9. **Level-Based Narration (关卡制).** When a movie involves moving through locations (building floors, enemy territories, tournament brackets), narrate it like a video game with discrete levels. Announce each new area as a boss stage: `闯过这一关，还有下一关`, `下一关就是关中之关，超级难关`. This gives the viewer a progress bar and creates anticipation.
+10. **Misunderstanding Escalation Chain (误解升级链).** For comedies where innocent actions are misread: narrate each misunderstanding as a chain reaction where A's action is misread by B, whose reaction is misread by C. Use a repeating refrain (`能不疯吗`) to anchor the escalation rhythm. Each iteration should be more absurd than the last.
+
+### The Emotional Pivot Rule (认真时刻)
+
+**For emotionally heavy movies only.** At the single most devastating emotional beat (a sacrifice, a death, a revelation of love), **drop the sarcasm entirely for 2-3 sentences**. Narrate with genuine, unironic gravity. This creates enormous impact precisely because the viewer has been trained to expect irony. Then immediately return to deadpan.
+
+- **DO:** `可其实我们都知道，这个世界上没有什么超能力，汽车是大家一起帮忙抬起来的，门锁不过是永强忍受着手脖子烫伤硬打开的`
+- **DO:** `搭档用身体护住了刘盈，刘盈倔强地把血肉模糊的搭档背了回去，可她却再也带不回这个心爱的男人`
+- **DON'T:** Use this for comedies or pure action. Reserve for movies that genuinely earn the moment.
+- **LIMIT:** Maximum ONE per script. If you do it twice, it loses all power.
 
 ### Compression Priority
 
@@ -333,6 +388,26 @@ Reference the opening hook.
 还记得开头那个[reference to hook]吗？现在你知道答案了。我们下期再见。
 ```
 
+### Option D: Fake Life Lesson Close (伪人生感悟) — SIGNATURE
+Deliver a philosophical observation that sounds profound but is actually absurd, darkly comic, or deliberately nihilistic. Address the audience directly as if giving genuine life advice. This is the **most Niu Shu** closing pattern.
+```
+做一个没心没肺的狗东西吧，挺好
+```
+```
+安娜辛辛苦苦努力了这么多年，才总算达到了你们的起点。
+女人们，你们天生就自由。在家捂臭被窝子就捂了怎么的，你管我
+```
+```
+刚死了一个好友很痛苦，但马上又死了好几个好友，而你自己还活着，
+你就又快乐了。瞧就这么神奇
+```
+```
+No one care。根本没有谁会真正的关心其他人。
+自己别那么多戏了，累不累
+```
+
+**Key:** The life lesson should feel both absurd AND oddly true. It is NOT a genuine moral lecture — it is the narrator pretending to be wise while being deliberately outrageous.
+
 All closings MUST end with: `我们下期再见` (See you next time).
 
 ---
@@ -341,17 +416,17 @@ All closings MUST end with: `我们下期再见` (See you next time).
 
 These rules cannot be broken under any circumstances:
 
-1. **Open with the best scene in the movie, not the first scene.** Front-load always. (See Section 1.)
-2. **No original character names.** Use archetypes only. No exceptions.
+1. **Open with the strongest possible hook.** Use one of the 5 Hook Archetypes (Section 1). The classic 注意看 is preferred but Premise-Paradox, Meta-Commentary, Rhetorical Question, or Cold-Open Action hooks are equally valid.
+2. **No original character names.** Use Chinese Villager Names (preferred) or Archetype Labels (fallback). No exceptions. (See Section 2.)
 3. **No spoiler warnings.** This style tells the complete plot. No "spoiler alert" disclaimers.
-4. **No first-person narration.** Always third-person omniscient. Never "I think" or "I feel" from the narrator.
-5. **No moral lectures.** The narrator is amused, not outraged. No "this movie teaches us the importance of..." sincerity.
+4. **No first-person narration.** Always third-person omniscient. Never "I think" or "I feel" from the narrator. (Exception: the Fake Life Lesson closing may use direct audience address.)
+5. **No moral lectures.** The narrator is amused, not outraged. No "this movie teaches us the importance of..." sincerity. (The Fake Life Lesson closing LOOKS like a moral but is deliberately absurd.)
 6. **No exclamation-mark spam.** Maximum 3 exclamation marks in the entire script. The tone is deadpan.
 7. **No English words in the Chinese script.** Translate or localize everything. FBI → 佛波勒, not "FBI".
 8. **Must include the complete ending.** Don't cut off with "watch the movie to find out."
-9. **Script must open with 注意看.** No exceptions.
-10. **Re-engagement beat every 60-90 seconds.** No flat stretches longer than ~270 characters.
-11. **Duration must land in 7-12 min (~1,800-2,800 chars).** Shorter loses the "whole story" feel; longer loses retention.
+9. **Re-engagement beat every 60-90 seconds.** No flat stretches longer than ~270 characters.
+10. **Duration must land in 7-12 min (~1,800-2,800 chars).** Shorter loses the "whole story" feel; longer loses retention.
+11. **Emotional Pivot maximum once per script.** Only for movies that genuinely earn it. Never in comedies.
 
 ---
 
@@ -398,31 +473,36 @@ The structural skeleton:
 
 ---
 
-## 11. Archetype Assignment Workflow
+## 11. Character & Hook Assignment Workflow
 
 Before writing the script, the agent MUST:
 
 1. **Read the subtitle file** to identify all named characters
 2. **Rank characters** by screen time / dialogue frequency
-3. **Assign archetypes** using the table in Section 2, following the assignment rules
-4. **Identify hook candidates** — scan the full plot for the top 3 most attention-grabbing moments (by Section 1 criteria), and pick one
-5. **Output a mapping table** for user review before proceeding:
+3. **Choose naming system**: Chinese Villager Names (Section 2A) for most movies; Archetype Labels (Section 2B) for very large casts. May mix both.
+4. **Assign names** following the assignment rules in Section 2
+5. **Identify hook candidates** — scan the full plot for the top 3 most attention-grabbing moments (by Section 1 criteria), and pick one
+6. **Select hook archetype** — choose the best-fit hook type (A-E) from Section 1
+7. **Output a mapping table** for user review before proceeding:
 
 ```
+命名系统: 中国化命名 (Chinese Villager Names)
 角色对照表:
-John → 小帅 (male protagonist)
-Sarah → 小美 (female protagonist)
-Viktor → 丧彪 (villain)
-Detective Mills → 佛波勒 (law enforcement)
-Old Man Jenkins → 千条叔 (experienced elder)
+John → 永强 (male protagonist)
+Sarah → 刘盈 (female protagonist)
+Viktor → 皮革 (villain)
+Detective Mills → 佛波勒 (law enforcement, archetype label)
+Old Man Jenkins → 常桂 (authority figure)
 Henchman 1, 2, 3 → 小卡拉米 (extras)
 
 钩子候选 (ranked):
-1. [00:47:20] John opens the trunk — a body falls out. [SELECTED]
-2. [01:12:05] Sarah pulls the gun on her own father.
-3. [00:03:15] Opening — Viktor executes a witness.
+1. [00:47:20] John opens the trunk — a body falls out. [SELECTED] → Type A (注意看)
+2. [01:12:05] Sarah pulls the gun on her own father. → Type E (Cold-Open)
+3. [00:03:15] Opening — Viktor executes a witness. → Type A (注意看)
 
 选定类型修饰 (Genre modulation): Crime thriller → deadpan dread, dense pacing, minimal 废话文学.
+情感转折 (Emotional Pivot): Yes — [01:45:00] Sarah’s sacrifice.
+结尾模式 (Closing): Option D (伪人生感悟).
 ```
 
-The user may override archetype assignments, hook selection, or genre modulation before the script is generated.
+The user may override name assignments, hook selection, genre modulation, or closing pattern before the script is generated.
