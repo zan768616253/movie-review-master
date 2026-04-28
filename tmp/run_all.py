@@ -4,8 +4,8 @@ Each step is skipped when its output already exists, so this is safe to
 re-run any number of times.
 
 Flow:
-  step_00 → step_01 → [STOP at step_02 if writer_beats / grounded_script
-  not filled] → step_03 → step_04 → step_05
+    step_00 → step_01 → [STOP at step_02 if anchored_script
+    not filled] → step_03 → step_04 → step_05
 
 To run a different movie, change CONFIG below.
 """
@@ -17,8 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import (
-    PLACEHOLDER_BEATS,
-    PLACEHOLDER_GROUNDED,
+    PLACEHOLDER_ANCHORED,
     banner,
     build_paths,
     ensure_stage_dirs,
@@ -72,20 +71,17 @@ def run() -> int:
         if rc != 0:
             return rc
 
-    # Stage 2 — manual. Stop here unless both files are filled.
-    if not is_filled(paths.grounded_script, PLACEHOLDER_GROUNDED):
+    # Stage 2 — manual. Stop here unless the anchored script is filled.
+    if not is_filled(paths.anchored_script, PLACEHOLDER_ANCHORED):
         banner("Stage 2 — STOP: manual step required")
-        if not is_filled(paths.writer_beats, PLACEHOLDER_BEATS):
-            print("Writer beats not yet filled. Run:")
-        else:
-            print("Writer beats filled, but grounded script not yet filled. Run:")
+        print("Anchored script not yet filled. Run:")
         print("  conda run -n py312_machine_learning --no-capture-output \\")
         print("    python tmp/step_02_generate_script.py")
-        print(f"\nThen paste the LLM output into the appropriate file under:")
-        print(f"  {paths.stage2_dir}")
-        print(f"\nWhen grounded_script.txt is filled, re-run this script.")
+        print(f"\nThen paste the LLM output into:")
+        print(f"  {paths.anchored_script}")
+        print(f"\nWhen anchored_script.txt is filled, re-run this script.")
         return 0
-    print(f"\nStage 2 already complete: {paths.grounded_script}")
+    print(f"\nStage 2 already complete: {paths.anchored_script}")
 
     # Stage 3
     if paths.stage3_voiceover.exists() and paths.stage3_manifest.exists():

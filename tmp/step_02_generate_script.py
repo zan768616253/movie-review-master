@@ -1,12 +1,15 @@
-"""Step 2 — write the writer + grounder prompts for the LLM.
+"""Step 2 — write the planner prompt for the LLM (single pass).
 
-This step is a two-phase manual loop:
+Flow:
 
-  1. First run            : writes writer_prompt.txt; you paste it into an LLM,
-                            then paste the LLM's reply into writer_beats.txt.
-  2. Run again            : writes grounder_prompt.txt; you paste it into the LLM,
-                            then paste the LLM's reply into grounded_script.txt.
-  3. Run again (optional) : reports "all done — Stage 2 complete".
+  1. First run  : writes ``planner_prompt.txt``. Paste it into your LLM, paste
+                  the reply into ``anchored_script.txt``.
+  2. Second run : validates ``anchored_script.txt`` against the per-anchor
+                  character budget and reports ok / warn / fail counts.
+
+If your movie folder contains ``synopsis.md`` (plot/cast/cultural context),
+it is automatically included in the prompt under `# External Context`.
+This is optional — the planner can still work from raw SRT + visuals alone.
 
 Files live under tmp/work/<movie_slug>/stage2/.
 """
@@ -18,8 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import (
-    PLACEHOLDER_BEATS,
-    PLACEHOLDER_GROUNDED,
+    PLACEHOLDER_ANCHORED,
     banner,
     build_paths,
     ensure_stage_dirs,
@@ -28,38 +30,76 @@ from _common import (
     load_config,
 )
 
-from app.pipeline.stage2_generate_script import (
-    build_grounding_prompt,
-    build_writer_prompt,
+from app.pipeline.common.script_contract import (
+    build_timeline_intervals,
+    load_visual_segments,
+    read_style_chars_per_second,
+    validate_anchored_script,
 )
+from app.pipeline.stage1_parse_subtitles import parse_subtitles
+from app.pipeline.stage2_generate_script import build_planner_prompt
 
 CONFIG = "configs/jujutsu_kaisen_0.toml"
 
 
-def writer_override(target_seconds: float, genre: str) -> str:
-    minutes = target_seconds / 60.0
-    return (
-        "# Harness Override\n"
-        f"Ignore any default runtime target below. Target about {minutes:.1f} minutes of narration "
-        f"(~{int(minutes * 180)}-{int(minutes * 280)} Chinese characters). "
-        f"Prefer a {genre}-forward cut.\n\n"
-    )
-
-
-def grounder_override(genre: str) -> str:
-    return (
-        "# Harness Override\n"
-        f"This run is {genre}-forward. When multiple visual candidates are similarly valid, "
-        "prefer footage that matches the genre. Preserve beat wording unless a tiny fix is "
-        "needed for grounding clarity.\n\n"
-    )
-
-
 def seed_placeholders(paths) -> None:
-    if not paths.writer_beats.exists():
-        paths.writer_beats.write_text(PLACEHOLDER_BEATS, encoding="utf-8")
-    if not paths.grounded_script.exists():
-        paths.grounded_script.write_text(PLACEHOLDER_GROUNDED, encoding="utf-8")
+    if not paths.anchored_script.exists():
+        paths.anchored_script.write_text(PLACEHOLDER_ANCHORED, encoding="utf-8")
+
+
+def report_validation(paths, chars_per_second: float) -> int:
+    """Validate the user-pasted anchored script and print a per-chunk verdict.
+
+    Performs both budget checks and structure checks (orphan narration,
+    missing acts, anchor monotonicity, range provenance against real
+    SRT/visual timestamps).
+
+    Returns 0 if no failures (warns tolerated), 1 if any chunk OR any
+    structural issue failed.
+    """
+    text = paths.anchored_script.read_text(encoding="utf-8")
+    subtitles = parse_subtitles(paths.subtitle_srt)
+    visual_segments = load_visual_segments(paths.visual_segments)
+    timeline_intervals = build_timeline_intervals(
+        subtitle_intervals=[(s.start, s.end) for s in subtitles],
+        visual_segments=visual_segments,
+    )
+    result = validate_anchored_script(
+        text,
+        chars_per_second=chars_per_second,
+        timeline_intervals=timeline_intervals,
+    )
+
+    ok = sum(1 for c in result.chunks if c.severity == "ok")
+    warn = sum(1 for c in result.chunks if c.severity == "warn")
+    fail_count = sum(1 for c in result.chunks if c.severity == "fail")
+
+    print(f"Anchored chunks: {len(result.chunks)} (ok={ok} warn={warn} fail={fail_count})")
+    if warn:
+        print("\nBudget warnings (Stage 5 scene-extension will absorb):")
+        for c in result.chunks:
+            if c.severity == "warn":
+                print(
+                    f"  chunk {c.index}: {c.narration_chars} chars "
+                    f"vs budget {c.budget_chars} ({c.overrun_ratio:.2f}× over)"
+                )
+    if fail_count:
+        print("\nBudget failures (rewrite needed — narration is sacred, no auto-trim):")
+        for c in result.failures():
+            print(
+                f"  chunk {c.index}: {c.narration_chars} chars "
+                f"vs budget {c.budget_chars} ({c.overrun_ratio:.2f}× over)"
+            )
+            print(f"    anchor: {c.anchor.raw}")
+
+    if result.issues:
+        print(f"\nStructure issues: {len(result.issues)}")
+        for issue in result.issues:
+            print(f"  [{issue.severity}] {issue.code}: {issue.message}")
+
+    if result.has_failures:
+        return 1
+    return 0
 
 
 def run() -> int:
@@ -76,44 +116,42 @@ def run() -> int:
 
     seed_placeholders(paths)
 
-    # Phase 1: writer beats not filled in yet → produce writer prompt.
-    if not is_filled(paths.writer_beats, PLACEHOLDER_BEATS):
-        banner("Stage 2a — writer prompt")
-        prompt = writer_override(common["target_seconds"], common["genre"]) + build_writer_prompt(
+    # Phase 1: anchored script not yet filled → emit the planner prompt.
+    if not is_filled(paths.anchored_script, PLACEHOLDER_ANCHORED):
+        banner("Stage 2 — planner prompt")
+        synopsis_path = paths.synopsis if paths.synopsis.exists() else None
+        prompt = build_planner_prompt(
             style_path=paths.style,
             subtitle_srt_path=paths.subtitle_srt,
             visual_segments_path=paths.visual_segments,
             movie_title=common["movie_title"],
             genre=common["genre"],
+            target_seconds=common["target_seconds"],
+            synopsis_path=synopsis_path,
         )
-        paths.writer_prompt.write_text(prompt, encoding="utf-8")
-        print(f"Wrote: {paths.writer_prompt}")
-        print(f"\nNext: paste the prompt above into an LLM, then paste its reply into:")
-        print(f"  {paths.writer_beats}")
-        print(f"Then re-run this script.")
+        paths.planner_prompt.write_text(prompt, encoding="utf-8")
+        print(f"Wrote: {paths.planner_prompt}")
+        if synopsis_path is None:
+            print(f"(No synopsis.md found in {paths.movie_dir} — proceeding without external context.)")
+        else:
+            print(f"Synopsis included from: {synopsis_path}")
+        print(f"\nNext: paste the prompt into an LLM, then paste its reply into:")
+        print(f"  {paths.anchored_script}")
+        print(f"Then re-run this script to validate the result.")
         return 0
 
-    # Phase 2: writer beats filled, grounded script not → produce grounder prompt.
-    if not is_filled(paths.grounded_script, PLACEHOLDER_GROUNDED):
-        banner("Stage 2b — grounder prompt")
-        prompt = grounder_override(common["genre"]) + build_grounding_prompt(
-            beats_path=paths.writer_beats,
-            subtitle_srt_path=paths.subtitle_srt,
-            visual_segments_path=paths.visual_segments,
-            movie_title=common["movie_title"],
-        )
-        paths.grounder_prompt.write_text(prompt, encoding="utf-8")
-        print(f"Wrote: {paths.grounder_prompt}")
-        print(f"\nNext: paste the prompt above into an LLM, then paste its reply into:")
-        print(f"  {paths.grounded_script}")
-        print(f"Then run step_03_generate_audio.py (or run_all.py).")
-        return 0
-
-    banner("Stage 2 — already complete")
-    print(f"writer beats    : {paths.writer_beats}")
-    print(f"grounded script : {paths.grounded_script}")
-    print("Both files are filled. Move on to step_03_generate_audio.py.")
-    return 0
+    # Phase 2: anchored script filled → validate it.
+    banner("Stage 2 — validating anchored script")
+    chars_per_second = read_style_chars_per_second(paths.style)
+    print(f"Style: {paths.style.name}")
+    print(f"chars_per_second = {chars_per_second}")
+    print(f"Script: {paths.anchored_script}")
+    rc = report_validation(paths, chars_per_second)
+    if rc == 0:
+        print("\nStage 2 OK. Move on to step_03_generate_audio.py.")
+    else:
+        print("\nStage 2 has failing chunks. Edit the anchored script and re-run.")
+    return rc
 
 
 if __name__ == "__main__":

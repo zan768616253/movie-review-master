@@ -1,15 +1,18 @@
-"""Stage 2: Two-pass script authoring prompt assembler.
+"""Stage 2: planner-writer prompt assembler (single pass).
 
-This stage stays manual for now, but the prompt contract is split into
-two explicit passes:
+Replaces the old writer + grounder two-pass design. One LLM call now picks
+visual anchors AND writes narration that fits inside those anchors.
+Narration character count is bounded by ``sum(range_seconds) * chars_per_second``
+so audio always fits the visual budget. Stage 5 trims excess video shot-aware.
 
-1. Writer pass (`--mode writer`): produce narration beats with no timing.
-2. Grounding pass (`--mode grounder`): consume the beat draft, full SRT,
-    and `visual_segments.json`, then emit the final grounded script using
-    `[SCENE start=... end=... source=...]` markers.
+Manual flow stays the same shape:
 
-The goal is to keep Stage 2's human/LLM handoff reproducible while Stage 4
-and Stage 5 operate on a precise grounding contract.
+    1. Run ``stage2-generate-script`` to print the planner prompt to stdout.
+    2. Paste the prompt into your LLM (Gemini 2.5 Pro recommended).
+    3. Paste the LLM reply into ``anchored_script.txt``.
+    4. ``validate_anchored_script`` (in ``script_contract``) checks budgets.
+
+See ``docs/OVERHAUL_PLAN.md`` §3, §4 for the architecture rationale.
 """
 
 from __future__ import annotations
@@ -20,24 +23,21 @@ from pathlib import Path
 
 from app.pipeline.common.script_contract import (
     load_visual_segments,
+    read_style_chars_per_second,
     seconds_to_timestamp,
     timestamp_to_seconds,
 )
 from app.pipeline.stage1_parse_subtitles import parse_subtitles
 
 
-SCRIPT_WRITER_ROLE = (
-    "You are a Chinese movie-review scriptwriter. You strictly follow the style "
-    "rulebook provided below. You write in Simplified Chinese and focus only on "
-    "storytelling, tone, and pacing. Do not assign timestamps in this pass."
-)
-GROUNDING_EDITOR_ROLE = (
-    "You are the alignment editor for a movie-review pipeline. You must anchor "
-    "each narration beat to either the SRT or the visual segment index, use the "
-    "reference blocks to choose the best timestamp window, and mark uncertain beats "
-    "as ungrounded instead of inventing times."
+PLANNER_ROLE = (
+    "You are the planner-writer for a Chinese movie-review pipeline. You pick "
+    "visual anchors from the source movie AND write narration in the target "
+    "style — both in one pass. Your output is the final script; there is no "
+    "second editor."
 )
 DEFAULT_GENRE = "general"
+DEFAULT_TARGET_SECONDS = 540.0  # 9 min. Hint only; the planner is allowed to flex ±30%.
 
 
 def collapse_whitespace(text: str) -> str:
@@ -55,39 +55,21 @@ def infer_movie_title(subtitle_srt_path: Path, explicit_title: str | None) -> st
     return explicit_title or subtitle_srt_path.stem
 
 
-def build_srt_reference(subtitle_srt_path: Path) -> str:
-    subtitles = parse_subtitles(subtitle_srt_path)
-    lines = []
-    for index, subtitle in enumerate(subtitles, 1):
-        lines.append(
-            f"[srt:{index:03d}] {seconds_to_timestamp(subtitle.start)} --> "
-            f"{seconds_to_timestamp(subtitle.end)} :: {collapse_whitespace(subtitle.text)}"
-        )
-    return "\n".join(lines)
-
-
-def build_visual_reference(visual_segments_path: Path) -> str:
-    segments = load_visual_segments(visual_segments_path)
-    lines = []
-    for index, segment in enumerate(segments, 1):
-        segment_id = str(segment.get("id") or f"visual:{index:03d}")
-        characters = "|".join(get_segment_characters(segment)) or "-"
-        summary = collapse_whitespace(str(segment.get("summary") or ""))
-        ocr_text = collapse_whitespace(str(segment.get("ocr_text") or ""))
-        suffix = f" | ocr={ocr_text}" if ocr_text else ""
-        lines.append(
-            f"[{segment_id}] {segment['start']} --> {segment['end']} "
-            f"| chars={characters} | summary={summary}{suffix}"
-        )
-    return "\n".join(lines)
-
-
 def build_merged_timeline(subtitle_srt_path: Path, visual_segments_path: Path) -> str:
     """Interleave subtitle dialogue and visual-segment action by timestamp.
 
-    The merged timeline is the writer pass's single plot source: a chronological
-    ledger that exposes both spoken dialogue and silent / visual-only beats so
-    the writer can anchor narration to either anchor type.
+    The merged timeline is the planner's single plot ledger: every event in
+    chronological order, with both spoken dialogue (`[srt:NNN]`) and
+    silent / visual-only beats (`[visual:NNN]`). The planner picks anchor
+    ranges by selecting from these entries.
+
+    Example merged line::
+
+        [srt:042] 00:23:11.000 --> 00:23:13.500 :: 乙骨憂太: 里香!
+
+    Example visual line::
+
+        [visual:128] 00:23:14.000 --> 00:23:18.000 :: chars=Rika | summary=ghost form appears | ocr=
     """
     subtitles = parse_subtitles(subtitle_srt_path)
     segments = load_visual_segments(visual_segments_path)
@@ -128,166 +110,217 @@ def build_merged_timeline(subtitle_srt_path: Path, visual_segments_path: Path) -
     return "\n".join(line for _, line in events)
 
 
-def build_writer_prompt(
+def read_synopsis(synopsis_path: Path | None) -> str:
+    """Read the optional synopsis file, returning the empty string when absent.
+
+    Synopsis files are user-authored markdown describing plot, cast, and
+    cultural context the planner needs but cannot infer from raw SRT/visuals.
+    Recommended structure: one-line pitch, cast list with archetype labels,
+    beat outline, cultural hooks. See HANDBOOK §6 (post-overhaul).
+    """
+    if synopsis_path is None or not synopsis_path.exists():
+        return ""
+    return synopsis_path.read_text(encoding="utf-8")
+
+
+def build_planner_prompt(
     style_path: Path,
     subtitle_srt_path: Path,
     visual_segments_path: Path,
     movie_title: str,
     genre: str,
+    target_seconds: float,
+    synopsis_path: Path | None = None,
+    chars_per_second: float | None = None,
 ) -> str:
+    """Assemble the single-pass planner-writer prompt.
+
+    The planner sees the full style rulebook (verbatim), an optional external
+    synopsis, the merged SRT+visual chronological timeline, and the budget
+    formula. It outputs the final anchored script in one shot.
+
+    `chars_per_second` defaults to whatever the style file declares (read by
+    `read_style_chars_per_second`); pass an override only for tests.
+    """
     style_text = style_path.read_text(encoding="utf-8")
+    if chars_per_second is None:
+        chars_per_second = read_style_chars_per_second(style_path)
     merged_timeline = build_merged_timeline(subtitle_srt_path, visual_segments_path)
+    synopsis_text = read_synopsis(synopsis_path).strip()
+
+    synopsis_block = (
+        synopsis_text
+        if synopsis_text
+        else "(No synopsis provided. Infer plot/character context from the timeline below.)"
+    )
+
+    target_min = max(60.0, target_seconds * 0.7)
+    target_max = target_seconds * 1.3
+    # Macro-level budget — LLMs pace much better when given the global total
+    # alongside the per-anchor formula.
+    total_budget_chars = int(round(target_seconds * chars_per_second))
+    # Anchor-count guidance scales with target length (~12s avg per anchor),
+    # rather than the old hard-coded 30–50.
+    anchor_count_low = max(8, int(target_seconds / 18))
+    anchor_count_high = max(anchor_count_low + 4, int(target_seconds / 9))
 
     return f"""# Role
-{SCRIPT_WRITER_ROLE}
+{PLANNER_ROLE}
 
-# Style Rulebook
+# Style Rulebook (your voice authority)
 The rulebook below is the single source of truth for tone, structure, beat
-density, character naming, length window (target duration AND character-count
-window), and genre modulation. Follow every rule exactly.
+density, character naming, length window, and genre modulation. Follow every
+rule exactly. The voice you produce must read as if written by a human in
+this style — never sacrifice voice quality to fit the budget below.
 
 <<<STYLE_RULEBOOK_START>>>
 {style_text}
 <<<STYLE_RULEBOOK_END>>>
 
+# External Context
+Use this to ground character names, plot stakes, cultural hooks, and any
+narrative interpretation that cannot be derived from raw dialogue alone.
+
+<<<SYNOPSIS_START>>>
+{synopsis_block}
+<<<SYNOPSIS_END>>>
+
 # Movie
 Title: {movie_title}
 Genre: {genre}
 
-# Plot Source — chronological timeline merging dialogue (SRT) and on-screen action (visual segments)
-Each line is one event in movie order. `[srt:NNN]` lines are spoken dialogue;
-`[visual:NNN]` lines are silent or visual-only beats with character presence
-and a one-phrase action summary. Use both: dialogue lines for plot and emotional
-beats, visual lines for action beats, transitions, and re-engagement moments
-that have no dialogue. Timestamps are reference context only — do NOT emit them
-in your output.
+# TTS Budget — HARD CONSTRAINT
+chars_per_second = {chars_per_second}
+
+For every [ANCHOR ...] block, the narration text underneath it must satisfy:
+
+    chars(narration) ≤ sum(range_seconds) × {chars_per_second}
+
+Where `sum(range_seconds)` is the total duration of all ranges in that
+anchor. Example: an anchor with ranges totalling 12 seconds has a budget
+of 12 × {chars_per_second} = {int(12 * chars_per_second)} characters of narration.
+
+**Total-script budget (macro pacing target):**
+With a target review of ~{target_seconds:.0f}s, your total narration across
+ALL anchors should be roughly {total_budget_chars} characters. Use this to
+pace your four acts evenly — do not blow {int(total_budget_chars * 0.5)} chars
+on the hook and arrive at the climax with nothing left.
+
+A downstream validator rejects narrations that exceed budget by more than
+10%. Narrations that are *under* budget are fine — Stage 5 trims the excess
+video shot-aware. Always plan slightly under budget when in doubt.
+
+# Source Material — chronological event ledger
+Each line is one event in movie order. `[srt:NNN]` lines are spoken
+dialogue; `[visual:NNN]` lines are silent or visual-only beats with
+character presence and a one-phrase action summary. Anchor ranges in your
+output must come from these timestamps — do not invent times.
+
+**Tip on choosing srt vs visual:** Prefer `[visual:NNN]` ranges for action,
+reaction shots, and B-roll-style coverage — those are guaranteed to be
+visually meaningful and aligned to actual shot boundaries. Reach for
+`[srt:NNN]` ranges only when you specifically want the audience to see the
+character speaking the line you're discussing (e.g. a famous quote). Mixing
+the two inside one multi-range anchor often produces awkward cuts.
 
 <<<TIMELINE_START>>>
 {merged_timeline}
 <<<TIMELINE_END>>>
 
-# Output requirements
+# Authoring Algorithm
+1. Read the style rulebook. Internalize the voice.
+2. Read the synopsis (if any) and skim the timeline for the story shape.
+3. Identify the moments worth featuring — be selective. The visual menu is
+   not a quota; you may leave large portions of the source unselected.
+4. Allocate screen-time roughly: climax beats deserve more seconds, setup
+   beats fewer. Aim for ~{anchor_count_low}–{anchor_count_high} anchors total
+   for a {target_seconds:.0f}s review (more for longer reviews, fewer for shorter).
+5. For each beat, choose the [ANCHOR] ranges:
+   - Prefer SHORT, focused single-shot ranges (~2–8 seconds each).
+   - When a beat needs more screen time than one shot affords, use a
+     **multi-range anchor** listing the consecutive shots you want, e.g.
+     `ranges="00:23:10-00:23:14, 00:23:18-00:23:24"`.
+   - DO NOT use one wide range like `ranges="00:23:10-00:23:30"` to cover
+     multiple shots — that spans cuts and looks broken to the audience.
+6. Write narration in the style voice. Size each beat's character count
+   to fit the budget. Self-check before finalizing.
+7. Total review length: aim for roughly {target_seconds:.0f}s
+   ({target_min:.0f}–{target_max:.0f}s acceptable).
 
-1. Length target: follow the Style Rulebook's "Target Duration" and
-   "Character-count Window" frontmatter exactly.
-2. Keep the structural markers prescribed by the rulebook:
-   [TITLE], [HOOK], [ACT 1 - SETUP], [ACT 2 - ESCALATION],
-   [ACT 3 - CLIMAX], [ACT 4 - RESOLUTION], [CLOSING].
-   The exact suffix after "ACT N -" may follow the rulebook (e.g. some styles
-   use "REVEAL + CLIMAX" instead of "CLIMAX").
-3. Under each section, break the narration into short beats using explicit
-   markers: [BEAT 1], [BEAT 2], [BEAT 3], ... numbered continuously across
-   the whole script.
-4. Aim for 30-60 beats total. Each beat is one breathable spoken sentence or
-   a short paragraph (~30-90 Chinese characters).
-5. Do not output any [SCENE] or [BROLL] markers in this pass.
-6. Do not guess timestamps. Ignore clip timing entirely.
-7. The [CLOSING] section still contains narration beats, but no visual marker
-   of any kind.
+# Output Schema
 
-# Produce
-Output only the beat draft itself. No preamble. No code fences.
-"""
+```
+[TITLE] {movie_title}
+[HOOK]
+[ANCHOR ranges="HH:MM:SS.mmm-HH:MM:SS.mmm" characters="Name A|Name B"]
+narration text bounded by sum_of_range_seconds × {chars_per_second}
 
+[ACT 1 - SETUP]
+[ANCHOR ranges="HH:MM:SS-HH:MM:SS, HH:MM:SS-HH:MM:SS"]
+narration spanning two consecutive shots
 
-def build_grounding_prompt(
-    beats_path: Path,
-    subtitle_srt_path: Path,
-    visual_segments_path: Path,
-    movie_title: str,
-) -> str:
-    beats_text = beats_path.read_text(encoding="utf-8")
-    srt_reference = build_srt_reference(subtitle_srt_path)
-    visual_reference = build_visual_reference(visual_segments_path)
+[ACT 2 - ESCALATION]
+[ANCHOR ...]
+narration
 
-    return f"""# Role
-{GROUNDING_EDITOR_ROLE}
+[ACT 3 - CLIMAX]
+[ANCHOR ...]
+narration
 
-# Movie
-Title: {movie_title}
+[ACT 4 - RESOLUTION]
+[ANCHOR ...]
+narration
 
-# Narration Beat Draft
-The beat draft below is already written in the target voice. Preserve the wording unless a tiny edit is needed for clarity.
+[CLOSING]
+narration with NO [ANCHOR] — plays over a still keyframe
+```
 
-<<<BEATS_START>>>
-{beats_text}
-<<<BEATS_END>>>
+The exact ACT suffixes follow the style rulebook (some styles use
+"REVEAL + CLIMAX" instead of "CLIMAX").
 
-# Full SRT Reference
-Use SRT citations whenever a beat references spoken dialogue, paraphrased dialogue, or a moment anchored by subtitles.
-
-<<<SRT_REFERENCE_START>>>
-{srt_reference}
-<<<SRT_REFERENCE_END>>>
-
-# Visual Segment Reference
-Use this only for non-dialogue beats: action, reactions, transitions, and establishing shots.
-
-<<<VISUAL_REFERENCE_START>>>
-{visual_reference}
-<<<VISUAL_REFERENCE_END>>>
-
-# Grounding algorithm
-
-1. Classify each beat as DIALOGUE or ACTION.
-2. If DIALOGUE: search the SRT reference first. Choose the best matching subtitle timestamp window.
-3. If ACTION: search the visual segment reference. Prefer character overlap, then semantic match.
-4. If the best candidate is weak, emit the beat as ungrounded instead of hallucinating a timestamp.
-5. Preserve the section structure and narration text from the beat draft.
-
-# Output contract
-
-1. Replace every [BEAT N] marker with a grounded [SCENE ...] marker immediately above the beat text.
-2. Use this exact attribute form for grounded beats:
-    [SCENE start=HH:MM:SS.mmm end=HH:MM:SS.mmm source=srt|visual]
-3. When a beat is ungrounded, use:
-    [SCENE source=ungrounded]
-4. If character identity is clear and useful for fallback B-roll selection, add:
-   characters="Name A|Name B"
-5. Keep [TITLE], [HOOK], [ACT ...], and [CLOSING].
-6. Do not output [BEAT] markers in the final result.
-7. Do not output code fences or explanations.
+# Hard Constraints
+- Anchors must be in chronological order across the script (early-movie
+  before later-movie within each ACT, and ACTs in story order).
+- Within one [ANCHOR], multi-range entries must NOT overlap. Order does
+  not matter — the parser sorts ranges by start time so playback is
+  always forward in source time.
+- All timestamps must come from the timeline above.
+- Closing chunk has narration but no [ANCHOR].
 
 # Produce
-Output only the final grounded script.
+Output ONLY the anchored script. No preamble, no code fences, no commentary.
 """
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="stage2-generate-script",
-        description="Print the Stage 2 writer or grounding prompt to stdout.",
+        description="Print the Stage 2 planner-writer prompt to stdout.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    writer_parser = subparsers.add_parser(
-        "writer",
-        help="Build the writer-pass prompt.",
-    )
-    writer_parser.add_argument("style", type=Path, help="Path to the style .md file")
-    writer_parser.add_argument("subtitle_srt", type=Path, help="Source subtitle file (.srt or .ass)")
-    writer_parser.add_argument("visual_segments", type=Path, help="visual_segments.json from Stage 0")
-    writer_parser.add_argument(
+    parser.add_argument("style", type=Path, help="Path to the style .md file")
+    parser.add_argument("subtitle_srt", type=Path, help="Source subtitle file (.srt or .ass)")
+    parser.add_argument("visual_segments", type=Path, help="visual_segments.json from Stage 0")
+    parser.add_argument(
         "--movie-title",
         help="Movie title with optional language. Defaults to the subtitle filename stem.",
     )
-    writer_parser.add_argument(
+    parser.add_argument(
         "--genre",
         default=DEFAULT_GENRE,
-        help="Genre keyword for the writer pass.",
+        help="Genre keyword for genre-modulated voice.",
     )
-
-    grounder_parser = subparsers.add_parser(
-        "grounder",
-        help="Build the grounding-pass prompt.",
+    parser.add_argument(
+        "--synopsis",
+        type=Path,
+        default=None,
+        help="Optional path to a synopsis markdown file (plot, cast, cultural context).",
     )
-    grounder_parser.add_argument("beats", type=Path, help="Beat draft produced by the writer pass")
-    grounder_parser.add_argument("subtitle_srt", type=Path, help="Source subtitle file (.srt or .ass)")
-    grounder_parser.add_argument("visual_segments", type=Path, help="visual_segments.json from Stage 0")
-    grounder_parser.add_argument(
-        "--movie-title",
-        help="Movie title with optional language. Defaults to the subtitle filename stem.",
+    parser.add_argument(
+        "--target-seconds",
+        type=float,
+        default=DEFAULT_TARGET_SECONDS,
+        help="Target review duration in seconds. Hint only; planner may flex ±30%%.",
     )
     return parser
 
@@ -304,39 +337,31 @@ def report_missing_paths(missing: list[Path]) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
-    if args.command == "writer":
-        missing_paths = missing_input_paths(
-            [args.style, args.subtitle_srt, args.visual_segments]
+    required = [args.style, args.subtitle_srt, args.visual_segments]
+    missing_paths = missing_input_paths(required)
+    if missing_paths:
+        report_missing_paths(missing_paths)
+        return 1
+
+    if args.synopsis is not None and not args.synopsis.exists():
+        # Optional input — but if the user asked for one, fail loud rather
+        # than silently producing a context-less prompt.
+        print(f"Synopsis not found: {args.synopsis}", file=sys.stderr)
+        return 1
+
+    movie_title = infer_movie_title(args.subtitle_srt, args.movie_title)
+    print(
+        build_planner_prompt(
+            style_path=args.style,
+            subtitle_srt_path=args.subtitle_srt,
+            visual_segments_path=args.visual_segments,
+            movie_title=movie_title,
+            genre=args.genre,
+            target_seconds=args.target_seconds,
+            synopsis_path=args.synopsis,
         )
-        if missing_paths:
-            report_missing_paths(missing_paths)
-            return 1
-        movie_title = infer_movie_title(args.subtitle_srt, args.movie_title)
-        print(
-            build_writer_prompt(
-                style_path=args.style,
-                subtitle_srt_path=args.subtitle_srt,
-                visual_segments_path=args.visual_segments,
-                movie_title=movie_title,
-                genre=args.genre,
-            )
-        )
-        return 0
-    else:
-        missing_paths = missing_input_paths([args.beats, args.subtitle_srt, args.visual_segments])
-        if missing_paths:
-            report_missing_paths(missing_paths)
-            return 1
-        movie_title = infer_movie_title(args.subtitle_srt, args.movie_title)
-        print(
-            build_grounding_prompt(
-                beats_path=args.beats,
-                subtitle_srt_path=args.subtitle_srt,
-                visual_segments_path=args.visual_segments,
-                movie_title=movie_title,
-            )
-        )
-        return 0
+    )
+    return 0
 
 
 if __name__ == "__main__":

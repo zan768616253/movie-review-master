@@ -52,7 +52,7 @@ def test_main_uses_style_default_reference_paths(
 ) -> None:
     script_path = tmp_path / "script.txt"
     script_path.write_text(
-        "[TITLE] Demo\n[SCENE: 00:00:01 - 00:00:10]\n一段旁白\n",
+        '[TITLE] Demo\n[HOOK]\n[ANCHOR ranges="00:00:01.000-00:00:10.000"]\n一段旁白\n',
         encoding="utf-8",
     )
     captured: dict[str, object] = {}
@@ -89,7 +89,7 @@ def test_main_expands_user_script_and_output_paths(
 ) -> None:
     script_path = tmp_path / "script.txt"
     script_path.write_text(
-        "[TITLE] Demo\n[SCENE: 00:00:01 - 00:00:10]\n一段旁白\n",
+        '[TITLE] Demo\n[HOOK]\n[ANCHOR ranges="00:00:01.000-00:00:10.000"]\n一段旁白\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -126,7 +126,7 @@ def test_main_expands_user_script_and_output_paths(
 def test_main_reports_missing_style_reference_audio(tmp_path: Path, capsys) -> None:
     script_path = tmp_path / "script.txt"
     script_path.write_text(
-        "[TITLE] Demo\n[SCENE: 00:00:01 - 00:00:10]\n一段旁白\n",
+        '[TITLE] Demo\n[HOOK]\n[ANCHOR ranges="00:00:01.000-00:00:10.000"]\n一段旁白\n',
         encoding="utf-8",
     )
 
@@ -146,14 +146,15 @@ def test_main_reports_missing_style_reference_audio(tmp_path: Path, capsys) -> N
     assert "pass --ref-audio" in captured.err
 
 
-def test_parse_script_chunks_supports_grounded_scene_attributes() -> None:
+def test_parse_script_chunks_handles_anchored_script_with_multi_range_and_closing() -> None:
     script_text = """
 [TITLE] Demo
 [HOOK]
-[SCENE start=00:00:01.500 end=00:00:06.250 source=srt characters="Yuta|Gojo"]
+[ANCHOR ranges="00:00:01.500-00:00:06.250" characters="Yuta|Gojo"]
 一段旁白
-[SCENE source=ungrounded characters="Yuta"]
-另一段旁白
+[ACT 1 - SETUP]
+[ANCHOR ranges="00:00:10.000-00:00:14.000, 00:00:20.000-00:00:24.000" characters="Yuta"]
+多镜头旁白
 [CLOSING]
 结尾
 """.strip()
@@ -161,15 +162,70 @@ def test_parse_script_chunks_supports_grounded_scene_attributes() -> None:
     chunks = parse_script_chunks(script_text)
 
     assert len(chunks) == 3
-    assert chunks[0].scene_start == "00:00:01.500"
-    assert chunks[0].scene_end == "00:00:06.250"
-    assert chunks[0].scene_source == "srt"
-    assert chunks[0].scene_characters == ["Yuta", "Gojo"]
-    assert chunks[1].scene_start is None
-    assert chunks[1].scene_source == "ungrounded"
-    assert chunks[1].scene_characters == ["Yuta"]
-    assert chunks[2].scene_start is None
-    assert chunks[2].scene_source is None
+    # First chunk: single-range anchor.
+    assert chunks[0].ranges == [("00:00:01.500", "00:00:06.250")]
+    assert chunks[0].characters == ["Yuta", "Gojo"]
+    assert chunks[0].first_range_start == "00:00:01.500"
+    assert chunks[0].text == "一段旁白"
+    # Second chunk: multi-range anchor — both ranges round-trip.
+    assert chunks[1].ranges == [
+        ("00:00:10.000", "00:00:14.000"),
+        ("00:00:20.000", "00:00:24.000"),
+    ]
+    assert chunks[1].characters == ["Yuta"]
+    # Third chunk: closing — no anchor, narration still present.
+    assert chunks[2].ranges == []
+    assert chunks[2].characters == []
+    assert chunks[2].first_range_start is None
+    assert chunks[2].text == "结尾"
+
+
+def test_parse_script_chunks_ignores_title_section_until_hook() -> None:
+    script_text = """
+[TITLE] Demo
+[ANCHOR ranges="00:00:00.000-00:00:02.000"]
+片名旁白，不应该被读
+[HOOK]
+[ANCHOR ranges="00:00:03.000-00:00:05.000"]
+真正开场旁白
+""".strip()
+
+    chunks = parse_script_chunks(script_text)
+
+    assert len(chunks) == 1
+    assert chunks[0].ranges == [("00:00:03.000", "00:00:05.000")]
+    assert chunks[0].text == "真正开场旁白"
+
+
+def test_write_manifest_emits_new_schema(tmp_path: Path) -> None:
+    from app.pipeline.stage3_generate_audio import write_manifest
+
+    script_text = (
+        "[TITLE] Demo\n"
+        "[HOOK]\n"
+        '[ANCHOR ranges="00:00:01.000-00:00:05.000" characters="Hero"]\n'
+        "narration A\n"
+        "[CLOSING]\n"
+        "closing narration\n"
+    )
+    chunks = parse_script_chunks(script_text)
+    audio_ranges = [(0.0, 2.0), (2.0, 3.5)]
+
+    out = tmp_path / "manifest.json"
+    write_manifest(chunks, audio_ranges, out)
+
+    import json
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload[0] == {
+        "index": 1,
+        "ranges": [["00:00:01.000", "00:00:05.000"]],
+        "characters": ["Hero"],
+        "text": "narration A",
+        "audio_start_s": 0.0,
+        "audio_end_s": 2.0,
+    }
+    assert payload[1]["ranges"] == []  # closing chunk
+    assert payload[1]["text"] == "closing narration"
 
 
 def test_build_voice_prompt_passes_full_transcript_text(tmp_path: Path) -> None:

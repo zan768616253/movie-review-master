@@ -82,12 +82,19 @@ def snap_to_shot_boundaries(
 ) -> List[Dict]:
     """Snap each segment's start/end to the nearest shot boundary within tolerance.
 
-    If snapping would invert or zero-length a segment, the originals are kept.
-    Non-snapping failures (missing fields, bad timestamps) are left to the
-    downstream validator.
+    Also annotates each segment with `shot_boundaries_s`: the cut times
+    that fall strictly inside the (snapped) segment. Stage 5 uses this
+    list to find clean cut points for shot-aware video trimming, so it
+    can absorb video-vs-audio slack without slicing mid-shot.
+
+    If snapping would invert or zero-length a segment, the originals are
+    kept. Non-snapping failures (missing fields, bad timestamps) are left
+    to the downstream validator with no `shot_boundaries_s` annotation.
     """
     if not shot_boundaries:
-        return segments
+        # Still annotate with an empty list so the schema stays consistent
+        # for downstream consumers.
+        return [{**seg, "shot_boundaries_s": []} for seg in segments]
 
     snapped: List[Dict] = []
     for seg in segments:
@@ -102,12 +109,19 @@ def snap_to_shot_boundaries(
         new_end_s = _snap_timestamp(end_s, shot_boundaries, tolerance_s)
 
         if new_start_s >= new_end_s:
-            snapped.append(seg)
+            snapped.append({**seg, "shot_boundaries_s": []})
             continue
+
+        # Boundaries strictly inside (new_start_s, new_end_s) — excluding
+        # the segment's own start/end, which the snapper already aligned.
+        inner_boundaries = [
+            round(b, 3) for b in shot_boundaries if new_start_s < b < new_end_s
+        ]
 
         new_seg = dict(seg)
         new_seg["start"] = seconds_to_timestamp(new_start_s)
         new_seg["end"] = seconds_to_timestamp(new_end_s)
+        new_seg["shot_boundaries_s"] = inner_boundaries
         snapped.append(new_seg)
     return snapped
 

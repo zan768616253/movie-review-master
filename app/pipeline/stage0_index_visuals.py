@@ -13,6 +13,13 @@ from app.pipeline.common.script_contract import get_video_duration, validate_vis
 from app.pipeline.stage0_indexers import GeminiStrategy
 
 
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="index-visuals",
@@ -22,6 +29,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--video", type=Path, required=True, help="Path to full movie file")
     parser.add_argument("--output", type=Path, help="Path to output visual_segments.json")
     parser.add_argument("--tmp-dir", type=Path, default=Path("tmp/indexing"), help="Temp directory for chunks")
+    parser.add_argument(
+        "--workers",
+        type=_positive_int,
+        default=5,
+        help="Parallel chunk workers for uncached Gemini requests",
+    )
     return parser
 
 
@@ -35,7 +48,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args.tmp_dir.mkdir(parents=True, exist_ok=True)
 
-    strategy = GeminiStrategy()
+    strategy = GeminiStrategy(max_workers=args.workers)
 
     try:
         raw_segments = strategy.index_video(video_path, args.tmp_dir)

@@ -12,6 +12,7 @@ This is not a plot summary. It is an **audience-retention machine**. Every rule 
 **Tone:** Deadpan, fast-paced, highly sarcastic — *tuned to the movie's genre* (see Section 5.5)
 **Target Duration:** 7-12 minutes
 **Character-count Window:** ~1,800-2,800 Chinese characters — calibrated for this style's dense, fast-paced delivery (long sentences, minimal breath pauses, ~240-260 chars/min via Qwen3-TTS Voice Clone on the Niu Shu base voice). Different styles will need different windows; see `_style_contract.md` §4 #5.
+**TTS Budget (planner authority):** `chars_per_second = 5.0`. Measured mean 6.74 ± 0.58 stdev across 57 chunks of real JJK0 niu-shu output (2026-04-27); the slowest chunk ran at 5.17 cps. Setting the planner's budget to 5.0 — below the slowest measured chunk — guarantees that narration written to budget produces TTS audio that fits inside the anchor for ~99%+ of chunks. The remaining ~26% video slack on average lets Stage 5 trim visuals shot-aware to match audio exactly. The `chars/min` figure in the line above is stale (real rate is ~400 cpm) and will be reconciled in a later doc pass.
 **Language:** Chinese (Mandarin) by default; English adaptation supported
 
 > **Style pairing:** This is the *external observer* style — detached, sarcastic. For the intimate confessional alternative, see [`first-person-pov.md`](first-person-pov.md). The two styles have **opposite rules** on character naming (archetypes vs. original names) and narrator stance (sarcastic vs. sincere) — do not mix them within a single script.

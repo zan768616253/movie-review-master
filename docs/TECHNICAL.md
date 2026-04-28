@@ -1,5 +1,10 @@
 # Technical Documentation
 
+> **NOTE (2026-04-27):** The Stage 2 / Stage 3 / Stage 4 / Stage 5 contracts
+> below describe the **current** code on `develop`. An architectural
+> overhaul is in flight — see [`OVERHAUL_PLAN.md`](OVERHAUL_PLAN.md) for
+> target schemas and the phased migration plan.
+
 This document is the code-facing reference for repository structure, entry points, contracts, and current implementation boundaries. It complements the handbook instead of duplicating it.
 
 ## 1. Source-of-Truth Split
