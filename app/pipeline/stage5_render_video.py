@@ -1,25 +1,41 @@
-"""Render the final video with hero-clip priority and timing-aware fallbacks.
+"""Render the final review video from anchored manifests.
 
-Priority when narration outlasts the requested hero scene:
-1. Use the exact hero window.
-2. Expand into extracted handles (pre_handle, post_handle) on the cut clip.
-3. Continue forward in the source movie past scene_end (scene extension).
-4. Append explicit or semantic B-roll.
-5. Freeze only as the last fallback.
+Reads the Stage 3 voice manifest (`ranges` per chunk + audio timing) and
+the Stage 4 clip manifest (one or more pre-extracted clips per chunk),
+then for each chunk:
+
+1. Plays the per-anchor hero clips in order, **shot-aware-trimmed** to
+   match the chunk's audio duration.
+2. Falls back to a still keyframe for closing chunks (no anchor).
+
+Smart-trim uses shot boundaries from Stage 0's `visual_segments.json`
+to land cuts at clean shot junctions whenever possible. The default state
+is video > narration (planner uses a conservative chars/sec budget), so
+trim runs on most chunks. The pipeline never modifies narration text or
+audio — narration is sacred.
+
+Outputs:
+
+    <output_dir>/review.mp4               final video
+    <output_dir>/segments/segment_NNN.mp4 per-chunk visuals (kept on disk)
+    <output_dir>/segments/segment_NNN.mp3 per-chunk audio split from voiceover
+    <output_dir>/edit_manifest.json       handoff manifest for manual NLE editing
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-from app.pipeline.common.json_io import load_json
-from app.pipeline.common.script_contract import get_video_duration, load_visual_segments, timestamp_to_seconds
+from app.pipeline.common.json_io import dump_json, load_json
+from app.pipeline.common.script_contract import (
+    load_visual_segments,
+    timestamp_to_seconds,
+)
 from app.pipeline.common.video_encoder import (
     encoder_ffmpeg_args,
     hwaccel_decode_args,
@@ -31,9 +47,14 @@ TARGET_WIDTH = 1920
 TARGET_HEIGHT = 1080
 TARGET_FPS = 30
 DEFAULT_CLIP_MANIFEST = "clip_manifest.json"
-TOKEN_RE = re.compile(r"[a-z0-9]+|[\u4e00-\u9fff]", re.IGNORECASE)
-def probe_duration(path: Path) -> float:
-    return get_video_duration(path)
+# Smart-trim accepts a shot-aligned cut whose video duration is within this
+# fraction of audio_duration. Larger grace = more clean cuts, more residual
+# overrun absorbed by post-handle extension or still fallback; smaller = more
+# mid-shot cuts.
+SMART_TRIM_GRACE_PCT = 0.05
+
+
+# --- ffmpeg helpers -------------------------------------------------------
 
 
 def normalize_scale_filter() -> str:
@@ -53,9 +74,9 @@ def render_excerpt(
 ) -> None:
     """Re-encode a slice of a video into the project's normalized 1080p/30fps format.
 
-    ``start_s`` is passed straight to ffmpeg's ``-ss`` — the caller decides whether
-    that's an offset into an already-extracted clip or an absolute time in the
-    source movie. ffmpeg treats both the same.
+    `start_s` is an offset into `source_path`; ffmpeg treats the source as
+    just bytes, so this works whether source is the full movie or a
+    pre-extracted clip file.
     """
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
@@ -77,27 +98,71 @@ def render_stillframe_segment(
     out_path: Path,
     codec: str,
 ) -> None:
-    vf = normalize_scale_filter()
     cmd = [
-        "ffmpeg",
-        "-y",
-        "-loglevel",
-        "error",
-        "-loop",
-        "1",
-        "-framerate",
-        str(TARGET_FPS),
-        "-i",
-        str(image_path),
-        "-t",
-        f"{target_duration:.3f}",
-        "-vf",
-        vf,
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-loop", "1",
+        "-framerate", str(TARGET_FPS),
+        "-i", str(image_path),
+        "-t", f"{target_duration:.3f}",
+        "-vf", normalize_scale_filter(),
         *encoder_ffmpeg_args(codec),
         "-an",
         str(out_path),
     ]
     subprocess.run(cmd, check=True)
+
+
+def concat_segments(segment_paths: list[Path], out_path: Path) -> None:
+    list_file = out_path.parent / f"{out_path.stem}.concat.txt"
+    list_file.write_text(
+        "".join(f"file '{p.resolve()}'\n" for p in segment_paths),
+        encoding="utf-8",
+    )
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-f", "concat", "-safe", "0",
+        "-i", str(list_file),
+        "-c:v", "copy",
+        "-an",
+        str(out_path),
+    ]
+    subprocess.run(cmd, check=True)
+    list_file.unlink(missing_ok=True)
+
+
+def split_voiceover_to_segment(
+    voiceover_path: Path,
+    audio_start_s: float,
+    audio_end_s: float,
+    out_path: Path,
+) -> None:
+    """Cut a per-chunk MP3 from the concatenated voiceover for the editor handoff."""
+    duration_s = max(0.0, audio_end_s - audio_start_s)
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-ss", f"{audio_start_s:.3f}",
+        "-i", str(voiceover_path),
+        "-t", f"{duration_s:.3f}",
+        "-c:a", "copy",
+        str(out_path),
+    ]
+    subprocess.run(cmd, check=True)
+
+
+def mux_audio(video_path: Path, audio_path: Path, out_path: Path) -> None:
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-i", str(video_path),
+        "-i", str(audio_path),
+        "-c:v", "copy",
+        "-c:a", "aac", "-b:a", "192k",
+        "-shortest",
+        str(out_path),
+    ]
+    subprocess.run(cmd, check=True)
+
+
+# --- Manifest loaders -----------------------------------------------------
 
 
 def default_clip_manifest_path(clips_dir: Path) -> Path:
@@ -123,6 +188,7 @@ def coerce_manifest_seconds(value: object, *, context: str) -> float:
 
 
 def load_render_manifest(path: Path) -> list[dict[str, object]]:
+    """Load Stage 3's voice manifest (`ranges` + audio timing per chunk)."""
     try:
         payload = load_json(path)
     except (OSError, json.JSONDecodeError) as exc:
@@ -132,304 +198,314 @@ def load_render_manifest(path: Path) -> list[dict[str, object]]:
         raise ValueError(f"Manifest payload must be a JSON array: {path}")
 
     manifest: list[dict[str, object]] = []
-    for entry_number, entry in enumerate(payload, 1):
+    for n, entry in enumerate(payload, 1):
         if not isinstance(entry, dict):
-            raise ValueError(f"Manifest entry {entry_number} must be a JSON object: {path}")
-
-        missing = [field for field in ("index", "audio_start_s", "audio_end_s") if field not in entry]
+            raise ValueError(f"Manifest entry {n} must be a JSON object: {path}")
+        missing = [f for f in ("index", "audio_start_s", "audio_end_s") if f not in entry]
         if missing:
             raise ValueError(
-                f"Manifest entry {entry_number} missing required fields {', '.join(missing)}: {path}"
+                f"Manifest entry {n} missing required fields {', '.join(missing)}: {path}"
             )
-
         try:
-            coerce_manifest_index(entry["index"], context=f"Manifest entry {entry_number} index")
-            coerce_manifest_seconds(
-                entry["audio_start_s"],
-                context=f"Manifest entry {entry_number} audio_start_s",
-            )
-            coerce_manifest_seconds(
-                entry["audio_end_s"],
-                context=f"Manifest entry {entry_number} audio_end_s",
-            )
+            coerce_manifest_index(entry["index"], context=f"Manifest entry {n} index")
+            coerce_manifest_seconds(entry["audio_start_s"], context=f"Manifest entry {n} audio_start_s")
+            coerce_manifest_seconds(entry["audio_end_s"], context=f"Manifest entry {n} audio_end_s")
         except ValueError as exc:
             raise ValueError(f"{exc}: {path}") from exc
-
         manifest.append(entry)
-
     return manifest
 
 
 def load_clip_manifest(path: Path | None) -> dict[int, dict[str, object]]:
+    """Load Stage 4's clip manifest (per-anchor list of range clips)."""
     if path is None or not path.exists():
         return {}
     try:
         payload = load_json(path)
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"Invalid clip manifest JSON in {path}: {exc}") from exc
-
     if not isinstance(payload, list):
         raise ValueError(f"Clip manifest payload must be a JSON array: {path}")
 
     manifest: dict[int, dict[str, object]] = {}
-    for entry_number, entry in enumerate(payload, 1):
+    for n, entry in enumerate(payload, 1):
         if not isinstance(entry, dict):
-            raise ValueError(f"Clip manifest entry {entry_number} must be a JSON object: {path}")
+            raise ValueError(f"Clip manifest entry {n} must be a JSON object: {path}")
         if "index" not in entry:
-            raise ValueError(f"Clip manifest entry {entry_number} missing required field index: {path}")
-
-        try:
-            manifest[coerce_manifest_index(entry["index"], context=f"Clip manifest entry {entry_number} index")] = entry
-        except ValueError as exc:
-            raise ValueError(f"{exc}: {path}") from exc
-
+            raise ValueError(f"Clip manifest entry {n} missing required field index: {path}")
+        manifest[coerce_manifest_index(entry["index"], context=f"Clip manifest entry {n} index")] = entry
     return manifest
 
 
-def tokenize_text(text: str) -> set[str]:
-    return {token.lower() for token in TOKEN_RE.findall(text.lower())}
-
-
-def text_similarity(left: str, right: str) -> float:
-    left_tokens = tokenize_text(left)
-    right_tokens = tokenize_text(right)
-    if not left_tokens or not right_tokens:
-        return 0.0
-    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
-
-
-def plan_primary_window(clip_metadata: dict[str, object], target_duration: float) -> tuple[float, float, float]:
-    """Return (start_offset, clip_duration, leftover) for the hero clip.
-
-    Splits any extra time needed between the pre- and post-roll handles, then
-    spills over into whichever side still has room if the other is saturated.
-    """
-    
-    requested = float(clip_metadata.get("requested_duration_s") or 0.0) # type: ignore
-    pre_handle = float(clip_metadata.get("pre_handle_s") or 0.0) # type: ignore
-    extracted = float(clip_metadata.get("extracted_duration_s") or 0.0) # type: ignore
-    post_handle = max(0.0, extracted - pre_handle - requested)
-
-    if target_duration <= requested:
-        return pre_handle, target_duration, 0.0
-
-    extra_needed = min(target_duration - requested, pre_handle + post_handle)
-    pre_use = min(pre_handle, extra_needed / 2)
-    post_use = min(post_handle, extra_needed - pre_use)
-    pre_use = min(pre_handle, extra_needed - post_use)  # absorb whatever post could not take
-
-    clip_duration = requested + pre_use + post_use
-    leftover = max(0.0, target_duration - clip_duration)
-    return pre_handle - pre_use, clip_duration, leftover
-
-
-def plan_scene_extension(
-    entry: dict[str, object],
-    clip_metadata: dict[str, object] | None,
-    video_duration_s: float,
-    remaining: float,
-    budget: float,
-) -> tuple[float, float]:
-    """Return (extension_start_s, extension_duration) sourced from the original movie.
-
-    Continues forward in source time from where the cut clip stops — i.e. past
-    any post_handle that plan_primary_window has already consumed — so the
-    extension never repeats footage that was already played from clip_path.
-    Returns a zero duration when extension is not possible (closing chunk,
-    no scene_end, no leftover, or no headroom in the source video).
-    """
-    if remaining <= 0.01 or budget <= 0.0:
-        return 0.0, 0.0
-    scene_end_raw = entry.get("scene_end")
-    if scene_end_raw is None:
-        return 0.0, 0.0
-    scene_end_s = timestamp_to_seconds(str(scene_end_raw))
-
-    if clip_metadata is not None:
-        extracted = float(clip_metadata.get("extracted_duration_s") or 0.0)  # type: ignore
-        pre_handle = float(clip_metadata.get("pre_handle_s") or 0.0)  # type: ignore
-        requested = float(clip_metadata.get("requested_duration_s") or 0.0)  # type: ignore
-        post_handle = max(0.0, extracted - pre_handle - requested)
-        start_s = scene_end_s + post_handle
-    else:
-        start_s = scene_end_s
-
-    headroom = max(0.0, video_duration_s - start_s)
-    duration = min(remaining, budget, headroom)
-    return start_s, max(0.0, duration)
-
-
-def score_visual_segment(
-    segment: dict[str, object],
-    narration_text: str,
-    required_characters: set[str],
-) -> float | None:
-    segment_characters = {str(character) for character in segment.get("characters") or []} # type: ignore
-    if required_characters and not required_characters.issubset(segment_characters):
-        return None
-
-    summary = str(segment.get("summary") or "")
-    ocr_text = str(segment.get("ocr_text") or "")
-    similarity = text_similarity(narration_text, f"{summary} {ocr_text}")
-    character_score = 1.0 if required_characters else 0.0
-    return (0.55 * similarity) + (0.45 * character_score)
-
-
-def select_semantic_broll_segments(
-    entry: dict[str, object],
+def collect_shot_boundaries_for_range(
+    range_start_s: float,
+    range_end_s: float,
     visual_segments: list[dict[str, object]],
-    used_segment_ids: set[str],
-) -> list[dict[str, object]]:
-    required_characters = {str(character) for character in entry.get("scene_characters") or []} # type: ignore
-    narration_text = str(entry.get("text") or "")
-    exclude_start = entry.get("scene_start")
-    exclude_end = entry.get("scene_end")
-    exclude_range = None
-    if exclude_start and exclude_end:
-        exclude_range = (timestamp_to_seconds(str(exclude_start)), timestamp_to_seconds(str(exclude_end)))
+) -> list[float]:
+    """Return shot-boundary cut times (absolute seconds) inside [range_start_s, range_end_s].
 
-    ranked: list[tuple[float, dict[str, object]]] = []
-    for index, segment in enumerate(visual_segments, 1):
-        segment_id = str(segment.get("id") or f"visual:{index:03d}")
-        if segment_id in used_segment_ids:
+    Visual segments may overlap the requested range; we union their
+    `shot_boundaries_s` lists, then keep only boundaries that fall
+    strictly inside the range. Returns sorted, deduplicated.
+    """
+    boundaries: set[float] = set()
+    for seg in visual_segments:
+        try:
+            seg_start = timestamp_to_seconds(str(seg["start"]))
+            seg_end = timestamp_to_seconds(str(seg["end"]))
+        except (KeyError, ValueError):
             continue
-
-        segment_start = timestamp_to_seconds(str(segment["start"]))
-        segment_end = timestamp_to_seconds(str(segment["end"]))
-        if exclude_range is not None and segment_start < exclude_range[1] and segment_end > exclude_range[0]:
+        if seg_end < range_start_s or seg_start > range_end_s:
             continue
+        for b in seg.get("shot_boundaries_s") or []:  # type: ignore[union-attr]
+            try:
+                bf = float(b)
+            except (TypeError, ValueError):
+                continue
+            if range_start_s < bf < range_end_s:
+                boundaries.add(round(bf, 3))
+    return sorted(boundaries)
 
-        score = score_visual_segment(segment, narration_text, required_characters)
-        if score is None:
+
+def _ranges_total_duration(ranges_s: list[tuple[float, float]]) -> float:
+    return sum(max(0.0, end - start) for start, end in ranges_s)
+
+
+# --- Smart trim -----------------------------------------------------------
+
+
+def plan_smart_trim(
+    ranges_s: list[tuple[float, float]],
+    shot_boundaries_per_range: list[list[float]],
+    audio_duration_s: float,
+    grace_pct: float = SMART_TRIM_GRACE_PCT,
+) -> tuple[list[tuple[float, float]], str]:
+    """Decide how to trim multi-range hero video to match audio duration.
+
+    Returns ``(kept_ranges, trim_kind)`` where ``trim_kind`` is one of:
+      - ``"exact"``           — total ≈ audio_duration (within grace).
+      - ``"shot-aligned-tail"`` — last range trimmed at a shot boundary.
+      - ``"mid-shot-tail"``   — last range trimmed mid-shot to exact target.
+            - ``"extension-needed"`` — total < audio; caller should extend from
+                Stage 4 post-handles and freeze only if that still is not enough.
+
+    Strategy: trim from the tail of the last range. When shot boundaries
+    are available inside that range, snap to the latest one within
+    ``grace`` of the target end. Shot boundaries land on clean cut points,
+    so this preserves narrative flow without slicing mid-action.
+
+    Ranges are absolute source-movie seconds (start_s, end_s).
+
+    Example::
+
+        ranges_s = [(10.0, 14.0), (20.0, 30.0)]   # total 14s
+        shots    = [[], [22.0, 25.0, 28.0]]
+        audio    = 11s
+        excess   = 3s → trim last range from end → new_end = 27 → snap to 28? No,
+                   28 is past new_end. Snap to 25? 14-(30-25)=9s video, 2s under,
+                   within 5% grace of 11s → "shot-aligned-tail", new last = (20,25).
+    """
+    if not ranges_s:
+        return [], "exact"
+
+    total = sum(end - start for start, end in ranges_s)
+    grace = grace_pct * audio_duration_s
+
+    if total + grace < audio_duration_s:
+        return ranges_s, "extension-needed"
+    if total <= audio_duration_s + grace:
+        return ranges_s, "exact"
+
+    # total > audio + grace: trim from the tail of the last range.
+    excess = total - audio_duration_s
+    last_idx = len(ranges_s) - 1
+    last_start, last_end = ranges_s[last_idx]
+    last_dur = last_end - last_start
+
+    # If excess >= last range duration, drop the whole last range and
+    # recurse on the shorter list. This usually means the planner picked
+    # one too many ranges; downstream still gets earlier ranges intact.
+    if excess >= last_dur - grace:
+        if len(ranges_s) == 1:
+            # Only one range and audio is effectively near-zero. Keep a
+            # tiny tail slice; the caller will still freeze-fill any
+            # remaining shortfall to preserve sync.
+            return [(last_start, last_start + max(0.0, last_dur - excess))], "mid-shot-tail"
+        return plan_smart_trim(
+            ranges_s[:-1],
+            shot_boundaries_per_range[:-1],
+            audio_duration_s,
+            grace_pct,
+        )
+
+    # Trim within the last range. new_end gives an exact target match.
+    new_end = last_end - excess
+    candidates = shot_boundaries_per_range[last_idx] if last_idx < len(shot_boundaries_per_range) else []
+    in_window = [b for b in candidates if last_start < b <= new_end + grace]
+    if in_window:
+        # Pick the latest candidate — preserves the most of the original
+        # shot, which usually contains the payoff frame.
+        snapped = max(in_window)
+        new_ranges = list(ranges_s)
+        new_ranges[last_idx] = (last_start, snapped)
+        return new_ranges, "shot-aligned-tail"
+
+    new_ranges = list(ranges_s)
+    new_ranges[last_idx] = (last_start, new_end)
+    return new_ranges, "mid-shot-tail"
+
+
+# --- Render loop ----------------------------------------------------------
+
+
+def _entry_ranges_seconds(entry: dict[str, object]) -> list[tuple[float, float]]:
+    """Extract `(start_s, end_s)` pairs from a Stage 3 manifest entry's `ranges`."""
+    raw = entry.get("ranges") or []
+    out: list[tuple[float, float]] = []
+    for pair in raw:  # type: ignore[union-attr]
+        try:
+            start_ts, end_ts = pair
+            out.append((timestamp_to_seconds(str(start_ts)), timestamp_to_seconds(str(end_ts))))
+        except (TypeError, ValueError):
             continue
-        ranked.append((score, segment))
-
-    ranked.sort(key=lambda item: item[0], reverse=True)
-    return [segment for score, segment in ranked if score > 0.05]
+    return out
 
 
-def collect_manual_broll_paths(entry: dict[str, object], clips_dir: Path) -> list[Path]:
-    broll_paths: list[Path] = []
-    for i, _ in enumerate(entry.get("broll") or []): # type: ignore
-        suffix = chr(ord("a") + i)
-        broll_path = clips_dir / f"broll_{int(entry['index']):03d}_{suffix}.mp4" # type: ignore
-        if broll_path.exists():
-            broll_paths.append(broll_path)
-    return broll_paths
+def _render_kept_ranges_from_clip_manifest(
+    kept_ranges_s: list[tuple[float, float]],
+    clip_meta_ranges: list[dict[str, object]],
+    clips_dir: Path,
+    segments_dir: Path,
+    chunk_index: int,
+    codec: str,
+) -> list[Path]:
+    """Render each kept sub-range using the matching pre-extracted clip file.
+
+    For each kept range, find the original Stage-4 range whose extraction
+    contains it, then render an offset-into-clip slice of the right length.
+    Returns the list of part files produced.
+    """
+    part_paths: list[Path] = []
+    for part_idx, (kept_start_s, kept_end_s) in enumerate(kept_ranges_s):
+        if kept_end_s <= kept_start_s + 0.01:
+            continue
+        meta = _find_clip_meta_for_range(clip_meta_ranges, kept_start_s, kept_end_s)
+        if meta is None:
+            continue
+        clip_path = clips_dir / str(meta["clip_path"])
+        extracted_start_s = timestamp_to_seconds(str(meta["extracted_start"]))
+        offset_s = max(0.0, kept_start_s - extracted_start_s)
+        duration_s = kept_end_s - kept_start_s
+        part_path = segments_dir / f"segment_{chunk_index:03d}_part{part_idx:02d}_hero.mp4"
+        render_excerpt(clip_path, offset_s, duration_s, part_path, codec)
+        part_paths.append(part_path)
+    return part_paths
 
 
-def choose_keyframe_path(keyframes_dir: Path, index: int, last_clip_number: int | None) -> Path | None:
-    direct = keyframes_dir / f"keyframe_{index:03d}.jpg"
+def _extend_ranges_to_audio_duration(
+    ranges_s: list[tuple[float, float]],
+    clip_meta_ranges: list[dict[str, object]],
+    audio_duration_s: float,
+) -> tuple[list[tuple[float, float]], float]:
+    """Extend the last kept range into its extracted post-handle when audio overruns.
+
+    Returns ``(extended_ranges, remaining_shortfall_s)``. Any remaining
+    shortfall must be filled with a still segment so the rendered chunk
+    duration still matches narration exactly.
+    """
+    planned_ranges = list(ranges_s)
+    shortfall_s = audio_duration_s - _ranges_total_duration(planned_ranges)
+    if shortfall_s <= 0.01 or not planned_ranges:
+        return planned_ranges, 0.0
+
+    last_start_s, last_end_s = planned_ranges[-1]
+    last_meta = _find_clip_meta_for_range(clip_meta_ranges, last_start_s, last_end_s)
+    if last_meta is None and clip_meta_ranges:
+        last_meta = clip_meta_ranges[-1]
+    if last_meta is None:
+        return planned_ranges, shortfall_s
+
+    try:
+        extracted_end_s = timestamp_to_seconds(str(last_meta["extracted_end"]))
+    except (KeyError, ValueError):
+        return planned_ranges, shortfall_s
+
+    extended_end_s = min(extracted_end_s, last_end_s + shortfall_s)
+    gained_s = max(0.0, extended_end_s - last_end_s)
+    if gained_s > 0.0:
+        planned_ranges[-1] = (last_start_s, extended_end_s)
+        shortfall_s -= gained_s
+    return planned_ranges, max(0.0, shortfall_s)
+
+
+def _find_clip_meta_for_range(
+    clip_meta_ranges: list[dict[str, object]],
+    kept_start_s: float,
+    kept_end_s: float,
+) -> dict[str, object] | None:
+    """Locate the Stage-4 range metadata whose extraction window covers this kept slice."""
+    for meta in clip_meta_ranges:
+        try:
+            ext_start_s = timestamp_to_seconds(str(meta["extracted_start"]))
+            ext_end_s = timestamp_to_seconds(str(meta["extracted_end"]))
+        except (KeyError, ValueError):
+            continue
+        if ext_start_s <= kept_start_s and ext_end_s >= kept_end_s:
+            return meta
+    return None
+
+
+def _choose_keyframe(
+    keyframes_dir: Path,
+    chunk_index: int,
+    last_anchor_index: int | None,
+) -> Path | None:
+    direct = keyframes_dir / f"keyframe_{chunk_index:03d}.jpg"
     if direct.exists():
         return direct
-    if last_clip_number is not None:
-        fallback = keyframes_dir / f"keyframe_{last_clip_number:03d}.jpg"
+    if last_anchor_index is not None:
+        fallback = keyframes_dir / f"keyframe_{last_anchor_index:03d}.jpg"
         if fallback.exists():
             return fallback
     return None
 
 
-def concat_segments(segment_paths: list[Path], out_path: Path) -> None:
-    list_file = out_path.parent / f"{out_path.stem}.concat.txt"
-    list_file.write_text(
-        "".join(f"file '{p.resolve()}'\n" for p in segment_paths),
-        encoding="utf-8",
-    )
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-loglevel",
-        "error",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        str(list_file),
-        "-c:v",
-        "copy",
-        "-an",
-        str(out_path),
-    ]
-    subprocess.run(cmd, check=True)
-    list_file.unlink(missing_ok=True)
+def write_edit_manifest(
+    out_path: Path,
+    entries: list[dict[str, object]],
+) -> None:
+    """Write the manual-editing handoff manifest.
+
+    Each entry: chunk index, anchor ranges (source-movie absolute time),
+    narration text, audio span, and the per-chunk `segment_video` /
+    `segment_audio` filenames the editor opens in their NLE.
+    """
+    dump_json(out_path, entries)
 
 
-def mux_audio(video_path: Path, audio_path: Path, out_path: Path) -> None:
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-loglevel",
-        "error",
-        "-i",
-        str(video_path),
-        "-i",
-        str(audio_path),
-        "-c:v",
-        "copy",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        "-shortest",
-        str(out_path),
-    ]
-    subprocess.run(cmd, check=True)
+# --- CLI ------------------------------------------------------------------
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="render-video",
-        description="Render the final video using hero clips first, then B-roll fallbacks.",
+        description="Render the final review by playing per-anchor hero clips trimmed to match audio.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--manifest", type=Path, required=True)
-    parser.add_argument("--voiceover", type=Path, required=True)
-    parser.add_argument(
-        "--clips-dir",
-        type=Path,
-        required=True,
-        help="Directory containing clip_NNN.mp4 files",
-    )
-    parser.add_argument(
-        "--keyframes-dir",
-        type=Path,
-        required=True,
-        help="Directory containing keyframe_NNN.jpg files (used for closing + short-clip fallback)",
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        required=True,
-        help="Final rendered MP4 output path",
-    )
-    parser.add_argument(
-        "--clip-manifest",
-        type=Path,
-        help="Optional clip manifest from Stage 4; defaults to <clips-dir>/../clip_manifest.json when present",
-    )
-    parser.add_argument(
-        "--video",
-        type=Path,
-        help="Source movie file, required for semantic B-roll fallback",
-    )
-    parser.add_argument(
-        "--visual-segments",
-        type=Path,
-        help="visual_segments.json, used for semantic B-roll fallback",
-    )
-    parser.add_argument(
-        "--freeze-threshold",
-        type=float,
-        default=0.5,
-        help="Warn when freeze fallback exceeds this duration in seconds",
-    )
-    parser.add_argument(
-        "--scene-extension-budget",
-        type=float,
-        default=6.0,
-        help="When narration outlasts the hero clip, continue forward in the source movie past scene_end for up to this many seconds before falling back to B-roll.",
-    )
+    parser.add_argument("--manifest", type=Path, required=True,
+                        help="Stage 3 voice manifest (anchored ranges + audio timing).")
+    parser.add_argument("--voiceover", type=Path, required=True,
+                        help="Stage 3 voiceover MP3.")
+    parser.add_argument("--clips-dir", type=Path, required=True,
+                        help="Directory containing clip_NNN_X.mp4 files from Stage 4.")
+    parser.add_argument("--keyframes-dir", type=Path, required=True,
+                        help="Directory containing keyframe_NNN.jpg files (for closing chunks).")
+    parser.add_argument("--clip-manifest", type=Path,
+                        help="Optional override; defaults to <clips-dir>/../clip_manifest.json.")
+    parser.add_argument("--visual-segments", type=Path,
+                        help="Optional Stage 0 visual_segments.json — used for shot-aware smart-trim.")
+    parser.add_argument("--output", type=Path, required=True,
+                        help="Final review.mp4 path.")
     return parser
 
 
@@ -445,8 +521,6 @@ def main(argv=None) -> int:
         args.clip_manifest = args.clip_manifest.expanduser().resolve()
     elif default_clip_manifest_path(args.clips_dir).exists():
         args.clip_manifest = default_clip_manifest_path(args.clips_dir)
-    if args.video is not None:
-        args.video = args.video.expanduser().resolve()
     if args.visual_segments is not None:
         args.visual_segments = args.visual_segments.expanduser().resolve()
 
@@ -455,9 +529,6 @@ def main(argv=None) -> int:
         return 1
     if not args.voiceover.exists():
         print(f"Voiceover not found: {args.voiceover}", file=sys.stderr)
-        return 1
-    if args.video is not None and not args.video.exists():
-        print(f"Video not found: {args.video}", file=sys.stderr)
         return 1
     if args.visual_segments is not None and not args.visual_segments.exists():
         print(f"Visual segments not found: {args.visual_segments}", file=sys.stderr)
@@ -475,165 +546,145 @@ def main(argv=None) -> int:
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    used_segment_ids: set[str] = set()
-    video_duration_s = probe_duration(args.video) if args.video is not None else 0.0
-    print(f"Manifest: {len(manifest)} chunks (encoder={codec})")
 
+    print(f"Manifest: {len(manifest)} chunks (encoder={codec})")
     segments_dir = args.output.parent / "segments"
     segments_dir.mkdir(parents=True, exist_ok=True)
 
     segment_paths: list[Path] = []
-    total_t0 = time.time()
-    last_clip_number: int | None = None
+    edit_entries: list[dict[str, object]] = []
+    last_anchor_index: int | None = None
+    tally = {"exact": 0, "shot-aligned-tail": 0, "mid-shot-tail": 0,
+             "extension-needed": 0, "freeze": 0}
 
+    total_t0 = time.time()
     for entry in manifest:
         idx = coerce_manifest_index(entry["index"], context="Manifest index")
-        target_dur = coerce_manifest_seconds(entry["audio_end_s"], context="Manifest audio_end_s") - coerce_manifest_seconds(
-            entry["audio_start_s"],
-            context="Manifest audio_start_s",
-        )
-        if target_dur <= 0:
+        audio_start_s = coerce_manifest_seconds(entry["audio_start_s"], context="audio_start_s")
+        audio_end_s = coerce_manifest_seconds(entry["audio_end_s"], context="audio_end_s")
+        audio_duration = audio_end_s - audio_start_s
+        if audio_duration <= 0:
             print(f"  skipping chunk {idx}: zero-duration narration")
             continue
 
         segment_path = segments_dir / f"segment_{idx:03d}.mp4"
+        ranges_s = _entry_ranges_seconds(entry)
         t0 = time.time()
 
-        if entry.get("scene_start") is None and entry.get("scene_source") is None:
-            still = choose_keyframe_path(args.keyframes_dir, idx, last_clip_number)
+        if not ranges_s:
+            # Closing chunk: render still over the most recent keyframe.
+            still = _choose_keyframe(args.keyframes_dir, idx, last_anchor_index)
             if still is None:
-                print(f"  chunk {idx}: closing chunk with no usable keyframe", file=sys.stderr)
+                print(f"  chunk {idx}: closing with no usable keyframe", file=sys.stderr)
                 return 1
-            print(f"  chunk {idx:>3} (closing): still {still.name} x {target_dur:.2f}s", end=" ")
-            render_stillframe_segment(still, target_dur, segment_path, codec)
+            print(f"  chunk {idx:>3} (closing): still {still.name} x {audio_duration:.2f}s", end=" ")
+            render_stillframe_segment(still, audio_duration, segment_path, codec)
+            tally["freeze"] += 1
             print(f"({time.time() - t0:.1f}s)")
-            segment_paths.append(segment_path)
-            continue
-
-        part_paths: list[Path] = []
-        remaining = target_dur
-        part_index = 0
-        clip_path = args.clips_dir / f"clip_{idx:03d}.mp4"
-        clip_metadata = clip_manifest.get(idx)
-
-        if clip_path.exists():
-            if clip_metadata is not None:
-                start_offset, primary_duration, remaining = plan_primary_window(clip_metadata, target_dur)
-            else:
-                available_duration = probe_duration(clip_path)
-                primary_duration = min(target_dur, available_duration)
-                start_offset = 0.0
-                remaining = max(0.0, target_dur - primary_duration)
-            if primary_duration > 0.01:
-                part_path = segments_dir / f"segment_{idx:03d}_part{part_index:02d}_hero.mp4"
-                render_excerpt(clip_path, start_offset, primary_duration, part_path, codec)
-                part_paths.append(part_path)
-                part_index += 1
-                last_clip_number = idx
-
-        if remaining > 0.01 and args.video is not None:
-            ext_start_s, ext_duration = plan_scene_extension(
-                entry,
-                clip_metadata,
-                video_duration_s,
-                remaining,
-                args.scene_extension_budget,
-            )
-            if ext_duration > 0.01:
-                part_path = segments_dir / f"segment_{idx:03d}_part{part_index:02d}_extension.mp4"
-                render_excerpt(args.video, ext_start_s, ext_duration, part_path, codec)
-                part_paths.append(part_path)
-                part_index += 1
-                remaining -= ext_duration
-                last_clip_number = idx
-
-        manual_broll_paths = collect_manual_broll_paths(entry, args.clips_dir)
-        for broll_path in manual_broll_paths:
-            if remaining <= 0.01:
-                break
-            available_duration = probe_duration(broll_path)
-            if available_duration <= 0.01:
-                continue
-            duration = min(remaining, available_duration)
-            part_path = segments_dir / f"segment_{idx:03d}_part{part_index:02d}_broll.mp4"
-            render_excerpt(broll_path, 0.0, duration, part_path, codec)
-            part_paths.append(part_path)
-            part_index += 1
-            remaining -= duration
-
-        if remaining > 0.01 and args.video is not None and visual_segments:
-            for segment in select_semantic_broll_segments(entry, visual_segments, used_segment_ids):
-                if remaining <= 0.01:
-                    break
-                segment_id = str(segment.get("id"))
-                segment_start = timestamp_to_seconds(str(segment["start"]))
-                segment_end = timestamp_to_seconds(str(segment["end"]))
-                segment_duration = max(0.0, segment_end - segment_start)
-                if segment_duration <= 0.01:
-                    continue
-                duration = min(remaining, segment_duration)
-                part_path = segments_dir / f"segment_{idx:03d}_part{part_index:02d}_semantic.mp4"
-                render_excerpt(args.video, segment_start, duration, part_path, codec)
-                part_paths.append(part_path)
-                part_index += 1
-                remaining -= duration
-                used_segment_ids.add(segment_id)
-
-        if remaining > 0.01:
-            still = choose_keyframe_path(args.keyframes_dir, idx, last_clip_number)
-            if still is None:
-                print(f"  chunk {idx}: no clip, semantic B-roll, or keyframe fallback available", file=sys.stderr)
-                return 1
-            if remaining > args.freeze_threshold:
-                print(
-                    f"  chunk {idx}: warning - freeze fallback {remaining:.2f}s exceeds threshold {args.freeze_threshold:.2f}s",
-                    file=sys.stderr,
-                )
-            part_path = segments_dir / f"segment_{idx:03d}_part{part_index:02d}_freeze.mp4"
-            render_stillframe_segment(still, remaining, part_path, codec)
-            part_paths.append(part_path)
-
-        if not part_paths:
-            print(f"  chunk {idx}: unable to render any visual segment", file=sys.stderr)
-            return 1
-
-        if len(part_paths) == 1:
-            part_paths[0].replace(segment_path)
         else:
-            concat_segments(part_paths, segment_path)
-            for part_path in part_paths:
-                part_path.unlink(missing_ok=True)
+            shot_boundaries_per_range = [
+                collect_shot_boundaries_for_range(rs, re_, visual_segments)
+                for rs, re_ in ranges_s
+            ]
+            kept_ranges, kind = plan_smart_trim(
+                ranges_s, shot_boundaries_per_range, audio_duration,
+            )
+            clip_meta = clip_manifest.get(idx) or {}
+            clip_meta_ranges = list(clip_meta.get("ranges") or [])  # type: ignore[arg-type]
+            actual_ranges = kept_ranges
+            if kind == "extension-needed":
+                actual_ranges, _ = _extend_ranges_to_audio_duration(
+                    kept_ranges,
+                    clip_meta_ranges,
+                    audio_duration,
+                )
+            part_paths = _render_kept_ranges_from_clip_manifest(
+                actual_ranges, clip_meta_ranges, args.clips_dir,
+                segments_dir, idx, codec,
+            )
+            actual_kind = kind
+            if not part_paths:
+                # No matching clip metadata — fall back to the keyframe.
+                still = _choose_keyframe(args.keyframes_dir, idx, last_anchor_index)
+                if still is None:
+                    print(f"  chunk {idx}: no clips and no keyframe fallback", file=sys.stderr)
+                    return 1
+                render_stillframe_segment(still, audio_duration, segment_path, codec)
+                actual_kind = "freeze"
+            elif len(part_paths) == 1:
+                remaining_fill = max(0.0, audio_duration - _ranges_total_duration(actual_ranges))
+                if remaining_fill > 0.01:
+                    still = _choose_keyframe(args.keyframes_dir, idx, last_anchor_index)
+                    if still is None:
+                        print(f"  chunk {idx}: extension shortfall with no keyframe fallback", file=sys.stderr)
+                        return 1
+                    fill_path = segments_dir / f"segment_{idx:03d}_part01_freeze.mp4"
+                    render_stillframe_segment(still, remaining_fill, fill_path, codec)
+                    part_paths.append(fill_path)
+                    concat_segments(part_paths, segment_path)
+                    for p in part_paths:
+                        p.unlink(missing_ok=True)
+                else:
+                    part_paths[0].replace(segment_path)
+            else:
+                remaining_fill = max(0.0, audio_duration - _ranges_total_duration(actual_ranges))
+                if remaining_fill > 0.01:
+                    still = _choose_keyframe(args.keyframes_dir, idx, last_anchor_index)
+                    if still is None:
+                        print(f"  chunk {idx}: extension shortfall with no keyframe fallback", file=sys.stderr)
+                        return 1
+                    fill_path = segments_dir / f"segment_{idx:03d}_part{len(part_paths):02d}_freeze.mp4"
+                    render_stillframe_segment(still, remaining_fill, fill_path, codec)
+                    part_paths.append(fill_path)
+                concat_segments(part_paths, segment_path)
+                # Note: parts are intentionally KEPT alongside segment_NNN.mp4.
+                # For a clean handoff we leave only the merged segment file.
+                for p in part_paths:
+                    p.unlink(missing_ok=True)
+            last_anchor_index = idx
+            tally[actual_kind] = tally.get(actual_kind, 0) + 1
+            print(
+                f"  chunk {idx:>3}: {actual_kind:<18} ranges={len(actual_ranges)} "
+                f"audio={audio_duration:.2f}s ({time.time() - t0:.1f}s)"
+            )
 
-        descriptor = []
-        if clip_path.exists():
-            descriptor.append(clip_path.name)
-        if any("extension" in path.name for path in part_paths):
-            descriptor.append("scene extension")
-        if manual_broll_paths:
-            descriptor.append(f"{len(manual_broll_paths)} manual B-roll")
-        if any("semantic" in path.name for path in part_paths):
-            descriptor.append("semantic B-roll")
-        if any("freeze" in path.name for path in part_paths):
-            descriptor.append("freeze")
-        desc_text = " + ".join(descriptor) if descriptor else "fallback-only"
-        print(f"  chunk {idx:>3}: {desc_text} over {target_dur:.2f}s", end=" ")
+        # Per-chunk MP3 split for the manual-editing handoff.
+        segment_audio = segments_dir / f"segment_{idx:03d}.mp3"
+        split_voiceover_to_segment(args.voiceover, audio_start_s, audio_end_s, segment_audio)
 
-        print(f"({time.time() - t0:.1f}s)")
+        edit_entries.append({
+            "index": idx,
+            "ranges": entry.get("ranges") or [],
+            "characters": entry.get("characters") or [],
+            "narration": entry.get("text", ""),
+            "audio_start_s": audio_start_s,
+            "audio_end_s": audio_end_s,
+            "segment_video": segment_path.name,
+            "segment_audio": segment_audio.name,
+        })
         segment_paths.append(segment_path)
 
-    print(f"\nConcatenating {len(segment_paths)} segments")
-    video_track = args.output.parent / "video_track.mp4"
-    concat_segments(segment_paths, video_track)
+    if not segment_paths:
+        print("No segments rendered", file=sys.stderr)
+        return 1
 
-    print(f"Muxing voiceover {args.voiceover.name}")
-    mux_audio(video_track, args.voiceover, args.output)
-    video_track.unlink(missing_ok=True)
+    # Concatenate per-chunk segments → silent draft, then mux narration audio.
+    silent_draft = args.output.with_suffix(".silent.mp4")
+    concat_segments(segment_paths, silent_draft)
+    mux_audio(silent_draft, args.voiceover, args.output)
+    silent_draft.unlink(missing_ok=True)
 
-    final_dur = probe_duration(args.output)
+    edit_manifest_path = args.output.parent / "edit_manifest.json"
+    write_edit_manifest(edit_manifest_path, edit_entries)
+
+    elapsed = time.time() - total_t0
+    print(f"\n[done] {args.output} ({elapsed:.1f}s = {elapsed / 60:.2f} min)")
     print(
-        f"\n[done] {args.output} ({final_dur:.1f}s = {final_dur / 60:.2f} min) "
-        f"in {(time.time() - total_t0) / 60:.1f} min"
+        f"[tally] exact={tally['exact']} shot-aligned-tail={tally['shot-aligned-tail']} "
+        f"mid-shot-tail={tally['mid-shot-tail']} extension-needed={tally['extension-needed']} "
+        f"freeze={tally['freeze']}"
     )
+    print(f"[edit handoff] {edit_manifest_path} ({len(edit_entries)} segments in {segments_dir})")
     return 0
 
 

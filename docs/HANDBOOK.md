@@ -1,5 +1,12 @@
 # Movie-Review-Master Handbook
 
+> **NOTE (2026-04-27):** Stage 2 is being rewritten on the `develop` branch
+> from a two-pass writer + grounder into a single planner-writer that
+> co-plans visual anchors and narration. While that is in flight, the
+> Stage 2 / Stage 5 sections below describe the **current** behaviour, not
+> the target. See [`OVERHAUL_PLAN.md`](OVERHAUL_PLAN.md) for the target
+> architecture and phased plan.
+
 This handbook is the central source of truth for stable project knowledge: concepts, design decisions, pipeline logic, conventions, and style-system rules. It is intentionally not a progress log.
 
 ## 1. Documentation Map

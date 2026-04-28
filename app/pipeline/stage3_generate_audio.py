@@ -1,8 +1,9 @@
-"""Stage 3 voiceover generation for the current Style A path.
+"""Stage 3 voiceover generation (anchored-script schema).
 
-The script is split on [SCENE] markers, spoken chunk by chunk through Qwen3
-voice cloning, concatenated into one normalized voiceover, and written with a
-manifest that keeps the render sync contract intact.
+The script is split on `[ANCHOR ranges="..." ...]` markers, spoken chunk by
+chunk through Qwen3 voice cloning, concatenated into one normalized
+voiceover, and written with a manifest that carries each chunk's anchor
+ranges through to Stage 5 for hero-clip rendering.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import argparse
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -20,11 +21,9 @@ import torch
 
 from app.pipeline.common.json_io import dump_json
 from app.pipeline.common.script_contract import (
-    BROLL_LINE_RE,
+    AnchorMarker,
     STRUCTURAL_MARKER_RE,
-    SceneMarker,
-    parse_broll_ranges,
-    parse_scene_marker,
+    parse_anchor_marker,
 )
 
 
@@ -38,27 +37,33 @@ REFERENCE_TEXT_FILENAME = "clone_reference.txt"
 
 @dataclass
 class Chunk:
+    """One narration chunk from the anchored script.
+
+    `anchor` is None for the [CLOSING] block — that text is rendered over
+    a still keyframe in Stage 5, not over hero clips.
+    """
+
     index: int
-    scene: Optional[SceneMarker]
+    anchor: Optional[AnchorMarker]
     text: str
-    broll: list[tuple[str, str]] = field(default_factory=list)
-
-    # Flat accessors the manifest writer and CLI summary still want.
-    @property
-    def scene_start(self) -> Optional[str]:
-        return self.scene.start if self.scene else None
 
     @property
-    def scene_end(self) -> Optional[str]:
-        return self.scene.end if self.scene else None
+    def ranges(self) -> list[tuple[str, str]]:
+        return list(self.anchor.ranges) if self.anchor else []
 
     @property
-    def scene_source(self) -> Optional[str]:
-        return self.scene.source if self.scene else None
+    def characters(self) -> list[str]:
+        return list(self.anchor.characters) if self.anchor else []
 
     @property
-    def scene_characters(self) -> list[str]:
-        return list(self.scene.characters) if self.scene else []
+    def first_range_start(self) -> Optional[str]:
+        """Start timestamp of the first range, or None for closing chunks.
+
+        Used only for human-readable log lines / CLI summaries.
+        """
+        if self.anchor and self.anchor.ranges:
+            return self.anchor.ranges[0][0]
+        return None
 
 
 @dataclass(frozen=True)
@@ -100,24 +105,30 @@ def resolve_output_tag(style_path: Path, explicit_tag: Optional[str]) -> str:
 
 
 def parse_script_chunks(script_text: str) -> list[Chunk]:
-    """Split a marked script into narration chunks."""
+    """Split an anchored script into narration chunks.
+
+    Walks the script in order starting at `[HOOK]`; title/header material is
+    ignored entirely. Each `[ANCHOR ...]` marker after `[HOOK]` opens a chunk
+    and subsequent non-marker non-empty lines are accumulated as that chunk's
+    narration text. Other structural markers (`[ACT N]`, `[CLOSING]`) flush
+    the current chunk. The `[CLOSING]` block continues accumulating narration
+    with no anchor, since closing renders over a still keyframe.
+    """
     chunks: list[Chunk] = []
-    current_scene: Optional[SceneMarker] = None
+    current_anchor: Optional[AnchorMarker] = None
     pending_lines: list[str] = []
-    pending_broll: list[tuple[str, str]] = []
     in_script = False
+    in_closing = False
 
     def flush() -> None:
-        nonlocal pending_lines, pending_broll
+        nonlocal pending_lines
         if pending_lines:
             chunks.append(Chunk(
                 index=len(chunks) + 1,
-                scene=current_scene,
+                anchor=current_anchor,
                 text="\n".join(pending_lines),
-                broll=list(pending_broll) if current_scene is not None else [],
             ))
         pending_lines = []
-        pending_broll = []
 
     for raw in script_text.splitlines():
         line = raw.strip()
@@ -125,31 +136,41 @@ def parse_script_chunks(script_text: str) -> list[Chunk]:
             continue
 
         if line.startswith("[TITLE]"):
+            continue
+
+        if line.startswith("[HOOK]"):
+            flush()
+            current_anchor = None
+            in_closing = False
             in_script = True
             continue
 
         if not in_script:
             continue
 
-        structural = STRUCTURAL_MARKER_RE.match(line)
-        if structural:
-            if structural.group(1).upper() == "CLOSING":
-                flush()
-                current_scene = None
-            continue
-
-        scene_marker = parse_scene_marker(line)
-        if scene_marker is not None:
+        if line.startswith("[CLOSING]"):
             flush()
-            current_scene = scene_marker
+            current_anchor = None
+            in_closing = True
             continue
 
-        broll_match = BROLL_LINE_RE.search(line)
-        if broll_match:
-            pending_broll.extend(parse_broll_ranges(broll_match.group(1)))
+        if STRUCTURAL_MARKER_RE.match(line):
+            flush()
+            current_anchor = None
+            in_closing = False
             continue
 
-        pending_lines.append(line)
+        anchor = parse_anchor_marker(line)
+        if anchor is not None:
+            flush()
+            current_anchor = anchor
+            in_closing = False
+            continue
+
+        # Narration text: accept inside an anchor OR inside the closing
+        # block (which has no anchor by design).
+        if current_anchor is not None or in_closing:
+            pending_lines.append(line)
 
     flush()
     return chunks
@@ -215,7 +236,7 @@ def generate_chunks(
         audio_s = len(wav) / out_sr
         print(
             f"[gen  {chunk.index:>3}/{total}] "
-            f"{chunk.scene_start or '(closing)':>8} "
+            f"{chunk.first_range_start or '(closing)':>12} "
             f"{len(chunk.text):>3}ch "
             f"-> {audio_s:5.1f}s audio in {time.time() - t0:5.1f}s"
         )
@@ -276,15 +297,18 @@ def write_manifest(
     audio_ranges: list[tuple[float, float]],
     out_path: Path,
 ) -> None:
+    """Write the voiceover manifest consumed by Stage 5.
+
+    Each entry carries the chunk's anchor `ranges` (one or more [start,end]
+    timestamp pairs) plus its `audio_start_s`/`audio_end_s` cumulative
+    timing. Closing chunks have `ranges = []`.
+    """
     payload = [
         {
             "index": chunk.index,
-            "scene_start": chunk.scene_start,
-            "scene_end": chunk.scene_end,
-            "scene_source": chunk.scene_source,
-            "scene_characters": chunk.scene_characters,
+            "ranges": [[start, end] for (start, end) in chunk.ranges],
+            "characters": chunk.characters,
             "text": chunk.text,
-            "broll": [[start, end] for (start, end) in chunk.broll],
             "audio_start_s": start_s,
             "audio_end_s": end_s,
         }
@@ -298,8 +322,11 @@ def print_chunk_summary(script_path: Path, chunks: list[Chunk]) -> None:
     print(f"Script: {script_path}")
     print(f"  {len(chunks)} chunks, {total_chars} total narration chars")
     for chunk in chunks[:5]:
+        ranges_summary = (
+            ", ".join(f"{s}-{e}" for s, e in chunk.ranges) if chunk.ranges else "(closing)"
+        )
         print(
-            f"  chunk {chunk.index}: [{chunk.scene_start or '--:--:--'}-{chunk.scene_end or '--:--:--'}] "
+            f"  chunk {chunk.index}: [{ranges_summary}] "
             f"{len(chunk.text)}ch :: {chunk.text[:40]}…"
         )
     if len(chunks) > 5:
