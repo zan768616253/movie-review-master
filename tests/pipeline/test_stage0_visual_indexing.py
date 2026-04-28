@@ -3,7 +3,7 @@ import time
 import pytest
 from unittest.mock import MagicMock, patch
 
-from app.pipeline.stage0_index_visuals import build_parser
+from app.pipeline.stage0_index_visuals import _build_strategy, build_parser
 from app.pipeline.stage0_indexers.base import (
     seconds_to_timestamp,
     snap_to_shot_boundaries,
@@ -12,6 +12,7 @@ from app.pipeline.stage0_indexers.base import (
 )
 from app.pipeline.stage0_indexers.gemini import GeminiStrategy
 from app.pipeline.stage0_indexers.gemini import build_timestamp_drawtext_filter
+from app.pipeline.stage0_indexers.openrouter import OpenRouterStrategy
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +127,18 @@ def _build_fake_gemini_client(response_text: str) -> MagicMock:
     return mock_client
 
 
+def _build_fake_openrouter_response(response_text: str) -> MagicMock:
+    mock_http_response = MagicMock()
+    mock_http_response.read.return_value = json.dumps({
+        "choices": [{"message": {"content": response_text}}],
+    }).encode("utf-8")
+
+    mock_context_manager = MagicMock()
+    mock_context_manager.__enter__.return_value = mock_http_response
+    mock_context_manager.__exit__.return_value = False
+    return mock_context_manager
+
+
 class TestGeminiStrategy:
     @patch("app.pipeline.stage0_indexers.gemini.detect_shot_boundaries", return_value=[])
     @patch("app.pipeline.stage0_indexers.gemini.genai")
@@ -238,9 +251,72 @@ class TestGeminiStrategy:
         assert results[1]["start"] == "00:05:00.000"
 
 
+class TestOpenRouterStrategy:
+    @patch.object(OpenRouterStrategy, "_detect_shot_boundaries", return_value=[])
+    @patch.object(OpenRouterStrategy, "_get_video_duration", return_value=240.0)
+    @patch.object(OpenRouterStrategy, "_extract_chunk")
+    @patch("app.pipeline.stage0_indexers.openrouter.urllib.request.urlopen")
+    def test_index_video_splits_and_merges(
+        self, mock_urlopen, mock_extract, mock_duration, mock_boundaries, tmp_path,
+    ):
+        tmp_idx_dir = tmp_path / "tmp"
+        tmp_idx_dir.mkdir()
+
+        def fake_extract(_video_path, _start_s, _duration_s, out_path):
+            out_path.write_bytes(b"fake-video")
+
+        mock_extract.side_effect = fake_extract
+
+        mock_urlopen.return_value = _build_fake_openrouter_response(json.dumps([{
+            "start": "00:00:00.000", "end": "00:00:03.000", "summary": "test",
+            "ocr_text": "", "characters": []
+        }]))
+
+        strategy = OpenRouterStrategy(api_key="fake")
+        results = strategy.index_video(tmp_path / "movie.mp4", tmp_idx_dir)
+
+        assert len(results) == 2
+        assert mock_extract.call_count == 2
+        assert results[0]["start"] == "00:00:00.000"
+        assert results[1]["start"] == "00:02:00.000"
+
+    @patch("app.pipeline.stage0_indexers.openrouter.urllib.request.urlopen")
+    def test_index_chunk_sends_inline_video_and_json_schema(self, mock_urlopen, tmp_path):
+        mock_urlopen.return_value = _build_fake_openrouter_response(json.dumps([]))
+
+        chunk_path = tmp_path / "chunk.mp4"
+        chunk_path.write_bytes(b"fake-video")
+
+        strategy = OpenRouterStrategy(api_key="fake")
+        strategy._index_chunk(chunk_path)
+
+        request = mock_urlopen.call_args.args[0]
+        payload = json.loads(request.data.decode("utf-8"))
+        content = payload["messages"][0]["content"]
+
+        assert payload["model"] == "qwen/qwen2.5-vl-72b-instruct"
+        assert payload["response_format"]["type"] == "json_schema"
+        assert payload["provider"]["require_parameters"] is True
+        assert content[0]["type"] == "text"
+        assert "burned into the TOP-LEFT corner" in content[0]["text"]
+        assert content[1]["type"] == "video_url"
+        assert content[1]["video_url"]["url"].startswith("data:video/mp4;base64,")
+
+
 def test_stage0_parser_accepts_workers_flag():
     args = build_parser().parse_args(["--video", "movie.mp4", "--workers", "3"])
     assert args.workers == 3
+
+
+def test_stage0_parser_accepts_strategy_flag():
+    args = build_parser().parse_args(["--video", "movie.mp4", "--strategy", "openrouter"])
+    assert args.strategy == "openrouter"
+
+
+def test_build_strategy_returns_openrouter_strategy():
+    strategy = _build_strategy("openrouter", max_workers=2)
+    assert isinstance(strategy, OpenRouterStrategy)
+    assert strategy.max_workers == 2
 
 
 def test_build_timestamp_drawtext_filter_omits_fontfile_when_default_font_missing(monkeypatch, tmp_path):

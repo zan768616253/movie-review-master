@@ -17,6 +17,7 @@ audio — narration is sacred.
 Outputs:
 
     <output_dir>/review.mp4               draft review video
+    <output_dir>/review_subtitles.ass     styled narration subtitles burned into review.mp4
     <output_dir>/segments/segment_NNN.mp4 per-chunk visuals (kept on disk)
     <output_dir>/segments/segment_NNN.mp3 per-chunk audio split from voiceover
     <output_dir>/edit_manifest.json       handoff manifest for manual NLE editing
@@ -47,11 +48,36 @@ TARGET_WIDTH = 1920
 TARGET_HEIGHT = 1080
 TARGET_FPS = 30
 DEFAULT_CLIP_MANIFEST = "clip_manifest.json"
+DEFAULT_SUBTITLE_STYLE_NAME = "ReviewCaption"
+DEFAULT_SUBTITLE_FONT_CANDIDATES = (
+    ("Noto Sans CJK SC", Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc")),
+    ("Noto Sans CJK JP", Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc")),
+    ("DejaVu Sans", Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")),
+)
+DEFAULT_SUBTITLE_FONTS_DIR = Path("/usr/share/fonts")
+DEFAULT_SUBTITLE_FONT_SIZE = 54
+DEFAULT_SUBTITLE_MARGIN_X = 140
+DEFAULT_SUBTITLE_MARGIN_V = 64
 # Smart-trim accepts a shot-aligned cut whose video duration is within this
 # fraction of audio_duration. Larger grace = more clean cuts, more residual
 # overrun absorbed by post-handle extension or still fallback; smaller = more
 # mid-shot cuts.
 SMART_TRIM_GRACE_PCT = 0.05
+# Multi-range trim spreads the excess across every range so each range is
+# represented in the final chunk. We refuse to cut a range below this floor
+# — anything shorter is a flicker, not a shot. If the spread can't honor the
+# floor across all ranges, we drop the last range and recurse.
+MIN_KEEP_PER_RANGE_S = 1.5
+# Post-render safety net: surgical splice fires when the rendered chunk
+# contains more than this many seconds of black frames. Pre-render passes
+# (source-level range splitting + extension clamp) handle most cases
+# upstream — this is for residual fades that only manifest after concat.
+BLACK_FRAME_THRESHOLD_S = 3.0
+BLACK_FRAME_PIC_TH = 0.95
+BLACK_FRAME_MIN_INTERVAL_S = 0.4
+# When source-level black splitting drops sub-ranges shorter than this,
+# the resulting fragment is too brief to read as a shot.
+MIN_NON_BLACK_SUB_RANGE_S = 1.5
 
 
 # --- ffmpeg helpers -------------------------------------------------------
@@ -149,6 +175,169 @@ def split_voiceover_to_segment(
     subprocess.run(cmd, check=True)
 
 
+def detect_black_intervals(
+    video_path: Path,
+    pic_th: float = BLACK_FRAME_PIC_TH,
+    min_interval_s: float = BLACK_FRAME_MIN_INTERVAL_S,
+) -> list[tuple[float, float]]:
+    """Run ``ffmpeg blackdetect`` and return ``(start_s, end_s)`` intervals.
+
+    ``pic_th`` is the fraction of pixels that must fall below the (default
+    0.10) luma threshold for a frame to count as black. ``min_interval_s``
+    rejects single-frame transitions — anything shorter than this isn't
+    flagged. blackdetect prints lines like::
+
+        [blackdetect @ 0xff] black_start:5.0 black_end:11.0 black_duration:6.0
+
+    on stderr; we parse the timestamps out.
+    """
+    cmd = [
+        "ffmpeg", "-i", str(video_path),
+        "-vf", f"blackdetect=d={min_interval_s}:pic_th={pic_th}",
+        "-an", "-f", "null", "-",
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    intervals: list[tuple[float, float]] = []
+    for line in proc.stderr.splitlines():
+        if "blackdetect" not in line or "black_start" not in line:
+            continue
+        start: float | None = None
+        end: float | None = None
+        for token in line.split():
+            if token.startswith("black_start:"):
+                try:
+                    start = float(token.split(":", 1)[1])
+                except ValueError:
+                    pass
+            elif token.startswith("black_end:"):
+                try:
+                    end = float(token.split(":", 1)[1])
+                except ValueError:
+                    pass
+        if start is not None and end is not None and end > start:
+            intervals.append((start, end))
+    return intervals
+
+
+def compute_clip_black_intervals(clip_path: Path) -> list[tuple[float, float]]:
+    """Return clip-relative ``(start_s, end_s)`` intervals of black frames.
+
+    Each interval is measured from the start of the clip (offset 0). Used
+    to split source ranges and clamp extensions before render, so the
+    pipeline never renders a fade-to-black that the source movie embeds.
+    """
+    return detect_black_intervals(clip_path)
+
+
+def subtract_black_from_range(
+    range_start_abs: float,
+    range_end_abs: float,
+    extracted_start_abs: float,
+    clip_blacks_rel: list[tuple[float, float]],
+    min_keep_s: float = MIN_NON_BLACK_SUB_RANGE_S,
+) -> list[tuple[float, float]]:
+    """Split ``[range_start_abs, range_end_abs]`` around any black intervals
+    that intersect it.
+
+    ``clip_blacks_rel`` are clip-relative offsets (where 0 is the clip's
+    first frame, equivalent to absolute time ``extracted_start_abs``).
+    Returns absolute-time non-black sub-ranges, dropping any sub-range
+    shorter than ``min_keep_s`` (a flicker, not a shot).
+
+    If the entire range is black, returns ``[]`` — caller should drop
+    this range from the chunk and fall back to other ranges or a still.
+    """
+    if not clip_blacks_rel:
+        return [(range_start_abs, range_end_abs)]
+
+    # Convert clip-relative blacks to absolute time, intersect with [range].
+    abs_blacks: list[tuple[float, float]] = []
+    for b_start_rel, b_end_rel in clip_blacks_rel:
+        bs = extracted_start_abs + b_start_rel
+        be = extracted_start_abs + b_end_rel
+        clipped_start = max(bs, range_start_abs)
+        clipped_end = min(be, range_end_abs)
+        if clipped_end > clipped_start:
+            abs_blacks.append((clipped_start, clipped_end))
+    if not abs_blacks:
+        return [(range_start_abs, range_end_abs)]
+
+    abs_blacks.sort()
+    out: list[tuple[float, float]] = []
+    cursor = range_start_abs
+    for bs, be in abs_blacks:
+        if bs - cursor >= min_keep_s:
+            out.append((cursor, bs))
+        cursor = max(cursor, be)
+    if range_end_abs - cursor >= min_keep_s:
+        out.append((cursor, range_end_abs))
+    return out
+
+
+def clamp_extension_against_black(
+    range_end_abs: float,
+    extended_end_abs: float,
+    extracted_start_abs: float,
+    clip_blacks_rel: list[tuple[float, float]],
+) -> float:
+    """Clamp an extension so it never enters a black region.
+
+    Returns the new ``extended_end_abs``. If a black interval starts
+    inside ``(range_end_abs, extended_end_abs]``, we cap the extension
+    at the black's start. The shortfall is filled with a still by the
+    caller.
+    """
+    if extended_end_abs <= range_end_abs:
+        return range_end_abs
+    for b_start_rel, _b_end_rel in clip_blacks_rel:
+        b_start_abs = extracted_start_abs + b_start_rel
+        if range_end_abs < b_start_abs <= extended_end_abs:
+            return min(extended_end_abs, b_start_abs)
+    return extended_end_abs
+
+
+def splice_black_with_stills(
+    segment_path: Path,
+    black_intervals: list[tuple[float, float]],
+    audio_duration_s: float,
+    keyframe_path: Path,
+    segments_dir: Path,
+    chunk_index: int,
+    codec: str,
+) -> None:
+    """Replace black intervals inside ``segment_path`` with keyframe stills.
+
+    Builds a sequence of parts — alternating non-black slices extracted
+    from the existing segment and stills for each black gap — then
+    concatenates back over ``segment_path``. Good footage outside the
+    black windows is preserved; only the black is replaced.
+    """
+    if not black_intervals:
+        return
+
+    parts: list[Path] = []
+    cursor = 0.0
+    for i, (b_start, b_end) in enumerate(black_intervals):
+        if b_start > cursor + 0.01:
+            keep = segments_dir / f"segment_{chunk_index:03d}_splice{i:02d}_keep.mp4"
+            render_excerpt(segment_path, cursor, b_start - cursor, keep, codec)
+            parts.append(keep)
+        still_part = segments_dir / f"segment_{chunk_index:03d}_splice{i:02d}_still.mp4"
+        render_stillframe_segment(keyframe_path, b_end - b_start, still_part, codec)
+        parts.append(still_part)
+        cursor = b_end
+    if cursor < audio_duration_s - 0.01:
+        tail = segments_dir / f"segment_{chunk_index:03d}_splice_tail.mp4"
+        render_excerpt(segment_path, cursor, audio_duration_s - cursor, tail, codec)
+        parts.append(tail)
+
+    spliced = segments_dir / f"segment_{chunk_index:03d}_spliced.mp4"
+    concat_segments(parts, spliced)
+    spliced.replace(segment_path)
+    for p in parts:
+        p.unlink(missing_ok=True)
+
+
 def mux_audio(video_path: Path, audio_path: Path, out_path: Path) -> None:
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
@@ -157,6 +346,106 @@ def mux_audio(video_path: Path, audio_path: Path, out_path: Path) -> None:
         "-c:v", "copy",
         "-c:a", "aac", "-b:a", "192k",
         "-shortest",
+        str(out_path),
+    ]
+    subprocess.run(cmd, check=True)
+
+
+def choose_subtitle_font_family() -> str:
+    for family, font_path in DEFAULT_SUBTITLE_FONT_CANDIDATES:
+        if font_path.exists():
+            return family
+    return "sans-serif"
+
+
+def format_ass_timestamp(seconds: float) -> str:
+    total_centiseconds = max(0, round(seconds * 100))
+    hours, remainder = divmod(total_centiseconds, 360000)
+    minutes, remainder = divmod(remainder, 6000)
+    whole_seconds, centiseconds = divmod(remainder, 100)
+    return f"{hours}:{minutes:02d}:{whole_seconds:02d}.{centiseconds:02d}"
+
+
+def normalize_subtitle_text(text: object) -> str:
+    if not isinstance(text, str):
+        return ""
+    collapsed = " ".join(part.strip() for part in text.splitlines() if part.strip())
+    return collapsed.replace("\\", r"\\").replace("{", "(").replace("}", ")")
+
+
+def build_subtitle_dialogue_lines(manifest: list[dict[str, object]]) -> list[str]:
+    dialogue_lines: list[str] = []
+    for entry in manifest:
+        text = normalize_subtitle_text(entry.get("text", ""))
+        if not text:
+            continue
+        try:
+            start_s = coerce_manifest_seconds(entry["audio_start_s"], context="audio_start_s")
+            end_s = coerce_manifest_seconds(entry["audio_end_s"], context="audio_end_s")
+        except (KeyError, ValueError):
+            continue
+        if end_s <= start_s:
+            continue
+        dialogue_lines.append(
+            "Dialogue: 0,"
+            f"{format_ass_timestamp(start_s)},"
+            f"{format_ass_timestamp(end_s)},"
+            f"{DEFAULT_SUBTITLE_STYLE_NAME},,0,0,0,,{text}"
+        )
+    return dialogue_lines
+
+
+def write_subtitle_script(manifest: list[dict[str, object]], out_path: Path) -> bool:
+    dialogue_lines = build_subtitle_dialogue_lines(manifest)
+    if not dialogue_lines:
+        out_path.unlink(missing_ok=True)
+        return False
+
+    font_family = choose_subtitle_font_family()
+    script = "\n".join([
+        "[Script Info]",
+        "ScriptType: v4.00+",
+        "WrapStyle: 2",
+        "ScaledBorderAndShadow: yes",
+        f"PlayResX: {TARGET_WIDTH}",
+        f"PlayResY: {TARGET_HEIGHT}",
+        "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        "Style: "
+        f"{DEFAULT_SUBTITLE_STYLE_NAME},{font_family},{DEFAULT_SUBTITLE_FONT_SIZE},"
+        "&H00F4F4F4,&H00F4F4F4,&H00181818,&H64000000,"
+        f"-1,0,0,0,100,100,0,0,1,3,0,2,{DEFAULT_SUBTITLE_MARGIN_X},{DEFAULT_SUBTITLE_MARGIN_X},{DEFAULT_SUBTITLE_MARGIN_V},1",
+        "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+        *dialogue_lines,
+        "",
+    ])
+    out_path.write_text(script, encoding="utf-8")
+    return True
+
+
+def build_subtitle_filter(subtitle_path: Path) -> str:
+    filter_expr = f"ass={subtitle_path.resolve()}"
+    if DEFAULT_SUBTITLE_FONTS_DIR.exists():
+        filter_expr += f":fontsdir={DEFAULT_SUBTITLE_FONTS_DIR}"
+    return filter_expr
+
+
+def burn_subtitles(
+    video_path: Path,
+    subtitle_path: Path,
+    out_path: Path,
+    codec: str,
+) -> None:
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        *hwaccel_decode_args(codec),
+        "-i", str(video_path),
+        "-vf", build_subtitle_filter(subtitle_path),
+        *encoder_ffmpeg_args(codec),
+        "-an",
         str(out_path),
     ]
     subprocess.run(cmd, check=True)
@@ -283,27 +572,29 @@ def plan_smart_trim(
     """Decide how to trim multi-range hero video to match audio duration.
 
     Returns ``(kept_ranges, trim_kind)`` where ``trim_kind`` is one of:
-      - ``"exact"``           — total ≈ audio_duration (within grace).
-      - ``"shot-aligned-tail"`` — last range trimmed at a shot boundary.
-      - ``"mid-shot-tail"``   — last range trimmed mid-shot to exact target.
-            - ``"extension-needed"`` — total < audio; caller should extend from
-                Stage 4 post-handles and freeze only if that still is not enough.
+      - ``"exact"``               — total ≈ audio_duration (within grace).
+      - ``"shot-aligned-tail"``   — single range trimmed at a shot boundary.
+      - ``"mid-shot-tail"``       — single range trimmed mid-shot.
+      - ``"shot-aligned-spread"`` — multi-range; cut distributed across
+            ranges, all snaps landed on shot boundaries.
+      - ``"mid-shot-spread"``     — multi-range; some snaps fell mid-shot.
+      - ``"extension-needed"``    — total < audio; caller should extend
+            from Stage 4 post-handles and freeze only if still short.
 
-    Strategy: trim from the tail of the last range. When shot boundaries
-    are available inside that range, snap to the latest one within
-    ``grace`` of the target end. Shot boundaries land on clean cut points,
-    so this preserves narrative flow without slicing mid-action.
+    For a **single range**, trim from the tail and (when possible) snap
+    to a shot boundary inside the range. Latest-shot-boundary wins to
+    preserve the payoff frame.
 
-    Ranges are absolute source-movie seconds (start_s, end_s).
-
-    Example::
-
-        ranges_s = [(10.0, 14.0), (20.0, 30.0)]   # total 14s
-        shots    = [[], [22.0, 25.0, 28.0]]
-        audio    = 11s
-        excess   = 3s → trim last range from end → new_end = 27 → snap to 28? No,
-                   28 is past new_end. Snap to 25? 14-(30-25)=9s video, 2s under,
-                   within 5% grace of 11s → "shot-aligned-tail", new last = (20,25).
+    For **multiple ranges**, the planner has chosen a chronological
+    sequence ("first I show A, then B, then C"). Tail-greedy trim used
+    to drop B and C entirely when total > audio, leaving narration about
+    B and C playing over A's footage. Instead we now distribute the
+    excess proportionally across every range (weighted by each range's
+    trimmable budget), so every range is represented in the rendered
+    chunk. Each per-range cut snaps to a shot boundary if one is in
+    range. If even maxing out trim on every range can't absorb the
+    excess (i.e. the planner picked ~3× too much footage), we fall back
+    to dropping the last range and recursing.
     """
     if not ranges_s:
         return [], "exact"
@@ -316,21 +607,27 @@ def plan_smart_trim(
     if total <= audio_duration_s + grace:
         return ranges_s, "exact"
 
-    # total > audio + grace: trim from the tail of the last range.
     excess = total - audio_duration_s
-    last_idx = len(ranges_s) - 1
-    last_start, last_end = ranges_s[last_idx]
-    last_dur = last_end - last_start
 
-    # If excess >= last range duration, drop the whole last range and
-    # recurse on the shorter list. This usually means the planner picked
-    # one too many ranges; downstream still gets earlier ranges intact.
-    if excess >= last_dur - grace:
-        if len(ranges_s) == 1:
-            # Only one range and audio is effectively near-zero. Keep a
-            # tiny tail slice; the caller will still freeze-fill any
-            # remaining shortfall to preserve sync.
-            return [(last_start, last_start + max(0.0, last_dur - excess))], "mid-shot-tail"
+    # --- Single-range path: trim only from this range's tail.
+    if len(ranges_s) == 1:
+        rs, re_ = ranges_s[0]
+        new_end = max(rs, re_ - excess)
+        candidates = shot_boundaries_per_range[0] if shot_boundaries_per_range else []
+        in_window = [b for b in candidates if rs < b <= new_end + grace]
+        if in_window:
+            return [(rs, max(in_window))], "shot-aligned-tail"
+        return [(rs, new_end)], "mid-shot-tail"
+
+    # --- Multi-range path: distribute excess across every range.
+    durations = [end - start for start, end in ranges_s]
+    budgets = [max(0.0, d - MIN_KEEP_PER_RANGE_S) for d in durations]
+    total_budget = sum(budgets)
+
+    # Even max trim can't fit; the planner over-anchored. Drop the last
+    # range and recurse — same fallback as before, but now reached only
+    # when proportional spread is provably impossible.
+    if total_budget + grace < excess:
         return plan_smart_trim(
             ranges_s[:-1],
             shot_boundaries_per_range[:-1],
@@ -338,21 +635,31 @@ def plan_smart_trim(
             grace_pct,
         )
 
-    # Trim within the last range. new_end gives an exact target match.
-    new_end = last_end - excess
-    candidates = shot_boundaries_per_range[last_idx] if last_idx < len(shot_boundaries_per_range) else []
-    in_window = [b for b in candidates if last_start < b <= new_end + grace]
-    if in_window:
-        # Pick the latest candidate — preserves the most of the original
-        # shot, which usually contains the payoff frame.
-        snapped = max(in_window)
-        new_ranges = list(ranges_s)
-        new_ranges[last_idx] = (last_start, snapped)
-        return new_ranges, "shot-aligned-tail"
+    new_ranges: list[tuple[float, float]] = []
+    any_snapped = False
+    any_mid_shot = False
+    for i, ((rs, re_), budget) in enumerate(zip(ranges_s, budgets)):
+        cut = excess * (budget / total_budget) if total_budget > 0 else 0.0
+        if cut <= grace:
+            # Negligible cut for this range — keep it intact rather than
+            # snapping needlessly to a nearby shot boundary.
+            new_ranges.append((rs, re_))
+            continue
+        new_end = re_ - cut
+        candidates = shot_boundaries_per_range[i] if i < len(shot_boundaries_per_range) else []
+        in_window = [b for b in candidates if rs < b <= new_end + grace]
+        if in_window:
+            new_ranges.append((rs, max(in_window)))
+            any_snapped = True
+        else:
+            new_ranges.append((rs, new_end))
+            any_mid_shot = True
 
-    new_ranges = list(ranges_s)
-    new_ranges[last_idx] = (last_start, new_end)
-    return new_ranges, "mid-shot-tail"
+    if any_mid_shot:
+        return new_ranges, "mid-shot-spread"
+    if any_snapped:
+        return new_ranges, "shot-aligned-spread"
+    return new_ranges, "exact"
 
 
 # --- Render loop ----------------------------------------------------------
@@ -406,12 +713,17 @@ def _extend_ranges_to_audio_duration(
     ranges_s: list[tuple[float, float]],
     clip_meta_ranges: list[dict[str, object]],
     audio_duration_s: float,
+    clip_blacks_by_path: dict[str, list[tuple[float, float]]] | None = None,
 ) -> tuple[list[tuple[float, float]], float]:
     """Extend the last kept range into its extracted post-handle when audio overruns.
 
     Returns ``(extended_ranges, remaining_shortfall_s)``. Any remaining
     shortfall must be filled with a still segment so the rendered chunk
     duration still matches narration exactly.
+
+    When ``clip_blacks_by_path`` is supplied, the extension is clamped at
+    the first black boundary encountered inside the post-handle. This
+    prevents fade-to-black extensions (the original chunk-22 bug).
     """
     planned_ranges = list(ranges_s)
     shortfall_s = audio_duration_s - _ranges_total_duration(planned_ranges)
@@ -431,6 +743,17 @@ def _extend_ranges_to_audio_duration(
         return planned_ranges, shortfall_s
 
     extended_end_s = min(extracted_end_s, last_end_s + shortfall_s)
+    if clip_blacks_by_path is not None:
+        try:
+            extracted_start_s = timestamp_to_seconds(str(last_meta["extracted_start"]))
+        except (KeyError, ValueError):
+            extracted_start_s = None
+        clip_path_str = str(last_meta.get("clip_path", ""))
+        clip_blacks_rel = clip_blacks_by_path.get(clip_path_str, [])
+        if extracted_start_s is not None and clip_blacks_rel:
+            extended_end_s = clamp_extension_against_black(
+                last_end_s, extended_end_s, extracted_start_s, clip_blacks_rel,
+            )
     gained_s = max(0.0, extended_end_s - last_end_s)
     if gained_s > 0.0:
         planned_ranges[-1] = (last_start_s, extended_end_s)
@@ -554,8 +877,17 @@ def main(argv=None) -> int:
     segment_paths: list[Path] = []
     edit_entries: list[dict[str, object]] = []
     last_anchor_index: int | None = None
-    tally = {"exact": 0, "shot-aligned-tail": 0, "mid-shot-tail": 0,
-             "extension-needed": 0, "freeze": 0}
+    tally: dict[str, int] = {
+        "exact": 0,
+        "shot-aligned-tail": 0,
+        "mid-shot-tail": 0,
+        "shot-aligned-spread": 0,
+        "mid-shot-spread": 0,
+        "extension-needed": 0,
+        "freeze": 0,
+        "freeze-replaced-black": 0,
+        "spliced-replaced-black": 0,
+    }
 
     total_t0 = time.time()
     for entry in manifest:
@@ -579,24 +911,68 @@ def main(argv=None) -> int:
                 return 1
             print(f"  chunk {idx:>3} (closing): still {still.name} x {audio_duration:.2f}s", end=" ")
             render_stillframe_segment(still, audio_duration, segment_path, codec)
-            tally["freeze"] += 1
+            actual_kind = "freeze"
+            tally[actual_kind] = tally.get(actual_kind, 0) + 1
             print(f"({time.time() - t0:.1f}s)")
         else:
-            shot_boundaries_per_range = [
-                collect_shot_boundaries_for_range(rs, re_, visual_segments)
-                for rs, re_ in ranges_s
-            ]
-            kept_ranges, kind = plan_smart_trim(
-                ranges_s, shot_boundaries_per_range, audio_duration,
-            )
             clip_meta = clip_manifest.get(idx) or {}
             clip_meta_ranges = list(clip_meta.get("ranges") or [])  # type: ignore[arg-type]
+
+            # Pre-render: compute per-clip black profiles (once per unique
+            # clip) and split each source range around any black gaps.
+            # This is what catches chunks like 26 where a requested range
+            # straddles a fade-to-black baked into the source movie.
+            clip_blacks_by_path: dict[str, list[tuple[float, float]]] = {}
+            for meta in clip_meta_ranges:
+                clip_path_str = str(meta.get("clip_path", ""))
+                if clip_path_str and clip_path_str not in clip_blacks_by_path:
+                    clip_blacks_by_path[clip_path_str] = compute_clip_black_intervals(
+                        args.clips_dir / clip_path_str
+                    )
+
+            split_ranges_s = ranges_s
+            if any(intervals for intervals in clip_blacks_by_path.values()):
+                rebuilt: list[tuple[float, float]] = []
+                for rs, re_ in ranges_s:
+                    meta = _find_clip_meta_for_range(clip_meta_ranges, rs, re_)
+                    if meta is None:
+                        rebuilt.append((rs, re_))
+                        continue
+                    clip_path_str = str(meta.get("clip_path", ""))
+                    try:
+                        extracted_start = timestamp_to_seconds(str(meta["extracted_start"]))
+                    except (KeyError, ValueError):
+                        rebuilt.append((rs, re_))
+                        continue
+                    blacks = clip_blacks_by_path.get(clip_path_str, [])
+                    sub = subtract_black_from_range(rs, re_, extracted_start, blacks)
+                    if not sub:
+                        # All-black range; keyframe fallback handles the gap.
+                        continue
+                    if sub != [(rs, re_)]:
+                        print(
+                            f"  chunk {idx:>3}: source-black-split "
+                            f"{rs:.3f}-{re_:.3f} → "
+                            + " + ".join(f"{a:.3f}-{b:.3f}" for a, b in sub)
+                        )
+                    rebuilt.extend(sub)
+                if rebuilt:
+                    split_ranges_s = rebuilt
+
+            shot_boundaries_per_range = [
+                collect_shot_boundaries_for_range(rs, re_, visual_segments)
+                for rs, re_ in split_ranges_s
+            ]
+            kept_ranges, kind = plan_smart_trim(
+                split_ranges_s, shot_boundaries_per_range, audio_duration,
+            )
             actual_ranges = kept_ranges
             if kind == "extension-needed":
                 actual_ranges, _ = _extend_ranges_to_audio_duration(
                     kept_ranges,
                     clip_meta_ranges,
                     audio_duration,
+                    clip_blacks_by_path,
                 )
             part_paths = _render_kept_ranges_from_clip_manifest(
                 actual_ranges, clip_meta_ranges, args.clips_dir,
@@ -648,6 +1024,36 @@ def main(argv=None) -> int:
                 f"audio={audio_duration:.2f}s ({time.time() - t0:.1f}s)"
             )
 
+        # Post-render safety net: pre-render passes (source-level split +
+        # extension clamp) cover most fades, but a chunk can still end up
+        # with residual black at part boundaries. We surgically splice
+        # those out — only the black sub-windows are replaced with a
+        # still, so good footage in the rest of the chunk is preserved.
+        if segment_path.exists() and ranges_s:
+            black_intervals = detect_black_intervals(segment_path)
+            black_total = sum(end - start for start, end in black_intervals)
+            if black_total > BLACK_FRAME_THRESHOLD_S:
+                still = _choose_keyframe(args.keyframes_dir, idx, last_anchor_index)
+                if still is not None:
+                    print(
+                        f"  chunk {idx:>3}: blackdetect found {black_total:.2f}s "
+                        f"of black ({len(black_intervals)} interval(s)) — splicing "
+                        f"with keyframe {still.name}"
+                    )
+                    splice_black_with_stills(
+                        segment_path, black_intervals, audio_duration,
+                        still, segments_dir, idx, codec,
+                    )
+                    tally[actual_kind] = max(0, tally.get(actual_kind, 0) - 1)
+                    actual_kind = "spliced-replaced-black"
+                    tally[actual_kind] = tally.get(actual_kind, 0) + 1
+                else:
+                    print(
+                        f"  chunk {idx:>3}: blackdetect found {black_total:.2f}s "
+                        f"of black but no keyframe fallback available",
+                        file=sys.stderr,
+                    )
+
         # Per-chunk MP3 split for the manual-editing handoff.
         segment_audio = segments_dir / f"segment_{idx:03d}.mp3"
         split_voiceover_to_segment(args.voiceover, audio_start_s, audio_end_s, segment_audio)
@@ -668,11 +1074,18 @@ def main(argv=None) -> int:
         print("No segments rendered", file=sys.stderr)
         return 1
 
-    # Concatenate per-chunk segments → silent draft, then mux narration audio.
+    # Concatenate per-chunk segments → silent draft, burn subtitles, then mux narration audio.
     silent_draft = args.output.with_suffix(".silent.mp4")
+    subtitled_draft = args.output.with_suffix(".subtitled.mp4")
+    subtitle_script = args.output.parent / "review_subtitles.ass"
     concat_segments(segment_paths, silent_draft)
-    mux_audio(silent_draft, args.voiceover, args.output)
+    video_for_mux = silent_draft
+    if write_subtitle_script(manifest, subtitle_script):
+        burn_subtitles(silent_draft, subtitle_script, subtitled_draft, codec)
+        video_for_mux = subtitled_draft
+    mux_audio(video_for_mux, args.voiceover, args.output)
     silent_draft.unlink(missing_ok=True)
+    subtitled_draft.unlink(missing_ok=True)
 
     edit_manifest_path = args.output.parent / "edit_manifest.json"
     write_edit_manifest(edit_manifest_path, edit_entries)
@@ -680,9 +1093,8 @@ def main(argv=None) -> int:
     elapsed = time.time() - total_t0
     print(f"\n[done] {args.output} ({elapsed:.1f}s = {elapsed / 60:.2f} min)")
     print(
-        f"[tally] exact={tally['exact']} shot-aligned-tail={tally['shot-aligned-tail']} "
-        f"mid-shot-tail={tally['mid-shot-tail']} extension-needed={tally['extension-needed']} "
-        f"freeze={tally['freeze']}"
+        "[tally] "
+        + " ".join(f"{kind}={count}" for kind, count in tally.items() if count)
     )
     print(f"[edit handoff] {edit_manifest_path} ({len(edit_entries)} segments in {segments_dir})")
     return 0
