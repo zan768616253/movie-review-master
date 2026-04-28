@@ -147,3 +147,4 @@ def test_main_extracts_clip_and_auto_transcribes_when_transcript_missing(tmp_pat
     command = ffmpeg_calls[0]
     assert command[command.index("-ss") + 1] == "65.000"
     assert command[command.index("-t") + 1] == "55.000"
+    assert command[command.index("-f") + 1] == "mp3"

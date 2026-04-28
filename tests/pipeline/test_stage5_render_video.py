@@ -3,109 +3,156 @@ from pathlib import Path
 from app.pipeline.common.json_io import dump_json
 from app.pipeline.stage3_generate_audio import parse_script_chunks, write_manifest
 from app.pipeline.stage5_render_video import (
+    collect_shot_boundaries_for_range,
     main,
-    plan_primary_window,
-    plan_scene_extension,
-    select_semantic_broll_segments,
+    plan_smart_trim,
 )
 
 
-def test_plan_primary_window_uses_handles_before_leftover() -> None:
-    clip_metadata = {
-        "requested_duration_s": 3.0,
-        "pre_handle_s": 1.5,
-        "extracted_duration_s": 6.0,
-    }
-
-    start_offset, clip_duration, leftover = plan_primary_window(clip_metadata, 5.0) # type: ignore
-
-    assert start_offset == 0.5
-    assert clip_duration == 5.0
-    assert leftover == 0.0
+# --- plan_smart_trim ------------------------------------------------------
 
 
-def test_plan_primary_window_leaves_leftover_after_handles_are_spent() -> None:
-    clip_metadata = {
-        "requested_duration_s": 3.0,
-        "pre_handle_s": 1.5,
-        "extracted_duration_s": 5.0,
-    }
-
-    start_offset, clip_duration, leftover = plan_primary_window(clip_metadata, 6.0) # type: ignore
-
-    assert start_offset == 0.0
-    assert clip_duration == 5.0
-    assert leftover == 1.0
+def test_plan_smart_trim_returns_exact_when_total_matches_audio() -> None:
+    ranges = [(10.0, 20.0)]  # 10s of video
+    kept, kind = plan_smart_trim(ranges, [[]], audio_duration_s=10.0)
+    assert kept == ranges
+    assert kind == "exact"
 
 
-def test_plan_scene_extension_starts_after_consumed_post_handle() -> None:
-    entry = {"scene_end": "00:00:10.000"}
-    clip_metadata = {
-        "requested_duration_s": 5.0,
-        "pre_handle_s": 1.0,
-        "extracted_duration_s": 8.0,
-    }
-
-    start_s, duration = plan_scene_extension(entry, clip_metadata, video_duration_s=600.0, remaining=4.0, budget=6.0) # type: ignore
-
-    assert start_s == 12.0
-    assert duration == 4.0
+def test_plan_smart_trim_returns_extension_needed_when_video_too_short() -> None:
+    ranges = [(10.0, 18.0)]  # 8s of video
+    kept, kind = plan_smart_trim(ranges, [[]], audio_duration_s=12.0)
+    assert kept == ranges  # unchanged; caller extends from post-handle or freezes tail
+    assert kind == "extension-needed"
 
 
-def test_plan_scene_extension_caps_by_budget_and_video_headroom() -> None:
-    entry = {"scene_end": "00:00:55.000"}
-
-    start_s, duration = plan_scene_extension(entry, clip_metadata=None, video_duration_s=58.0, remaining=10.0, budget=6.0) # type: ignore
-
-    assert start_s == 55.0
-    assert duration == 3.0
-
-
-def test_plan_scene_extension_returns_zero_for_closing_chunk() -> None:
-    start_s, duration = plan_scene_extension(
-        {"scene_end": None}, clip_metadata=None, video_duration_s=600.0, remaining=4.0, budget=6.0,
-    )
-
-    assert duration == 0.0
+def test_plan_smart_trim_snaps_to_shot_boundary_within_grace() -> None:
+    # 14s of video, 11s of audio → excess 3s.
+    # Inner shot boundaries at 14.0, 17.0 (last range 10.0–24.0).
+    # new_end = 24 - 3 = 21 → only candidate ≤ 21+grace is 17 → shot-aligned.
+    ranges = [(10.0, 24.0)]
+    shots = [[14.0, 17.0]]
+    kept, kind = plan_smart_trim(ranges, shots, audio_duration_s=11.0)
+    assert kept == [(10.0, 17.0)]
+    assert kind == "shot-aligned-tail"
 
 
-def test_select_semantic_broll_segments_prefers_matching_characters_and_avoids_scene_overlap() -> None:
-    entry = {
-        "text": "主角开始追杀敌人",
-        "scene_characters": ["Hero"],
-        "scene_start": "00:00:05.000",
-        "scene_end": "00:00:08.000",
-    }
+def test_plan_smart_trim_picks_latest_shot_boundary_to_preserve_payoff() -> None:
+    # Last range 10–24s (14s); audio 6s → need new_end = 16 (exact target).
+    # Boundaries at 12, 13, 16 are all candidates ≤ 16+grace; we want the
+    # LATEST one (16) so we keep the most footage including the payoff.
+    ranges = [(10.0, 24.0)]
+    shots = [[12.0, 13.0, 16.0]]
+    kept, kind = plan_smart_trim(ranges, shots, audio_duration_s=6.0)
+    assert kept == [(10.0, 16.0)]
+    assert kind == "shot-aligned-tail"
+
+
+def test_plan_smart_trim_falls_back_to_mid_shot_when_no_boundary_fits() -> None:
+    # 14s of video, 11s of audio → new_end target = 21. The only boundary
+    # is at 10.5 (immediately after last_start). With audio_duration=11
+    # and grace=0.55, candidates are { b : 10.0 < b ≤ 21.55 } = {10.5}.
+    # That qualifies — but we want to test the "no-fit" branch, so place
+    # the boundary AFTER new_end + grace.
+    ranges = [(10.0, 24.0)]
+    shots = [[23.0]]  # boundary at 23 > 21.55 → does not fit
+    kept, kind = plan_smart_trim(ranges, shots, audio_duration_s=11.0)
+    assert kept == [(10.0, 21.0)]  # mid-shot tail cut at exact target
+    assert kind == "mid-shot-tail"
+
+
+def test_plan_smart_trim_drops_whole_last_range_when_excess_exceeds_it() -> None:
+    # Two ranges: [10–14] (4s) and [20–22] (2s); audio 4s; excess 2s.
+    # Excess equals the last range; drop it, recurse on [10–14] alone.
+    # Recursive call sees total == audio → returns "exact".
+    ranges = [(10.0, 14.0), (20.0, 22.0)]
+    shots = [[], []]
+    kept, kind = plan_smart_trim(ranges, shots, audio_duration_s=4.0)
+    assert kept == [(10.0, 14.0)]
+    assert kind == "exact"
+
+
+# --- collect_shot_boundaries_for_range ------------------------------------
+
+
+def test_collect_shot_boundaries_unions_overlapping_segments() -> None:
     visual_segments = [
         {
-            "id": "visual:001",
-            "start": "00:00:05.000",
-            "end": "00:00:08.000",
-            "summary": "hero attacks villain",
-            "ocr_text": "",
-            "characters": ["Hero"],
+            "start": "00:00:08.000", "end": "00:00:16.000",
+            "shot_boundaries_s": [12.0],
         },
         {
-            "id": "visual:002",
-            "start": "00:00:10.000",
-            "end": "00:00:13.000",
-            "summary": "hero chases villain down the street",
-            "ocr_text": "",
-            "characters": ["Hero"],
+            "start": "00:00:14.000", "end": "00:00:22.000",
+            "shot_boundaries_s": [14.0, 18.0, 22.0],
         },
         {
-            "id": "visual:003",
-            "start": "00:00:14.000",
-            "end": "00:00:18.000",
-            "summary": "quiet room with teacher",
-            "ocr_text": "",
-            "characters": ["Teacher"],
+            # Outside the requested range — should be ignored.
+            "start": "00:01:00.000", "end": "00:01:10.000",
+            "shot_boundaries_s": [65.0],
         },
     ]
+    boundaries = collect_shot_boundaries_for_range(10.0, 20.0, visual_segments)
+    # Strictly inside (10, 20) → 12.0, 14.0, 18.0; 22 and 65 are outside.
+    assert boundaries == [12.0, 14.0, 18.0]
 
-    selected = select_semantic_broll_segments(entry, visual_segments, used_segment_ids=set())
 
-    assert [segment["id"] for segment in selected] == ["visual:002"]
+# --- main: end-to-end with new manifest schemas ---------------------------
+
+
+def _build_minimal_anchored_run(tmp_path: Path) -> dict[str, Path]:
+    """Set up a tmp directory with all files an end-to-end main() needs."""
+    script_text = (
+        "[TITLE] Demo\n"
+        "[HOOK]\n"
+        '[ANCHOR ranges="00:00:01.000-00:00:03.000" characters="Hero"]\n'
+        "narration A\n"
+        "[CLOSING]\n"
+        "closing line\n"
+    )
+    manifest_path = tmp_path / "voiceover.manifest.json"
+    chunks = parse_script_chunks(script_text)
+    write_manifest(chunks, [(0.0, 2.0), (2.0, 3.0)], manifest_path)
+
+    voiceover_path = tmp_path / "voiceover.mp3"
+    voiceover_path.write_bytes(b"audio")
+
+    clips_dir = tmp_path / "clips"
+    clips_dir.mkdir()
+    (clips_dir / "clip_001_a.mp4").write_bytes(b"clip")
+
+    keyframes_dir = tmp_path / "keyframes"
+    keyframes_dir.mkdir()
+    (keyframes_dir / "keyframe_001.jpg").write_bytes(b"still")
+
+    clip_manifest_path = tmp_path / "clip_manifest.json"
+    dump_json(clip_manifest_path, [
+        {
+            "index": 1,
+            "characters": ["Hero"],
+            "keyframe_path": "keyframe_001.jpg",
+            "ranges": [
+                {
+                    "clip_path": "clip_001_a.mp4",
+                    "range_start": "00:00:01.000",
+                    "range_end": "00:00:03.000",
+                    "extracted_start": "00:00:00.000",
+                    "extracted_end": "00:00:05.000",
+                    "requested_duration_s": 2.0,
+                    "extracted_duration_s": 5.0,
+                    "pre_handle_s": 1.0,
+                    "post_handle_s": 2.0,
+                },
+            ],
+        },
+    ])
+
+    return {
+        "manifest": manifest_path,
+        "voiceover": voiceover_path,
+        "clips_dir": clips_dir,
+        "keyframes_dir": keyframes_dir,
+        "clip_manifest": clip_manifest_path,
+    }
 
 
 def test_main_rejects_invalid_manifest_json(tmp_path: Path, capsys) -> None:
@@ -114,21 +161,13 @@ def test_main_rejects_invalid_manifest_json(tmp_path: Path, capsys) -> None:
     voiceover_path = tmp_path / "voiceover.mp3"
     voiceover_path.write_bytes(b"audio")
 
-    result = main(
-        [
-            "--manifest",
-            str(manifest_path),
-            "--voiceover",
-            str(voiceover_path),
-            "--clips-dir",
-            str(tmp_path / "clips"),
-            "--keyframes-dir",
-            str(tmp_path / "keyframes"),
-            "--output",
-            str(tmp_path / "review.mp4"),
-        ]
-    )
-
+    result = main([
+        "--manifest", str(manifest_path),
+        "--voiceover", str(voiceover_path),
+        "--clips-dir", str(tmp_path / "clips"),
+        "--keyframes-dir", str(tmp_path / "keyframes"),
+        "--output", str(tmp_path / "review.mp4"),
+    ])
     captured = capsys.readouterr()
     assert result == 1
     assert "Invalid manifest JSON" in captured.err
@@ -140,79 +179,41 @@ def test_main_rejects_manifest_entries_missing_required_fields(tmp_path: Path, c
     voiceover_path = tmp_path / "voiceover.mp3"
     voiceover_path.write_bytes(b"audio")
 
-    result = main(
-        [
-            "--manifest",
-            str(manifest_path),
-            "--voiceover",
-            str(voiceover_path),
-            "--clips-dir",
-            str(tmp_path / "clips"),
-            "--keyframes-dir",
-            str(tmp_path / "keyframes"),
-            "--output",
-            str(tmp_path / "review.mp4"),
-        ]
-    )
-
+    result = main([
+        "--manifest", str(manifest_path),
+        "--voiceover", str(voiceover_path),
+        "--clips-dir", str(tmp_path / "clips"),
+        "--keyframes-dir", str(tmp_path / "keyframes"),
+        "--output", str(tmp_path / "review.mp4"),
+    ])
     captured = capsys.readouterr()
     assert result == 1
     assert "missing required fields audio_start_s, audio_end_s" in captured.err
 
 
-def test_main_renders_from_stage3_manifest_contract(tmp_path: Path, monkeypatch) -> None:
-    script_text = """
-[TITLE] Demo
-[SCENE start=00:00:01.000 end=00:00:03.000 source=srt]
-第一段旁白
-[CLOSING]
-结尾
-""".strip()
-    manifest_path = tmp_path / "voiceover.manifest.json"
-    chunks = parse_script_chunks(script_text)
-    write_manifest(chunks, [(0.0, 2.0), (2.0, 3.0)], manifest_path)
-
-    voiceover_path = tmp_path / "voiceover.mp3"
-    voiceover_path.write_bytes(b"audio")
-
-    clips_dir = tmp_path / "clips"
-    clips_dir.mkdir()
-    (clips_dir / "clip_001.mp4").write_bytes(b"clip")
-
-    keyframes_dir = tmp_path / "keyframes"
-    keyframes_dir.mkdir()
-    (keyframes_dir / "keyframe_001.jpg").write_bytes(b"still")
-
-    clip_manifest_path = tmp_path / "clip_manifest.json"
-    dump_json(
-        clip_manifest_path,
-        [
-            {
-                "index": 1,
-                "requested_duration_s": 2.0,
-                "pre_handle_s": 0.5,
-                "extracted_duration_s": 3.0,
-            }
-        ],
-    )
-
+def test_main_renders_anchored_chunk_and_closing_keyframe(tmp_path: Path, monkeypatch) -> None:
+    files = _build_minimal_anchored_run(tmp_path)
     output_path = tmp_path / "stage5" / "review.mp4"
     calls: list[tuple[object, ...]] = []
 
-    def fake_render_excerpt(source_path: Path, start_s: float, target_duration: float, out_path: Path, codec: str) -> None:
+    def fake_render_excerpt(source_path, start_s, target_duration, out_path, codec):
         out_path.write_bytes(b"excerpt")
-        calls.append(("excerpt", source_path.name, round(start_s, 3), round(target_duration, 3), codec))
+        calls.append(("excerpt", source_path.name, round(start_s, 3), round(target_duration, 3)))
 
-    def fake_render_stillframe_segment(image_path: Path, target_duration: float, out_path: Path, codec: str) -> None:
+    def fake_render_stillframe_segment(image_path, target_duration, out_path, codec):
         out_path.write_bytes(b"still")
-        calls.append(("still", image_path.name, round(target_duration, 3), codec))
+        calls.append(("still", image_path.name, round(target_duration, 3)))
 
-    def fake_concat_segments(segment_paths: list[Path], out_path: Path) -> None:
+    def fake_concat_segments(segment_paths, out_path):
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_bytes(b"concat")
-        calls.append(("concat", tuple(path.name for path in segment_paths), out_path.name))
+        calls.append(("concat", tuple(p.name for p in segment_paths), out_path.name))
 
-    def fake_mux_audio(video_path: Path, audio_path: Path, out_path: Path) -> None:
+    def fake_split_voiceover_to_segment(voiceover_path, audio_start_s, audio_end_s, out_path):
+        out_path.write_bytes(b"chunk-mp3")
+        calls.append(("split", voiceover_path.name, round(audio_end_s - audio_start_s, 3)))
+
+    def fake_mux_audio(video_path, audio_path, out_path):
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_bytes(b"final")
         calls.append(("mux", video_path.name, audio_path.name, out_path.name))
@@ -221,31 +222,137 @@ def test_main_renders_from_stage3_manifest_contract(tmp_path: Path, monkeypatch)
     monkeypatch.setattr("app.pipeline.stage5_render_video.render_excerpt", fake_render_excerpt)
     monkeypatch.setattr("app.pipeline.stage5_render_video.render_stillframe_segment", fake_render_stillframe_segment)
     monkeypatch.setattr("app.pipeline.stage5_render_video.concat_segments", fake_concat_segments)
+    monkeypatch.setattr("app.pipeline.stage5_render_video.split_voiceover_to_segment", fake_split_voiceover_to_segment)
     monkeypatch.setattr("app.pipeline.stage5_render_video.mux_audio", fake_mux_audio)
-    monkeypatch.setattr(
-        "app.pipeline.stage5_render_video.probe_duration",
-        lambda path: 3.0 if path.name == "review.mp4" else 2.0,
-    )
 
-    result = main(
-        [
-            "--manifest",
-            str(manifest_path),
-            "--voiceover",
-            str(voiceover_path),
-            "--clips-dir",
-            str(clips_dir),
-            "--keyframes-dir",
-            str(keyframes_dir),
-            "--clip-manifest",
-            str(clip_manifest_path),
-            "--output",
-            str(output_path),
-        ]
-    )
+    result = main([
+        "--manifest", str(files["manifest"]),
+        "--voiceover", str(files["voiceover"]),
+        "--clips-dir", str(files["clips_dir"]),
+        "--keyframes-dir", str(files["keyframes_dir"]),
+        "--clip-manifest", str(files["clip_manifest"]),
+        "--output", str(output_path),
+    ])
 
     assert result == 0
     assert output_path.exists()
-    assert ("excerpt", "clip_001.mp4", 0.5, 2.0, "fake-codec") in calls
-    assert ("still", "keyframe_001.jpg", 1.0, "fake-codec") in calls
-    assert any(call[0] == "mux" for call in calls)
+
+    # The anchored chunk's hero clip is rendered from clip_001_a.mp4 with
+    # offset = pre_handle = 1.0s, target = audio_duration = 2.0s.
+    assert ("excerpt", "clip_001_a.mp4", 1.0, 2.0) in calls
+
+    # The closing chunk falls through to a still over the keyframe.
+    assert ("still", "keyframe_001.jpg", 1.0) in calls
+
+    # Both chunks get a per-chunk MP3 split for the editor handoff.
+    split_calls = [c for c in calls if c[0] == "split"]
+    assert len(split_calls) == 2
+
+    # Final mux happens once.
+    assert any(c[0] == "mux" for c in calls)
+
+    # Edit manifest is written.
+    edit_manifest_path = output_path.parent / "edit_manifest.json"
+    assert edit_manifest_path.exists()
+    import json
+    payload = json.loads(edit_manifest_path.read_text(encoding="utf-8"))
+    assert len(payload) == 2
+    assert payload[0]["index"] == 1
+    assert payload[0]["segment_video"] == "segment_001.mp4"
+    assert payload[0]["segment_audio"] == "segment_001.mp3"
+
+
+def test_main_extends_anchor_chunk_from_post_handle_when_audio_runs_long(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    manifest_path = tmp_path / "voiceover.manifest.json"
+    dump_json(manifest_path, [
+        {
+            "index": 1,
+            "ranges": [["00:00:01.000", "00:00:03.000"]],
+            "characters": ["Hero"],
+            "text": "narration A",
+            "audio_start_s": 0.0,
+            "audio_end_s": 4.0,
+        },
+    ])
+
+    voiceover_path = tmp_path / "voiceover.mp3"
+    voiceover_path.write_bytes(b"audio")
+
+    clips_dir = tmp_path / "clips"
+    clips_dir.mkdir()
+    (clips_dir / "clip_001_a.mp4").write_bytes(b"clip")
+
+    keyframes_dir = tmp_path / "keyframes"
+    keyframes_dir.mkdir()
+    (keyframes_dir / "keyframe_001.jpg").write_bytes(b"still")
+
+    clip_manifest_path = tmp_path / "clip_manifest.json"
+    dump_json(clip_manifest_path, [
+        {
+            "index": 1,
+            "characters": ["Hero"],
+            "keyframe_path": "keyframe_001.jpg",
+            "ranges": [
+                {
+                    "clip_path": "clip_001_a.mp4",
+                    "range_start": "00:00:01.000",
+                    "range_end": "00:00:03.000",
+                    "extracted_start": "00:00:00.000",
+                    "extracted_end": "00:00:05.000",
+                    "requested_duration_s": 2.0,
+                    "extracted_duration_s": 5.0,
+                    "pre_handle_s": 1.0,
+                    "post_handle_s": 2.0,
+                },
+            ],
+        },
+    ])
+
+    output_path = tmp_path / "stage5" / "review.mp4"
+    calls: list[tuple[object, ...]] = []
+
+    def fake_render_excerpt(source_path, start_s, target_duration, out_path, codec):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"excerpt")
+        calls.append(("excerpt", source_path.name, round(start_s, 3), round(target_duration, 3)))
+
+    def fake_render_stillframe_segment(image_path, target_duration, out_path, codec):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"still")
+        calls.append(("still", image_path.name, round(target_duration, 3), out_path.name))
+
+    def fake_concat_segments(segment_paths, out_path):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"concat")
+        calls.append(("concat", tuple(p.name for p in segment_paths), out_path.name))
+
+    def fake_split_voiceover_to_segment(voiceover_path, audio_start_s, audio_end_s, out_path):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"chunk-mp3")
+
+    def fake_mux_audio(video_path, audio_path, out_path):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"final")
+
+    monkeypatch.setattr("app.pipeline.stage5_render_video.resolve_encoder", lambda: "fake-codec")
+    monkeypatch.setattr("app.pipeline.stage5_render_video.render_excerpt", fake_render_excerpt)
+    monkeypatch.setattr("app.pipeline.stage5_render_video.render_stillframe_segment", fake_render_stillframe_segment)
+    monkeypatch.setattr("app.pipeline.stage5_render_video.concat_segments", fake_concat_segments)
+    monkeypatch.setattr("app.pipeline.stage5_render_video.split_voiceover_to_segment", fake_split_voiceover_to_segment)
+    monkeypatch.setattr("app.pipeline.stage5_render_video.mux_audio", fake_mux_audio)
+
+    result = main([
+        "--manifest", str(manifest_path),
+        "--voiceover", str(voiceover_path),
+        "--clips-dir", str(clips_dir),
+        "--keyframes-dir", str(keyframes_dir),
+        "--clip-manifest", str(clip_manifest_path),
+        "--output", str(output_path),
+    ])
+
+    assert result == 0
+    assert ("excerpt", "clip_001_a.mp4", 1.0, 4.0) in calls
+    assert not [c for c in calls if c[0] == "still" and c[2] == 4.0]

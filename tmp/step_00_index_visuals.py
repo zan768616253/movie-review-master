@@ -37,6 +37,7 @@ def run() -> int:
         "--video", str(paths.video),
         "--output", str(paths.visual_segments),
         "--tmp-dir", str(paths.stage0_dir / "tmp"),
+        "--workers", "5",
     ])
 
 

@@ -71,16 +71,15 @@ Behaviour:
 
 ## Manual workflow for Stage 2 (the only non-automated stage)
 
-Stage 2 produces the narration script via two LLM passes. The script files
-live under `tmp/work/<movie_slug>/stage2/`.
+Stage 2 is now a single planner-writer pass. The files live under
+`tmp/work/<movie_slug>/stage2/`.
 
-1. Run `step_02_generate_script.py`. It writes `writer_prompt.txt`.
-2. Paste `writer_prompt.txt` into your LLM. Paste the LLM reply into
-   `writer_beats.txt` (overwriting the placeholder).
-3. Run `step_02_generate_script.py` again. It writes `grounder_prompt.txt`.
-4. Paste `grounder_prompt.txt` into your LLM. Paste the reply into
-   `grounded_script.txt` (overwriting the placeholder).
-5. Continue with `step_03_generate_audio.py` or `run_all.py`.
+1. Run `step_02_generate_script.py`. It writes `planner_prompt.txt`.
+2. Paste `planner_prompt.txt` into your LLM. Paste the LLM reply into
+  `anchored_script.txt` (overwriting the placeholder).
+3. Run `step_02_generate_script.py` again. It validates `anchored_script.txt`
+  and prints per-chunk `ok / warn / fail` counts plus any structure issues.
+4. Continue with `step_03_generate_audio.py` or `run_all.py` once validation passes.
 
 ---
 

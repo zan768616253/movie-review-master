@@ -1,4 +1,8 @@
-"""Prepare canonical Stage 3 voice-clone reference assets for ICL usage."""
+"""
+Prepare canonical Stage 3 voice-clone reference assets for ICL usage.
+
+conda run -n py312_machine_learning --no-capture-output python -m app.tools.prepare_voice_reference [clone_reference.full.mp3](http://_vscodecontentref_/4) --style [niu-shu.md](http://_vscodecontentref_/5) --start 00:00:00 --end 00:01:30
+"""
 
 from __future__ import annotations
 
@@ -149,6 +153,8 @@ def run_ffmpeg_extract(
             "1",
             "-ar",
             str(DEFAULT_OUTPUT_SAMPLE_RATE),
+            "-f",
+            "mp3",
             "-c:a",
             "libmp3lame",
             "-b:a",

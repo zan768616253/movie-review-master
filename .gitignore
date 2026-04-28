@@ -138,3 +138,5 @@ movies/
 
 .codex
 .env
+
+tmp/work

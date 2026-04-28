@@ -1,7 +1,9 @@
 import json
+import time
 import pytest
 from unittest.mock import MagicMock, patch
 
+from app.pipeline.stage0_index_visuals import build_parser
 from app.pipeline.stage0_indexers.base import (
     seconds_to_timestamp,
     snap_to_shot_boundaries,
@@ -80,9 +82,12 @@ class TestSnapToShotBoundaries:
         assert snapped[0]["start"] == "00:00:02.000"
         assert snapped[0]["end"] == "00:00:07.000"
 
-    def test_empty_boundaries_is_noop(self):
+    def test_empty_boundaries_annotates_with_empty_shot_list(self):
         segments = [{"start": "00:00:02.000", "end": "00:00:07.000", "summary": "x"}]
-        assert snap_to_shot_boundaries(segments, [], tolerance_s=1.5) == segments
+        snapped = snap_to_shot_boundaries(segments, [], tolerance_s=1.5)
+        assert snapped[0]["start"] == "00:00:02.000"
+        assert snapped[0]["end"] == "00:00:07.000"
+        assert snapped[0]["shot_boundaries_s"] == []
 
     def test_keeps_originals_when_snap_would_invert_segment(self):
         # Both start and end would snap to 5.0, which would zero-length the
@@ -91,6 +96,15 @@ class TestSnapToShotBoundaries:
         snapped = snap_to_shot_boundaries(segments, [5.0], tolerance_s=1.5)
         assert snapped[0]["start"] == "00:00:05.200"
         assert snapped[0]["end"] == "00:00:05.600"
+
+    def test_emits_inner_shot_boundaries_for_smart_trim(self):
+        # 10s segment with two cuts inside it (at +4s and +7s relative to start).
+        segments = [{"start": "00:00:10.000", "end": "00:00:20.000", "summary": "x"}]
+        boundaries = [10.0, 14.0, 17.0, 20.0]
+        snapped = snap_to_shot_boundaries(segments, boundaries, tolerance_s=0.5)
+        # Outer boundaries (10.0, 20.0) coincide with start/end; only the
+        # two inner cuts (14.0 and 17.0) should land in shot_boundaries_s.
+        assert snapped[0]["shot_boundaries_s"] == [14.0, 17.0]
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +179,68 @@ class TestGeminiStrategy:
         # Characters: no guessing without visual re-identification.
         assert "visually re-identify" in prompt_text
         assert "NEVER guess" in prompt_text
+
+    @patch("app.pipeline.stage0_indexers.gemini.detect_shot_boundaries", return_value=[])
+    @patch("app.pipeline.stage0_indexers.gemini.genai")
+    @patch("app.pipeline.stage0_indexers.gemini.get_video_duration")
+    @patch.object(GeminiStrategy, "_extract_chunk")
+    def test_index_video_persists_and_reuses_chunk_segments(
+        self, mock_extract, mock_duration, mock_genai, mock_boundaries, tmp_path,
+    ):
+        tmp_idx_dir = tmp_path / "tmp"
+        tmp_idx_dir.mkdir()
+
+        mock_duration.return_value = 600.0
+        response_text = json.dumps([{
+            "start": "00:00:00.000", "end": "00:00:03.000", "summary": "test",
+            "ocr_text": "", "characters": []
+        }])
+        mock_genai.Client.return_value = _build_fake_gemini_client(response_text)
+
+        strategy = GeminiStrategy(api_key="fake")
+        first_results = strategy.index_video(tmp_path / "movie.mp4", tmp_idx_dir)
+
+        cache_dir = tmp_idx_dir / "segments"
+        chunk_001_cache = cache_dir / "chunk_001.json"
+        assert (cache_dir / "chunk_000.json").exists()
+        assert chunk_001_cache.exists()
+        assert json.loads(chunk_001_cache.read_text())[0]["start"] == "00:00:00.000"
+        assert first_results[1]["start"] == "00:05:00.000"
+
+        with patch.object(strategy, "_extract_chunk", side_effect=AssertionError("should not extract")), \
+             patch.object(strategy, "_index_chunk", side_effect=AssertionError("should not reindex")), \
+             patch("app.pipeline.stage0_indexers.gemini.detect_shot_boundaries", side_effect=AssertionError("should not detect")):
+            second_results = strategy.index_video(tmp_path / "movie.mp4", tmp_idx_dir)
+
+        assert second_results == first_results
+
+    @patch("app.pipeline.stage0_indexers.gemini.get_video_duration", return_value=600.0)
+    def test_index_video_parallel_preserves_chunk_order(self, mock_duration, tmp_path):
+        tmp_idx_dir = tmp_path / "tmp"
+        tmp_idx_dir.mkdir()
+        strategy = GeminiStrategy(api_key="fake", max_workers=2)
+
+        def fake_process(video_path, tmp_dir, chunk_index, start_s, duration_s):
+            if chunk_index == 0:
+                time.sleep(0.05)
+            return [{
+                "start": "00:00:00.000",
+                "end": "00:00:03.000",
+                "summary": f"chunk-{chunk_index}",
+                "ocr_text": "",
+                "characters": [],
+            }]
+
+        with patch.object(strategy, "_process_chunk", side_effect=fake_process):
+            results = strategy.index_video(tmp_path / "movie.mp4", tmp_idx_dir)
+
+        assert [segment["summary"] for segment in results] == ["chunk-0", "chunk-1"]
+        assert results[1]["start"] == "00:05:00.000"
+
+
+def test_stage0_parser_accepts_workers_flag():
+    args = build_parser().parse_args(["--video", "movie.mp4", "--workers", "3"])
+    assert args.workers == 3
 
 
 def test_build_timestamp_drawtext_filter_omits_fontfile_when_default_font_missing(monkeypatch, tmp_path):

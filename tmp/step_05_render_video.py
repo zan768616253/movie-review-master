@@ -1,11 +1,13 @@
 """Step 5 — render the final review video.
 
 Combines:
-  - Stage 3 voiceover + manifest
-  - Stage 4 clips, keyframes, clip_manifest
-  - Stage 0 visual_segments (used for semantic B-roll fallback)
+  - Stage 3 voiceover + manifest (anchored ranges + audio timing)
+  - Stage 4 clips, keyframes, clip_manifest (per-range hero clips)
+  - Stage 0 visual_segments (shot boundaries for shot-aware smart-trim)
 
 Writes: tmp/work/<movie_slug>/stage5/review.mp4
+        tmp/work/<movie_slug>/stage5/segments/segment_NNN.{mp4,mp3}
+        tmp/work/<movie_slug>/stage5/edit_manifest.json
 """
 
 from __future__ import annotations
@@ -32,8 +34,6 @@ def run() -> int:
         ("clips dir", paths.stage4_clips_dir),
         ("keyframes dir", paths.stage4_keyframes_dir),
         ("clip manifest", paths.stage4_clip_manifest),
-        ("video", paths.video),
-        ("visual_segments", paths.visual_segments),
     ]
     for label, p in required:
         if not p.exists():
@@ -44,16 +44,19 @@ def run() -> int:
     print(f"clips dir  : {paths.stage4_clips_dir}")
     print(f"output     : {paths.final_video}")
 
-    return stage5_main([
+    argv = [
         "--manifest", str(paths.stage3_manifest),
         "--voiceover", str(paths.stage3_voiceover),
         "--clips-dir", str(paths.stage4_clips_dir),
         "--keyframes-dir", str(paths.stage4_keyframes_dir),
         "--clip-manifest", str(paths.stage4_clip_manifest),
-        "--video", str(paths.video),
-        "--visual-segments", str(paths.visual_segments),
         "--output", str(paths.final_video),
-    ])
+    ]
+    # visual_segments is optional — when present, smart-trim uses its shot
+    # boundaries to land cuts at clean shot junctions.
+    if paths.visual_segments.exists():
+        argv.extend(["--visual-segments", str(paths.visual_segments)])
+    return stage5_main(argv)
 
 
 if __name__ == "__main__":

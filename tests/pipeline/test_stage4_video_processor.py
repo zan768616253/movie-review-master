@@ -1,100 +1,130 @@
 import json
-import tempfile
 from pathlib import Path
 
+from app.pipeline.common.script_contract import AnchorMarker
 from app.pipeline.stage4_video_processor import (
-    build_scene_clip_plan,
-    load_visual_segments,
-    parse_scene_markers,
+    PRE_HANDLE_SECONDS,
+    POST_HANDLE_SECONDS,
+    _suffix_for,
+    plan_anchor_clips,
+    write_clip_manifest,
 )
 
 
-def test_parse_scene_markers_supports_grounded_scene_attributes(tmp_path: Path) -> None:
-    script_path = tmp_path / "script.txt"
-    script_path.write_text(
-        "\n".join(
-            [
-                "[TITLE] Demo",
-                "[SCENE start=00:00:05.000 end=00:00:08.000 source=visual characters=\"Yuta|Gojo\"]",
-                "[BROLL: 00:00:10.000-00:00:12.000]",
-                "旁白",
-                "[SCENE source=ungrounded]",
-                "另一段旁白",
-            ]
-        ),
-        encoding="utf-8",
+def test_suffix_for_lowercase_letters() -> None:
+    assert _suffix_for(0) == "a"
+    assert _suffix_for(1) == "b"
+    assert _suffix_for(25) == "z"
+    # 26+ ranges in one anchor would be absurd, but support it cleanly.
+    assert _suffix_for(26) == "aa"
+
+
+def test_plan_anchor_clips_single_range_uses_asymmetric_handles() -> None:
+    anchor = AnchorMarker(
+        ranges=[("00:00:10.000", "00:00:18.000")],
+        characters=["Yuta"],
     )
 
-    scenes = parse_scene_markers(script_path)
+    plan = plan_anchor_clips(index=7, anchor=anchor, video_duration_s=600.0)
 
-    assert len(scenes) == 2
-    assert scenes[0].marker_source == "visual"
-    assert scenes[0].marker_characters == ["Yuta", "Gojo"]
-    assert scenes[0].broll == [("00:00:10.000", "00:00:12.000")]
-    assert scenes[1].is_ungrounded is True
-
-
-def test_build_scene_clip_plan_adds_handles_and_extends_to_visual_boundary() -> None:
-    scene = parse_scene_markers_from_text(
-        "[SCENE start=00:00:05.000 end=00:00:08.000 source=visual]"
-    )[0]
-    visual_segments = [
-        {
-            "id": "visual:001",
-            "start": "00:00:01.000",
-            "end": "00:00:04.000",
-            "summary": "setup",
-        },
-        {
-            "id": "visual:002",
-            "start": "00:00:05.000",
-            "end": "00:00:09.500",
-            "summary": "fight",
-        },
-    ]
-
-    plan = build_scene_clip_plan(scene, handle_seconds=1.5, visual_segments=visual_segments)
-
-    assert plan is not None
-    assert plan.extracted_start == "00:00:03.500"
-    assert plan.extracted_end == "00:00:09.500"
-    assert plan.pre_handle_s == 1.5
-    assert plan.post_handle_s == 1.5
+    assert plan.index == 7
+    assert plan.characters == ["Yuta"]
+    assert len(plan.range_plans) == 1
+    rp = plan.range_plans[0]
+    assert rp.suffix == "a"
+    assert rp.clip_path == "clip_007_a.mp4"
+    assert rp.range_start == "00:00:10.000"
+    assert rp.range_end == "00:00:18.000"
+    # Asymmetric: pre=2s, post=4s.
+    assert rp.pre_handle_s == PRE_HANDLE_SECONDS
+    assert rp.post_handle_s == POST_HANDLE_SECONDS
+    assert rp.extracted_start == "00:00:08.000"  # 10 - 2 = 8
+    assert rp.extracted_end == "00:00:22.000"    # 18 + 4 = 22
+    assert rp.requested_duration_s == 8.0
+    assert rp.extracted_duration_s == 14.0       # 22 - 8
 
 
-def test_build_scene_clip_plan_does_not_extend_dialogue_scenes_from_visual_index() -> None:
-    scene = parse_scene_markers_from_text(
-        "[SCENE start=00:00:05.000 end=00:00:08.000 source=srt]"
-    )[0]
-    visual_segments = [
-        {
-            "id": "visual:001",
-            "start": "00:00:05.000",
-            "end": "00:00:12.000",
-            "summary": "fight",
-        }
-    ]
-
-    plan = build_scene_clip_plan(scene, handle_seconds=1.5, visual_segments=visual_segments)
-
-    assert plan is not None
-    assert plan.extracted_end == "00:00:09.500"
-
-
-def test_load_visual_segments_assigns_default_ids(tmp_path: Path) -> None:
-    visual_path = tmp_path / "visual_segments.json"
-    visual_path.write_text(
-        json.dumps([{"start": "00:00:01.000", "end": "00:00:02.000", "summary": "a"}]),
-        encoding="utf-8",
+def test_plan_anchor_clips_multi_range_produces_lettered_clip_files() -> None:
+    anchor = AnchorMarker(
+        ranges=[
+            ("00:01:00.000", "00:01:05.000"),
+            ("00:02:00.000", "00:02:10.000"),
+            ("00:03:00.000", "00:03:15.000"),
+        ],
+        characters=[],
     )
 
-    segments = load_visual_segments(visual_path)
+    plan = plan_anchor_clips(index=12, anchor=anchor, video_duration_s=600.0)
 
-    assert segments[0]["id"] == "visual:001"
+    assert [rp.clip_path for rp in plan.range_plans] == [
+        "clip_012_a.mp4",
+        "clip_012_b.mp4",
+        "clip_012_c.mp4",
+    ]
+    # Each range gets its own handles independently.
+    assert plan.range_plans[1].extracted_start == "00:01:58.000"  # 120 - 2
+    assert plan.range_plans[1].extracted_end == "00:02:14.000"    # 130 + 4
 
 
-def parse_scene_markers_from_text(text: str):
-    with tempfile.TemporaryDirectory() as temp_dir:
-        path = Path(temp_dir) / "script.txt"
-        path.write_text(text, encoding="utf-8")
-        return parse_scene_markers(path)
+def test_plan_anchor_clips_clamps_handles_to_video_bounds() -> None:
+    # Range right at the start of the movie — pre-handle would go negative.
+    anchor = AnchorMarker(
+        ranges=[("00:00:01.000", "00:00:05.000")],
+        characters=[],
+    )
+
+    plan = plan_anchor_clips(index=1, anchor=anchor, video_duration_s=600.0)
+
+    rp = plan.range_plans[0]
+    assert rp.extracted_start == "00:00:00.000"  # clamped to 0
+    assert rp.pre_handle_s == 1.0  # 1 - 0 (only 1s of pre-handle available)
+
+
+def test_plan_anchor_clips_clamps_handles_to_video_eof() -> None:
+    # Range near the end of the movie — post-handle would exceed EOF.
+    anchor = AnchorMarker(
+        ranges=[("00:09:55.000", "00:09:58.000")],
+        characters=[],
+    )
+
+    plan = plan_anchor_clips(index=1, anchor=anchor, video_duration_s=600.0)  # 10 min
+
+    rp = plan.range_plans[0]
+    assert rp.extracted_end == "00:10:00.000"  # clamped to 600
+    assert rp.post_handle_s == 2.0  # 600 - 598 (only 2s of post-handle available)
+
+
+def test_plan_anchor_clips_keyframe_one_second_into_first_range() -> None:
+    anchor = AnchorMarker(
+        ranges=[("00:00:10.000", "00:00:18.000")],
+        characters=[],
+    )
+
+    plan = plan_anchor_clips(index=3, anchor=anchor, video_duration_s=600.0)
+
+    # First range start = 10s, mid = 14s, min(1, 8/2)=1 → keyframe at 11s
+    assert plan.keyframe_time == "00:00:11.000"
+    assert plan.keyframe_path == "keyframe_003.jpg"
+
+
+def test_write_clip_manifest_emits_nested_ranges_per_anchor(tmp_path: Path) -> None:
+    anchor = AnchorMarker(
+        ranges=[("00:00:10.000", "00:00:14.000"), ("00:00:20.000", "00:00:24.000")],
+        characters=["Hero"],
+    )
+    plan = plan_anchor_clips(index=1, anchor=anchor, video_duration_s=600.0)
+
+    out_path = write_clip_manifest(tmp_path, [plan])
+
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert len(payload) == 1
+    entry = payload[0]
+    assert entry["index"] == 1
+    assert entry["characters"] == ["Hero"]
+    assert entry["keyframe_path"] == "keyframe_001.jpg"
+    assert len(entry["ranges"]) == 2
+    first = entry["ranges"][0]
+    assert first["clip_path"] == "clip_001_a.mp4"
+    assert first["range_start"] == "00:00:10.000"
+    assert first["pre_handle_s"] == PRE_HANDLE_SECONDS
+    assert first["post_handle_s"] == POST_HANDLE_SECONDS
