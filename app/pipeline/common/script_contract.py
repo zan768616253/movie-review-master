@@ -204,6 +204,11 @@ RATIO_EPSILON = 1e-9
 # flag it (warn for near-miss, fail for fabricated).
 RANGE_PROVENANCE_WARN_S = 1.0
 RANGE_PROVENANCE_FAIL_S = 5.0
+# A single anchor range is expected to represent one shot or one short
+# dialogue beat, not an entire scene or reel. Hero clips run 5-30s; cap at
+# 60s leaves slack for legitimate long takes while catching planner typos
+# in end timestamps (e.g. `00:29:53-01:00:00` where `00:30:00` was meant).
+MAX_ANCHOR_RANGE_DURATION_S = 60.0
 
 
 @dataclass
@@ -469,6 +474,22 @@ def validate_anchored_script(
             current_anchor = anchor
             in_closing = False
             in_bad_anchor = False
+
+            # Reject any single range that's grossly too long. Provenance
+            # alone can't catch this — a 30-min range still "overlaps"
+            # plenty of real timeline entries — so duration is a separate
+            # check on the policy layer.
+            for start_ts, end_ts in anchor.ranges:
+                duration_s = timestamp_to_seconds(end_ts) - timestamp_to_seconds(start_ts)
+                if duration_s > MAX_ANCHOR_RANGE_DURATION_S:
+                    issues.append(StructureIssue(
+                        severity="fail",
+                        code="range_too_long",
+                        message=(
+                            f"anchor range {start_ts}-{end_ts} spans {duration_s:.1f}s; "
+                            f"split long beats into multiple short ranges"
+                        ),
+                    ))
 
             # Monotonicity: each new anchor's first range must start at or
             # after the previous anchor's first range. Strictly increasing

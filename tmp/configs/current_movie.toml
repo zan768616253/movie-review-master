@@ -1,20 +1,43 @@
-# Pipeline config for "杀破狼2".
+# # Pipeline config for "杀破狼2".
+# # Paths are relative to the repo root.
+
+# [common]
+# movie_slug    = "sha_po_lang_2"
+# movie_dir     = "movies/杀破狼2"
+# movie_title   = "杀破狼2 (SPL II: A Time for Consequences)"
+# video_file    = "杀破狼2.mkv"
+# subtitle_file = "杀破狼2.ass"
+# style_path    = "styles/niu-shu.md"
+# genre         = "action"
+
+# # Roughly how long the final review should be, in seconds.
+# # Used as a hint in the Stage 2 writer prompt.
+# target_seconds = 1500.0
+
+# [stage3]
+# # Optional override for the stage3 output filename tag.
+# # Leave commented out to default to the style filename stem.
+# # tag = "sha-po-lang-2"
+
+
+
+# Pipeline config for "Jujutsu Kaisen 0".
 # Paths are relative to the repo root.
 
 [common]
-movie_slug    = "sha_po_lang_2"
-movie_dir     = "movies/杀破狼2"
-movie_title   = "杀破狼2 (SPL II: A Time for Consequences)"
-video_file    = "杀破狼2.mkv"
-subtitle_file = "杀破狼2.ass"
+movie_slug    = "jujutsu_kaisen_0"
+movie_dir     = "movies/呪術回戦0"
+movie_title   = "呪術回戦0 (Jujutsu Kaisen 0)"
+video_file    = "呪術回戦0.mkv"
+subtitle_file = "呪術回戦0.srt"
 style_path    = "styles/niu-shu.md"
 genre         = "action"
 
 # Roughly how long the final review should be, in seconds.
 # Used as a hint in the Stage 2 writer prompt.
-target_seconds = 720.0
+target_seconds = 1500.0
 
 [stage3]
 # Optional override for the stage3 output filename tag.
 # Leave commented out to default to the style filename stem.
-# tag = "sha-po-lang-2"
+# tag = "jujutsu12min"

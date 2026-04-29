@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 
 from app.pipeline.common.script_contract import (
+    MAX_ANCHOR_RANGE_DURATION_S,
     load_visual_segments,
     read_style_chars_per_second,
     seconds_to_timestamp,
@@ -202,13 +203,21 @@ of 12 × {chars_per_second} = {int(12 * chars_per_second)} characters of narrati
 
 **Total-script budget (macro pacing target):**
 With a target review of ~{target_seconds:.0f}s, your total narration across
-ALL anchors should be roughly {total_budget_chars} characters. Use this to
-pace your four acts evenly — do not blow {int(total_budget_chars * 0.5)} chars
-on the hook and arrive at the climax with nothing left.
+ALL anchors must land in {int(total_budget_chars * 0.85)}-{total_budget_chars} characters
+(target: {total_budget_chars}). Pace your four acts evenly — do not blow
+{int(total_budget_chars * 0.5)} chars on the hook and arrive at the climax with
+nothing left. Equally important: **do NOT undershoot.** Under-budget audio
+makes the finished video feel thin and unfinished — falling below
+{int(total_budget_chars * 0.85)} chars is a failure mode, not a safe choice.
 
-A downstream validator rejects narrations that exceed budget by more than
-10%. Narrations that are *under* budget are fine — Stage 5 trims the excess
-video shot-aware. Always plan slightly under budget when in doubt.
+To support this budget, your selected anchor ranges must cover enough total
+seconds: aim for `sum(all_anchor_seconds) ≈ {target_seconds:.0f}` (i.e. each
+anchor's ranges must average ~12-20s, often via multi-range anchors).
+
+A downstream validator rejects narrations that exceed any single anchor's
+budget by more than 10% — Stage 5 then trims any small remaining video
+slack shot-aware. The 10% over-budget cap is the only ceiling; the floor is
+the macro range above.
 
 # Source Material — chronological event ledger
 Each line is one event in movie order. `[srt:NNN]` lines are spoken
@@ -236,12 +245,11 @@ the two inside one multi-range anchor often produces awkward cuts.
    beats fewer. Aim for ~{anchor_count_low}–{anchor_count_high} anchors total
    for a {target_seconds:.0f}s review (more for longer reviews, fewer for shorter).
 5. For each beat, choose the [ANCHOR] ranges:
-   - Prefer SHORT, focused single-shot ranges (~2–8 seconds each).
-   - When a beat needs more screen time than one shot affords, use a
-     **multi-range anchor** listing the consecutive shots you want, e.g.
-     `ranges="00:23:10-00:23:14, 00:23:18-00:23:24"`.
+   - To reach your total target budget, the selected ranges within each anchor MUST collectively cover enough seconds! If you use ~{anchor_count_low} anchors for a {target_seconds:.0f}s review, each anchor needs to cover ~12-20 seconds of source video on average.
+   - Achieve this by aggressively using **multi-range anchors** (listing 2-4 consecutive or relevant shots) for almost every beat, e.g.
+     `ranges="00:23:10-00:23:14, 00:23:18-00:23:24, 00:24:01-00:24:06"`.
    - DO NOT use one wide range like `ranges="00:23:10-00:23:30"` to cover
-     multiple shots — that spans cuts and looks broken to the audience.
+     multiple shots — that spans cuts and looks broken to the audience. Always specify discrete shots as multiple ranges.
 6. Write narration in the style voice. Size each beat's character count
    to fit the budget. Self-check before finalizing.
 7. Total review length: aim for roughly {target_seconds:.0f}s
@@ -286,6 +294,36 @@ The exact ACT suffixes follow the style rulebook (some styles use
   always forward in source time.
 - All timestamps must come from the timeline above.
 - Closing chunk has narration but no [ANCHOR].
+- **Each individual range must be ≤ {int(MAX_ANCHOR_RANGE_DURATION_S)} seconds.** A range
+  longer than this is almost always a typo in the end timestamp — for
+  example, writing `00:29:53-01:00:00` when you meant `00:30:00`, or
+  `00:12:18-01:12:32` when you meant `00:12:32`. Before emitting any
+  anchor, double-check that each end timestamp's hour and minute digits
+  are correct relative to its start. If you need more visual coverage for
+  a beat, add another range — never widen one.
+
+# Final Budget Reminder — RE-STATED because this prompt is long
+This prompt contains a large timeline above. Before you start writing,
+confirm these numbers (originally stated under "TTS Budget — HARD CONSTRAINT"):
+
+- **Total narration must land in {int(total_budget_chars * 0.85)}-{total_budget_chars} characters
+  (target {total_budget_chars}).** Anything below {int(total_budget_chars * 0.85)} is a failure
+  — the resulting audio will be too short to cover the movie's plot.
+- **Per-act guideline (sums to {total_budget_chars}):**
+  Act 1 ≈ {int(total_budget_chars * 0.20)} chars, Act 2 ≈ {int(total_budget_chars * 0.30)} chars,
+  Act 3 ≈ {int(total_budget_chars * 0.30)} chars, Act 4 ≈ {int(total_budget_chars * 0.20)} chars.
+- **Anchor coverage:** the sum of all your selected anchor seconds should
+  be approximately {target_seconds:.0f}s. With ~{anchor_count_low}-{anchor_count_high} anchors,
+  each anchor's ranges must average ~12-20s — use multi-range anchors freely.
+- **Per-anchor cap:** chars(narration) ≤ sum(range_seconds) × {chars_per_second}.
+
+**Pre-output self-check (do this mentally before emitting the script):**
+1. Will my total narration fall in {int(total_budget_chars * 0.85)}-{total_budget_chars} chars?
+2. Does each act's char count match its share above?
+3. Have I selected enough anchor seconds (~{target_seconds:.0f}s total) to support the budget?
+
+If any answer is "no", expand the script before outputting — do NOT emit
+a short script "to be safe."
 
 # Produce
 Output ONLY the anchored script. No preamble, no code fences, no commentary.

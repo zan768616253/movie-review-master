@@ -5,14 +5,14 @@
 This is not a plot summary. It is an **audience-retention machine**. Every rule below exists to serve three jobs, in order:
 
 1. **Hook the viewer in the first 10 seconds.** If the opening is not the single most shocking, funniest, or most visceral moment of the movie, you have failed. Front-load the best scene — always.
-2. **Cover the whole story in 7-12 minutes.** The viewer leaves feeling they've seen the movie. No cliffhangers, no "watch it yourself for the ending." Start → climax → ending, all included.
+2. **Cover the whole story in 10-15 minutes.** The viewer leaves feeling they've seen the movie. No cliffhangers, no "watch it yourself for the ending." Start → climax → ending, all included.
 3. **Keep them watching the whole way.** Plant a re-hook (twist, shock, laugh, absurd image) every 60-90 seconds. A flat chronological retelling loses viewers at 45 seconds. Uncle Niu's deadpan sarcasm, pseudo-idioms, and nonsense literature are the tools — use them constantly.
 
 **Perspective:** Third-person omniscient, detached narrator
 **Tone:** Deadpan, fast-paced, highly sarcastic — *tuned to the movie's genre* (see Section 5.5)
-**Target Duration:** 7-12 minutes
-**Character-count Window:** ~1,800-2,800 Chinese characters — calibrated for this style's dense, fast-paced delivery (long sentences, minimal breath pauses, ~240-260 chars/min via Qwen3-TTS Voice Clone on the Niu Shu base voice). Different styles will need different windows; see `_style_contract.md` §4 #5.
-**TTS Budget (planner authority):** `chars_per_second = 5.0`. Measured mean 6.74 ± 0.58 stdev across 57 chunks of real JJK0 niu-shu output (2026-04-27); the slowest chunk ran at 5.17 cps. Setting the planner's budget to 5.0 — below the slowest measured chunk — guarantees that narration written to budget produces TTS audio that fits inside the anchor for ~99%+ of chunks. The remaining ~26% video slack on average lets Stage 5 trim visuals shot-aware to match audio exactly. The `chars/min` figure in the line above is stale (real rate is ~400 cpm) and will be reconciled in a later doc pass.
+**Target Duration:** 10-15 minutes (sweet spot 12-13 min)
+**Character-count Window:** ~4,000-6,000 Chinese characters — calibrated to the real TTS speech rate of ~404 chars/min (6.74 cps measured) via Qwen3-TTS Voice Clone on the Niu Shu base voice. 10 min ≈ 4,040 chars; 12 min ≈ 4,850 chars; 13 min ≈ 5,260 chars; 15 min ≈ 6,070 chars. A 12-13 min sweet-spot target lands around 5,000 chars. Different styles will need different windows; see `_style_contract.md` §4 #5.
+**TTS Budget (planner authority):** `chars_per_second = 5.0`. Measured mean 6.74 ± 0.58 stdev across 57 chunks of real JJK0 niu-shu output (2026-04-27); the slowest chunk ran at 5.17 cps. Setting the planner's budget to 5.0 — below the slowest measured chunk — guarantees that narration written to budget produces TTS audio that fits inside the anchor for ~99%+ of chunks. The remaining ~26% video slack on average lets Stage 5 trim visuals shot-aware to match audio exactly. Note: the planner-budget cps (5.0) is intentionally lower than actual TTS speech rate (6.74) — this is a safety margin, not a target.
 **Language:** Chinese (Mandarin) by default; English adaptation supported
 
 > **Style pairing:** This is the *external observer* style — detached, sarcastic. For the intimate confessional alternative, see [`first-person-pov.md`](first-person-pov.md). The two styles have **opposite rules** on character naming (archetypes vs. original names) and narrator stance (sarcastic vs. sincere) — do not mix them within a single script.
@@ -146,14 +146,14 @@ Beyond static names, invent internet-slang or RPG-style titles based on a charac
 
 ## 3. Narrative Structure (叙事结构)
 
-Four-act structure scaled to the target duration. Characters below are for a ~10-minute (2,400-char) script — scale linearly for 7-12 min.
+Four-act structure scaled to the target duration. Characters below are for a ~12-13 minute (5,000-char) script — scale linearly for 10-15 min.
 
 | Act | Minutes | Chars | Job |
 |-----|---------|-------|-----|
-| 1 - Hook + Setup | ~2 | ~480 | Open with the front-loaded hook, rewind, introduce 小帅/小美 and the inciting incident |
-| 2 - Escalation | ~3 | ~720 | Obstacles stack, villain enters, relationships form/break, build toward midpoint twist |
-| 3 - Climax + Twist | ~3 | ~720 | Biggest reveal and confrontation — deploy maximum information density and 废话文学 |
-| 4 - Resolution + Outro | ~2 | ~480 | Resolve, brief sarcastic verdict, sign off |
+| 1 - Hook + Setup | ~2.5 | ~1,000 | Open with the front-loaded hook, rewind, introduce 小帅/小美 and the inciting incident |
+| 2 - Escalation | ~4 | ~1,500 | Obstacles stack, villain enters, relationships form/break, build toward midpoint twist |
+| 3 - Climax + Twist | ~4 | ~1,500 | Biggest reveal and confrontation — deploy maximum information density and 废话文学 |
+| 4 - Resolution + Outro | ~2.5 | ~1,000 | Resolve, brief sarcastic verdict, sign off |
 
 ### Act-level non-negotiables
 
@@ -167,7 +167,7 @@ Four-act structure scaled to the target duration. Characters below are for a ~10
 
 The hook gets them to watch. This keeps them watching.
 
-**RULE:** A re-engagement beat must occur every **60-90 seconds** of narration (roughly every ~180-270 characters). If three consecutive paragraphs are flat plot summary, the viewer leaves.
+**RULE:** A re-engagement beat must occur every **60-90 seconds** of narration (roughly every ~400-600 characters at the real TTS rate). If three consecutive paragraphs are flat plot summary, the viewer leaves.
 
 ### Re-engagement Beat Types (mix and match)
 
@@ -193,7 +193,7 @@ Distribute these across acts — do not cluster them all in Act 3. The viewer wh
 
 ### The 90-Second Self-Check
 
-When drafting, insert a mental checkpoint every ~250 characters and ask: *"Why would the viewer still be watching after this sentence?"* If the answer is "because I haven't finished the plot," insert a re-engagement beat before moving on.
+When drafting, insert a mental checkpoint every ~400 characters (~60s of audio) and ask: *"Why would the viewer still be watching after this sentence?"* If the answer is "because I haven't finished the plot," insert a re-engagement beat before moving on.
 
 ---
 
@@ -425,7 +425,7 @@ These rules cannot be broken under any circumstances:
 7. **No English words in the Chinese script.** Translate or localize everything. FBI → 佛波勒, not "FBI".
 8. **Must include the complete ending.** Don't cut off with "watch the movie to find out."
 9. **Re-engagement beat every 60-90 seconds.** No flat stretches longer than ~270 characters.
-10. **Duration must land in 7-12 min (~1,800-2,800 chars).** Shorter loses the "whole story" feel; longer loses retention.
+10. **Duration must land in 10-15 min (~4,000-6,000 chars), sweet spot 12-13 min (~5,000 chars).** Shorter loses the "whole story" feel; longer loses retention.
 11. **Emotional Pivot maximum once per script.** Only for movies that genuinely earn it. Never in comedies.
 
 ---
@@ -467,7 +467,7 @@ The structural skeleton:
 ```
 
 **Rules for markers:**
-- Each beat is one breathable spoken sentence or a short paragraph (~30-90 Chinese characters). Aim for 30-60 beats total across the script.
+- Each beat is one breathable spoken sentence or a short paragraph (~30-90 Chinese characters). Aim for 50-80 beats total across the script.
 - Structural markers `[TITLE]`, `[HOOK]`, `[ACT N]`, `[CLOSING]` and `[BEAT N]` markers are stripped from the final voiceover but kept for downstream stages and human review.
 - Do NOT emit `[SCENE …]` or `[BROLL]` markers in the writer pass — the grounder pass adds those after evidence-based alignment to the SRT and visual-segment indexes.
 

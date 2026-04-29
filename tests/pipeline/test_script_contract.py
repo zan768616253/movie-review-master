@@ -400,6 +400,21 @@ def test_validator_skips_provenance_when_timeline_not_supplied() -> None:
     assert not [i for i in result.issues if i.code == "range_provenance"]
 
 
+def test_validator_fails_on_single_anchor_range_that_is_too_long() -> None:
+    # Reproduces the SPL II planner-typo bug: a range whose end timestamp
+    # leaks into the next hour. Provenance can't catch this because the
+    # oversized window still overlaps real timeline entries.
+    script = (
+        "[TITLE] Demo\n"
+        '[ANCHOR ranges="00:10:00-00:12:30"]\n'  # 150s, well over the 60s cap
+        + "x" * 20 + "\n"
+    )
+    result = validate_anchored_script(script, chars_per_second=5.0)
+    too_long = [i for i in result.issues if i.code == "range_too_long"]
+    assert len(too_long) == 1
+    assert result.has_failures
+
+
 def test_build_timeline_intervals_combines_srt_and_visuals() -> None:
     intervals = build_timeline_intervals(
         subtitle_intervals=[(10.0, 14.0)],
