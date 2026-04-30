@@ -67,6 +67,7 @@ def encoder_ffmpeg_args(codec: str) -> list[str]:
             "-tune", "hq",
             "-rc", "vbr",
             "-cq", "23",
+            "-profile:v", "high",
             "-pix_fmt", "yuv420p",
         ]
     raise ValueError(f"Unsupported codec: {codec}")

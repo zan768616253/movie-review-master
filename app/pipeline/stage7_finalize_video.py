@@ -54,6 +54,8 @@ def build_ffmpeg_command(
         "aac",
         "-b:a",
         audio_bitrate,
+        "-ac",
+        "2",
         "-movflags",
         "+faststart",
         "-shortest",
