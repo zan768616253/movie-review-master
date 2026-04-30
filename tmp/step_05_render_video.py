@@ -1,4 +1,4 @@
-"""Step 5 — render the final review video.
+"""Step 5 — render the draft review video.
 
 Combines:
   - Stage 3 voiceover + manifest (anchored ranges + audio timing)
@@ -16,11 +16,11 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import banner, build_paths, ensure_stage_dirs, fail, load_config
+from _common import DEFAULT_CONFIG, banner, build_paths, ensure_stage_dirs, fail, load_config
 
 from app.pipeline.stage5_render_video import main as stage5_main
 
-CONFIG = "configs/jujutsu_kaisen_0.toml"
+CONFIG = DEFAULT_CONFIG
 
 
 def run() -> int:
@@ -39,10 +39,10 @@ def run() -> int:
         if not p.exists():
             return fail(f"{label} missing: {p}")
 
-    banner(f"Stage 5 — render final video for {cfg['common']['movie_title']}")
+    banner(f"Stage 5 — render draft review video for {cfg['common']['movie_title']}")
     print(f"voiceover  : {paths.stage3_voiceover}")
     print(f"clips dir  : {paths.stage4_clips_dir}")
-    print(f"output     : {paths.final_video}")
+    print(f"output     : {paths.stage5_review_video}")
 
     argv = [
         "--manifest", str(paths.stage3_manifest),
@@ -50,7 +50,7 @@ def run() -> int:
         "--clips-dir", str(paths.stage4_clips_dir),
         "--keyframes-dir", str(paths.stage4_keyframes_dir),
         "--clip-manifest", str(paths.stage4_clip_manifest),
-        "--output", str(paths.final_video),
+        "--output", str(paths.stage5_review_video),
     ]
     # visual_segments is optional — when present, smart-trim uses its shot
     # boundaries to land cuts at clean shot junctions.

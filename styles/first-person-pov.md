@@ -406,9 +406,9 @@ These rules cannot be broken under any circumstances:
 
 ## 10. Script Output Format
 
-This style file is consumed by Stage 2's **writer pass**. Writer-pass output uses `[BEAT N]` markers, not timestamps. The grounder pass replaces each `[BEAT N]` with a `[SCENE …]` marker — that contract is owned by `app/pipeline/stage2_generate_script.py`'s grounder prompt, not this style file.
+This style file is consumed by Stage 2's **single-pass planner-writer**. The planner picks visual anchors AND writes narration in one LLM call. Output uses `[ANCHOR ranges="..."]` markers — each anchor names one or more source-shot ranges, with the narration text below it bounded by `sum(range_seconds) × chars_per_second`.
 
-The `我叫[name]` self-introduction (Section 2) lives **inside** `[ACT 1 - SETUP]` as the act's opening beats — it is **not** a peer structural marker. The pipeline parser (`script_contract.py:STRUCTURAL_MARKER_RE`) recognizes only `[TITLE]`, `[HOOK]`, `[ACT N - …]`, and `[CLOSING]` as structural.
+The `我叫[name]` self-introduction (Section 2) lives **inside** `[ACT 1 - SETUP]` as the act's opening anchors — it is **not** a peer structural marker. The pipeline parser (`script_contract.py:STRUCTURAL_MARKER_RE`) recognizes only `[TITLE]`, `[HOOK]`, `[ACT N - …]`, and `[CLOSING]` as structural.
 
 The structural skeleton:
 
@@ -416,38 +416,41 @@ The structural skeleton:
 [TITLE] [short hook summary that becomes the video title]
 
 [HOOK]
-[BEAT 1]
-(in-medias-res opening, 3-6 lines from protagonist's POV)
+[ANCHOR ranges="HH:MM:SS-HH:MM:SS"]
+(in-medias-res opening, breathable lines from protagonist's POV)
 
 [ACT 1 - SETUP]
-[BEAT 2]
+[ANCHOR ranges="HH:MM:SS-HH:MM:SS"]
 我叫[name]
-[BEAT 3]
-(3-6 lines establishing identity + "before" life)
-[BEAT 4]
+[ANCHOR ranges="HH:MM:SS-HH:MM:SS"]
+(establishing identity + "before" life)
+[ANCHOR ranges="HH:MM:SS-HH:MM:SS, HH:MM:SS-HH:MM:SS"]
 (rewind to beginning, inciting incident — Act 1 totals ~480 characters)
 
 [ACT 2 - ESCALATION]
-[BEAT N]
+[ANCHOR ranges="..."]
 (complications, relationships, wrong coping — Act 2 totals ~720 characters)
 
 [ACT 3 - REVEAL + CLIMAX]
-[BEAT N]
+[ANCHOR ranges="..."]
 (truth lands, emotional peak, choice — Act 3 totals ~720 characters)
 
 [ACT 4 - AFTERMATH]
-[BEAT N]
+[ANCHOR ranges="..."]
 (resolution — Act 4 totals ~300-400 characters)
 
 [CLOSING]
-[BEAT N]
 (register shift: reflection / identity / blessing / dark image, ~100-200 characters)
+NO [ANCHOR] — Stage 6 plays this passage over the most recent keyframe.
 ```
 
 **Rules for markers:**
-- Each beat is one breathable spoken line or a short stanza. This style favors short sentences (majority under 15 characters — see §6), so a single `[BEAT N]` may contain a stanza of several short lines that together form one breath group. Aim for 30-60 beats total across the script.
-- Structural markers `[TITLE]`, `[HOOK]`, `[ACT N]`, `[CLOSING]` and `[BEAT N]` markers are stripped from the final voiceover but kept for downstream stages and human review.
-- Do NOT emit `[SCENE …]` or `[BROLL]` markers in the writer pass — the grounder pass adds those after evidence-based alignment to the SRT and visual-segment indexes.
+- Each `[ANCHOR]` is one breathable beat. This style favors short sentences (majority under 15 characters — see §6), so a single anchor's narration may contain a stanza of several short lines that together form one breath group.
+- Each range stays inside ONE source shot (one `[shot:NNN]` from the timeline the planner is given). Range timestamps come from `[shot:NNN]` lines, never from `[srt:NNN]` lines.
+- Each individual range duration ≤ 12s. Each anchor's total duration (sum of range durations) ≤ 12s.
+- The closing chunk has narration but no `[ANCHOR]` — Stage 6 plays it over the most recent keyframe.
+- Structural markers `[TITLE]`, `[HOOK]`, `[ACT N]`, `[CLOSING]` and the `[ANCHOR ...]` lines are stripped from the final voiceover but kept for downstream stages and human review.
+- Aim for 30-60 anchors total across the script (this style's shorter sentences mean fewer chars per anchor; the count tracks the act-level char totals above).
 
 ---
 

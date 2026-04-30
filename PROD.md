@@ -54,6 +54,7 @@ Expected asset set:
 ```text
 movies/<title>/
   output/
+    review.mp4
     final_video.mp4
     clips/
     keyframes/
@@ -65,7 +66,8 @@ movies/<title>/
 
 Product-level output rules:
 
-- `final_video.mp4` is a draft render, not the final upload master.
+- `review.mp4` is the watchable draft render.
+- `final_video.mp4` is the upload-ready master emitted after final muxing.
 - Original movie audio is not part of the review timeline.
 - Separate assets must remain reusable so manual editing in DaVinci is easy.
 

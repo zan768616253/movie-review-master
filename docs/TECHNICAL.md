@@ -39,8 +39,10 @@ movie-review-master/
       stage1_parse_subtitles.py
       stage2_generate_script.py
       stage3_generate_audio.py
-      stage4_video_processor.py
-      stage5_render_video.py
+      stage4_align_subtitles.py
+      stage5_video_processor.py
+      stage6_render_video.py
+      stage7_finalize_video.py
       common/
         __init__.py
         script_contract.py
@@ -105,21 +107,31 @@ Key public pieces:
 
 Purpose:
 
-- build the writer-pass prompt that produces beat-level narration without timestamps
-- build the grounding-pass prompt that aligns those beats to SRT and `visual_segments.json`
+- build a single planner-writer prompt that picks visual anchors AND writes narration in one LLM pass
+- emit a chronological merged timeline of `[srt:NNN]` dialogue lines and `[shot:NNN]` source-shot entries that the planner picks ranges from
+- enforce a shot-aware range contract: every anchor range must stay inside one source shot
 
 Current state:
 
-- implemented as a manual two-pass prompt assembler
-- exposes `generate-script` entry point that prints either prompt to stdout
-- supports `writer` and `grounder` subcommands; movie title is inferred from the subtitle filename when omitted, and writer genre defaults to `general`
-- Stage 2 is still run manually today; the repo owns the prompt contract, while the actual model execution remains outside the codebase
+- implemented as a manual single-pass prompt assembler (replaces the old writer + grounder two-pass design)
+- exposes `generate-script` entry point that prints the prompt to stdout
+- accepts an optional `--synopsis` flag for user-authored plot/cast context
+- Stage 2 is run manually: the repo writes the prompt, the user pastes it into an LLM (Gemini 3 Pro / Qwen 3.6) and pastes the reply back; `tmp/step_02_generate_script.py` validates the reply on the second run
 
 Key public pieces:
 
-- `build_writer_prompt()`
-- `build_grounding_prompt()`
+- `build_planner_prompt()` — assembles the prompt
+- `build_merged_timeline()` — interleaves SRT and per-shot visual entries chronologically
+- `split_segment_into_shots()` — expands one Stage 0 visual segment into 1+ shots based on `shot_boundaries_s`
 - `main()`
+
+Shot-aware range contract (enforced by validator + prompt):
+
+- each anchor range must stay inside one source shot — no shot-boundary crossings
+- each individual range duration ≤ `MAX_ANCHOR_RANGE_DURATION_S` (12s)
+- each anchor's total duration (sum of range durations) ≤ `MAX_ANCHOR_TOTAL_DURATION_S` (12s)
+- range timestamps must come from `[shot:NNN]` lines, not `[srt:NNN]` lines
+- multi-shot beats use multi-range anchors with one range per shot
 
 ### `app/pipeline/stage3_generate_audio.py`
 
@@ -143,11 +155,29 @@ Important contract:
 - output is `voiceover_<tag>_voiceclone.mp3`
 - manifest is `voiceover_<tag>_voiceclone.manifest.json`
 
-### `app/pipeline/stage4_video_processor.py`
+### `app/pipeline/stage4_align_subtitles.py`
 
 Purpose:
 
-- parse `[SCENE]` and `[BROLL]` markers from a script
+- split Stage 3 narration chunks into shorter subtitle cues
+- derive cue timing from the real Stage 3 voiceover using pause detection
+- emit `subtitle_manifest.json` for the render stage
+
+Current state:
+
+- implemented
+- exposes `align-subtitles` entry point
+
+Important contract:
+
+- output is `subtitle_manifest.json`
+- each cue entry carries `index`, `chunk_index`, `text`, `start_s`, and `end_s`
+
+### `app/pipeline/stage5_video_processor.py`
+
+Purpose:
+
+- parse `[ANCHOR]` markers from a script
 - extract silent source clips and keyframes with `ffmpeg`
 
 Current state:
@@ -155,20 +185,15 @@ Current state:
 - implemented
 - exposes `video-processor` entry point
 
-Key CLI flags:
-
-- `--handle-seconds` (default 1.5) — pre/post handle applied around every hero clip.
-- `--max-extension-seconds` (default 30.0) — upper bound on safe-boundary extension triggered by `visual_segments.json`. Required because a single hallucinated visual segment can otherwise turn one clip into a full-movie re-encode.
-- `--encoder {auto,nvenc,libx264}` (default `auto`) — `auto` picks `h264_nvenc` when available, otherwise falls back to `libx264 -preset fast`.
-
-### `app/pipeline/stage5_render_video.py`
+### `app/pipeline/stage6_render_video.py`
 
 Purpose:
 
 - read the voiceover manifest
+- read the subtitle manifest
 - render per-chunk video segments
 - concatenate segments
-- mux the narration track into `final_video.mp4`
+- mux the narration track into `review.mp4`
 
 Current state:
 
@@ -178,20 +203,33 @@ Current state:
 Current stage-1 characteristics:
 
 - hard cuts
-- no subtitle burn
+- subtitle burn from `subtitle_manifest.json`
 - no background music
 - B-roll rotation supported through pre-extracted clip inputs
 
 Key CLI flags:
 
-- `--encoder {auto,nvenc,libx264}` (default `auto`) — same selector used by Stage 4. Used for hero slices, manual B-roll re-encodes, semantic B-roll re-encodes, and still-frame segments.
+- `--encoder {auto,nvenc,libx264}` (default `auto`) — same selector used by Stage 5. Used for hero slices, manual B-roll re-encodes, semantic B-roll re-encodes, and still-frame segments.
+
+### `app/pipeline/stage7_finalize_video.py`
+
+Purpose:
+
+- take the Stage 6 draft render as the locked picture source
+- take the Stage 3 voiceover as the authoritative narration source
+- emit `final_video.mp4` with `+faststart` for direct upload
+
+Current state:
+
+- implemented
+- exposes `finalize-video` entry point
 
 ### `app/pipeline/common/`
 
 Shared helpers used by multiple pipeline stages.
 
 - `script_contract.py` — scene marker parsing, timestamp helpers, visual-segment loading, and `validate_visual_segments()` (the Stage 0 trust boundary).
-- `video_encoder.py` — `resolve_encoder()`, `nvenc_available()`, `encoder_ffmpeg_args()`. Used by Stage 4 and Stage 5 to produce the `-c:v ...` argument list.
+- `video_encoder.py` — `resolve_encoder()`, `nvenc_available()`, `encoder_ffmpeg_args()`. Used by Stage 5 and Stage 6 to produce the `-c:v ...` argument list.
 
 ### `app/pipeline/stage0_indexers/`
 
@@ -243,7 +281,7 @@ Current state:
 
 These components are part of the project design but are not yet present as first-class production modules:
 
-- automated Stage 2 model execution inside the repo — today the repo assembles prompts, but a human still runs the writer and grounder passes
+- automated Stage 2 model execution inside the repo — today the repo assembles the planner prompt, but a human still runs the LLM call and pastes the reply back
 - `app/pipeline/archetype_mapper.py` — style-A-specific character mapping helper
 - `styles/xiaodao.md` — Style C, research phase only
 
@@ -270,44 +308,58 @@ Notes:
 
 ### Script Marker Contract
 
-Primary structural markers currently used by downstream tooling:
+Primary structural markers used by downstream tooling:
 
-- legacy scene shorthand: `[SCENE: HH:MM:SS-HH:MM:SS]`
-- grounded scene marker: `[SCENE start=HH:MM:SS.mmm end=HH:MM:SS.mmm source=srt|visual confidence=0.00 evidence=srt:NNN|visual:NNN]`
-- ungrounded scene marker: `[SCENE source=ungrounded confidence=0.00 evidence=none]`
-- optional scene attribute: `characters="Name A|Name B"` for fallback B-roll selection
-- `[BROLL: HH:MM:SS-HH:MM:SS, ...]`
-- `[TITLE]`, `[HOOK]`, `[ACT ...]`, `[CLOSING]` as structural labels for script organization
+- `[ANCHOR ranges="HH:MM:SS-HH:MM:SS, HH:MM:SS-HH:MM:SS" characters="Name A|Name B"]` —
+  one or more chronological source-movie ranges followed by the
+  narration text bounded by `sum(range_seconds) × chars_per_second`.
+- `[TITLE]`, `[HOOK]`, `[ACT ...]`, `[CLOSING]` as structural labels.
 
-Notes:
+Anchor invariants (parser + validator):
 
-- the parser accepts both legacy and attribute forms
-- downstream extraction and rendering use `source`, `evidence`, and `characters` when present
+- ranges within one anchor are non-overlapping; the parser sorts them by
+  start time so playback is always forward in source time
+- each range duration ≤ `MAX_ANCHOR_RANGE_DURATION_S` (12s)
+- anchor total duration (sum of range durations) ≤ `MAX_ANCHOR_TOTAL_DURATION_S` (12s)
+- each range stays inside ONE source shot (`range_shot_crossing` validator
+  check against the global shot-boundary set built from
+  `visual_segments.json`)
+- range timestamps must overlap a real timeline entry — anchors are not
+  allowed to invent timestamps
+- anchors march chronologically across the script within each section
+- closing chunk has narration but no `[ANCHOR]` — renders over a still keyframe
 
-### Grounding Decision Contract
+### Validation Decision Contract
 
-- dialogue beats should prefer SRT evidence and timestamps
-- action beats should prefer visual-segment evidence
-- weak matches should be emitted as `source=ungrounded` rather than guessed into fake timestamps
-- Stage 4 and Stage 5 use `scene_evidence` and `scene_characters` to steer fallback extraction and semantic B-roll selection
+- `validate_anchored_script(text, chars_per_second, timeline_intervals=..., shot_boundaries=...)` returns per-anchor budget verdicts and script-level structure issues
+- per-anchor severity tiers: `ok` (≤1.0× budget) / `warn` (≤1.10×, Stage 6 absorbs visual slack) / `fail` (>1.10×, manual rewrite required)
+- script-level fail codes: `no_title`, `no_anchors`, `orphan_narration`, `non_monotonic`, `bad_anchor`, `range_too_long`, `anchor_too_long`, `range_shot_crossing`, `range_provenance` (when timeline intervals supplied)
+- narration is sacred — the pipeline never trims narration text or speeds up audio. When a chunk overruns budget, Stage 6's smart-trim removes visual slack at shot boundaries instead
 
 ### Voice Manifest Contract
 
 `stage3_generate_audio.py` writes a JSON list where each entry contains:
 
 - `index`
-- `scene_start`
-- `scene_end`
-- `scene_source`
-- `scene_confidence`
-- `scene_evidence`
-- `scene_characters`
+- `ranges`
+- `characters`
 - `text`
-- `broll`
 - `audio_start_s`
 - `audio_end_s`
 
-This manifest is the primary sync contract for `stage5_render_video.py`.
+This manifest is the primary sync contract for `stage6_render_video.py`.
+
+### Subtitle Manifest Contract
+
+`stage4_align_subtitles.py` writes a JSON list where each entry contains:
+
+- `index`
+- `chunk_index`
+- `text`
+- `start_s`
+- `end_s`
+
+This manifest is the subtitle sync contract for `stage6_render_video.py`.
 
 ### Visual Segment Contract
 
@@ -319,10 +371,24 @@ This manifest is the primary sync contract for `stage5_render_video.py`.
 - `summary`
 - `ocr_text`
 - `characters`
+- `shot_boundaries_s` — list of cut times (absolute seconds, sorted) that
+  fall strictly inside the `(start, end)` window. Empty list when no
+  internal cuts. Used by Stage 2 to split each segment into per-shot
+  timeline entries (`split_segment_into_shots`) and by Stage 6's smart-trim
+  for shot-aware tail-cuts.
+  - **Migration note:** until 2026-04-30, `merge_segments` left this
+    field in chunk-local seconds while shifting `start`/`end` to
+    absolute. Use `tmp/migrate_shot_boundaries.py` (chunk-offset
+    arithmetic, no API or ffmpeg cost) on existing `visual_segments.json`
+    files generated before that date.
 
 These segments exist for non-dialogue grounding. Dialogue beats should anchor to SRT instead of requiring duplicate Stage 0 coverage. The VLM is instructed to emit event-based segments (typically 2-8s, hard cap 12s) and to skip shot-reverse-shot dialogue where nothing visual changes.
 
-Each Stage 0 chunk has its chunk-local PTS burned into the top-left corner so the VLM reads timestamps off the frame rather than estimating them. After inference, segment `start`/`end` are snapped to ffmpeg-detected shot boundaries within a 1.5s tolerance; anything outside tolerance is left untouched.
+Each Stage 0 chunk has its chunk-local PTS burned into the top-left corner so the VLM reads timestamps off the frame rather than estimating them. After inference, segment `start`/`end` are snapped to ffmpeg-detected shot boundaries within a 1.5s tolerance; anything outside tolerance is left untouched. The same scene-detection pass populates each segment's `shot_boundaries_s` annotation with cuts that fall strictly inside the (snapped) window.
+
+**Optional Cast Reference (synopsis enrichment):** `stage0_index_visuals.py` accepts `--synopsis PATH`. When supplied, the synopsis text is inlined into the VLM prompt as a Cast Reference block, and the VLM's character-labeling rule flips from "only names you can re-identify visually within this chunk" to "any name on the Cast Reference, never names outside it". The harness `tmp/step_00_index_visuals.py` auto-attaches `movies/<slug>/synopsis.md` when present. This produces consistent character names across chunks without risking franchise-knowledge over-attribution.
+
+The full set of shot-cut timestamps in the source movie is reconstructed by `build_shot_boundary_set(visual_segments)`: union of every segment's start/end (excluding the t=0 movie start) with every entry in any segment's `shot_boundaries_s`. Stage 2's validator uses this set to reject anchor ranges that would bridge a hard cut.
 
 Every segment in the written file has already passed `validate_visual_segments()`. Downstream stages should not re-check bounds but may call the validator again defensively.
 
@@ -340,6 +406,7 @@ movies/<title>/
     clips/broll_NNN_a.mp4
     keyframes/keyframe_NNN.jpg
     segments/segment_NNN.mp4
+    review.mp4
     final_video.mp4
 ```
 
@@ -351,8 +418,10 @@ Configured in `pyproject.toml`:
 - `parse-subtitles = app.pipeline.stage1_parse_subtitles:main`
 - `generate-script = app.pipeline.stage2_generate_script:main`
 - `generate-audio = app.pipeline.stage3_generate_audio:main`
-- `video-processor = app.pipeline.stage4_video_processor:main`
-- `render-video = app.pipeline.stage5_render_video:main`
+- `align-subtitles = app.pipeline.stage4_align_subtitles:main`
+- `video-processor = app.pipeline.stage5_video_processor:main`
+- `render-video = app.pipeline.stage6_render_video:main`
+- `finalize-video = app.pipeline.stage7_finalize_video:main`
 - `transcribe = app.tools.transcribe_audio:main`
 - `prepare-voice-reference = app.tools.prepare_voice_reference:main`
 
@@ -366,10 +435,10 @@ Automated coverage currently exists for:
 - transcription CLI flow with a fake model
 - reference-preparation CLI flow with injected ffmpeg, transcription, and analysis helpers
 
-Verified baseline on 2026-04-21:
+Verified baseline:
 
 - `conda run -n py312_machine_learning --no-capture-output pytest`
-- result: `16 passed`
+- result: `140 passed, 1 skipped`
 
 ## 9. Known Technical Gaps
 

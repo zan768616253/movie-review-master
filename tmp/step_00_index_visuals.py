@@ -4,7 +4,7 @@ Reads:  <movie>.mkv
 Writes: tmp/work/<movie_slug>/stage0/visual_segments.json
 
 Run this file directly in VSCode (the ▶ button uses the "Current File"
-launch config). To switch movies, change CONFIG below.
+launch config). To switch movies, edit tmp/configs/current_movie.toml.
 """
 
 from __future__ import annotations
@@ -13,11 +13,11 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import banner, build_paths, ensure_stage_dirs, fail, load_config
+from _common import DEFAULT_CONFIG, banner, build_paths, ensure_stage_dirs, fail, load_config
 
 from app.pipeline.stage0_index_visuals import main as stage0_main
 
-CONFIG = "configs/jujutsu_kaisen_0.toml"
+CONFIG = DEFAULT_CONFIG
 
 
 def run() -> int:
@@ -33,12 +33,22 @@ def run() -> int:
     print(f"output        : {paths.visual_segments}")
     print(f"chunk tmp dir : {paths.stage0_dir / 'tmp'}")
 
-    return stage0_main([
+    args = [
         "--video", str(paths.video),
         "--output", str(paths.visual_segments),
         "--tmp-dir", str(paths.stage0_dir / "tmp"),
         "--workers", "5",
-    ])
+    ]
+    # Auto-attach the movie's synopsis as a Cast Reference when available.
+    # This lets the VLM apply consistent character names across chunks
+    # without risking franchise-knowledge over-attribution.
+    if paths.synopsis.exists():
+        print(f"synopsis      : {paths.synopsis}")
+        args += ["--synopsis", str(paths.synopsis)]
+    else:
+        print(f"synopsis      : (none — no Cast Reference will be passed to the VLM)")
+
+    return stage0_main(args)
 
 
 if __name__ == "__main__":
