@@ -36,6 +36,7 @@ from pathlib import Path
 from app.pipeline.common.json_io import dump_json, load_json
 from app.pipeline.common.script_contract import (
     load_visual_segments,
+    probe_media_duration,
     timestamp_to_seconds,
 )
 from app.pipeline.common.video_encoder import (
@@ -85,15 +86,26 @@ BLACK_FRAME_MIN_INTERVAL_S = 0.4
 # When source-level black splitting drops sub-ranges shorter than this,
 # the resulting fragment is too brief to read as a shot.
 MIN_NON_BLACK_SUB_RANGE_S = 1.5
+# Safety overshoot for the trailing closing-chunk still. Manifest audio
+# timings are computed from raw-WAV durations (pre-loudnorm + pre-MP3
+# encoding), so the actual voiceover.mp3 can run a few hundred ms longer
+# than `audio_end_s` of the last chunk. We size the closing still to the
+# real MP3 tail plus this pad so Stage 7's `-shortest` mux can never run
+# out of video before the narration ends.
+CLOSING_TAIL_PAD_S = 0.5
 
 
 # --- ffmpeg helpers -------------------------------------------------------
 
 
 def normalize_scale_filter() -> str:
+    # Zoom-and-crop fill (no letterbox): scale source to fully cover the
+    # 1920x1080 canvas, then center-crop the overflow. Cinemascope (e.g.
+    # 1920x816) loses ~16% from each side; in exchange, no black bars
+    # ship in the YouTube upload.
     return (
-        f"scale={TARGET_WIDTH}:{TARGET_HEIGHT}:force_original_aspect_ratio=decrease,"
-        f"pad={TARGET_WIDTH}:{TARGET_HEIGHT}:(ow-iw)/2:(oh-ih)/2,"
+        f"scale={TARGET_WIDTH}:{TARGET_HEIGHT}:force_original_aspect_ratio=increase,"
+        f"crop={TARGET_WIDTH}:{TARGET_HEIGHT}:(iw-{TARGET_WIDTH})/2:(ih-{TARGET_HEIGHT})/2,"
         f"setsar=1,fps={TARGET_FPS}"
     )
 
@@ -1017,6 +1029,14 @@ def main(argv=None) -> int:
     segments_dir = args.output.parent / "segments"
     segments_dir.mkdir(parents=True, exist_ok=True)
 
+    # The closing chunk renders a still keyframe sized to the manifest's
+    # `audio_duration`, which is computed from raw-WAV durations in
+    # Stage 3. The mastered voiceover.mp3 (loudnorm + MP3 frame alignment)
+    # can run slightly longer, so we probe the real audio length once and
+    # use it to size the trailing still defensively.
+    voiceover_total_s = probe_media_duration(args.voiceover)
+    last_manifest_pos = len(manifest) - 1
+
     segment_paths: list[Path] = []
     edit_entries: list[dict[str, object]] = []
     last_anchor_index: int | None = None
@@ -1033,7 +1053,7 @@ def main(argv=None) -> int:
     }
 
     total_t0 = time.time()
-    for entry in manifest:
+    for manifest_pos, entry in enumerate(manifest):
         idx = coerce_manifest_index(entry["index"], context="Manifest index")
         audio_start_s = coerce_manifest_seconds(entry["audio_start_s"], context="audio_start_s")
         audio_end_s = coerce_manifest_seconds(entry["audio_end_s"], context="audio_end_s")
@@ -1052,8 +1072,18 @@ def main(argv=None) -> int:
             if still is None:
                 print(f"  chunk {idx}: closing with no usable keyframe", file=sys.stderr)
                 return 1
-            print(f"  chunk {idx:>3} (closing): still {still.name} x {audio_duration:.2f}s", end=" ")
-            render_stillframe_segment(still, audio_duration, segment_path, codec)
+            still_duration = audio_duration
+            if (
+                manifest_pos == last_manifest_pos
+                and voiceover_total_s is not None
+            ):
+                # Cover the real MP3 tail, not the pre-encoding estimate,
+                # plus a small pad. Stage 7's -shortest mux trims any
+                # overshoot back to the actual audio end.
+                remaining_audio = max(0.0, voiceover_total_s - audio_start_s)
+                still_duration = max(audio_duration, remaining_audio) + CLOSING_TAIL_PAD_S
+            print(f"  chunk {idx:>3} (closing): still {still.name} x {still_duration:.2f}s", end=" ")
+            render_stillframe_segment(still, still_duration, segment_path, codec)
             actual_kind = "freeze"
             tally[actual_kind] = tally.get(actual_kind, 0) + 1
             print(f"({time.time() - t0:.1f}s)")
