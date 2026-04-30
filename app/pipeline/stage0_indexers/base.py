@@ -27,6 +27,21 @@ _PTS_TIME_RE = re.compile(r"pts_time:(\d+(?:\.\d+)?)")
 
 
 def merge_segments(all_chunks_results: List[List[Dict]], chunk_duration_s: float) -> List[Dict]:
+    """Shift chunk-local timestamps to absolute and concatenate.
+
+    Each chunk emits segments with chunk-local timestamps (the VLM saw
+    ``00:00:00.000`` at the chunk's own start). To produce a single
+    movie-relative timeline we add ``chunk_index × chunk_duration_s`` to
+    every timestamp on every segment.
+
+    This includes ``shot_boundaries_s`` — the inner-cut annotations
+    populated by ``snap_to_shot_boundaries``. They are emitted in
+    chunk-local seconds and must be shifted alongside the segment's own
+    ``start``/``end``, otherwise downstream consumers see boundaries
+    pointing at the wrong moment in the movie. (Until 2026-04-30 this
+    shift was missed, leaving 96% of inner cuts pointing one chunk
+    earlier than their parent segment.)
+    """
     merged: List[Dict] = []
     for i, chunk_results in enumerate(all_chunks_results):
         offset = i * chunk_duration_s
@@ -35,6 +50,15 @@ def merge_segments(all_chunks_results: List[List[Dict]], chunk_duration_s: float
             end_s = timestamp_to_seconds(seg["end"]) + offset
             seg["start"] = seconds_to_timestamp(start_s)
             seg["end"] = seconds_to_timestamp(end_s)
+            inner = seg.get("shot_boundaries_s")
+            if isinstance(inner, list) and inner:
+                shifted: List[float] = []
+                for raw in inner:
+                    try:
+                        shifted.append(round(float(raw) + offset, 3))
+                    except (TypeError, ValueError):
+                        continue
+                seg["shot_boundaries_s"] = shifted
             merged.append(seg)
     return merged
 

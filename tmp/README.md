@@ -14,21 +14,24 @@ When this stabilises it will graduate into a proper orchestrator under `app/`.
 ```
 tmp/
   configs/
-    jujutsu_kaisen_0.toml         # one TOML per movie
+    current_movie.toml            # the harness always reads this file
     _template.toml                # copy this when adding a new movie
+    backup/                       # archived per-movie configs for reference
   _common.py                      # config loader, paths, helpers
   step_00_index_visuals.py        # ← open & press ▶ to run stage 0
   step_01_parse_subtitles.py
   step_02_generate_script.py      # the manual paste-prompt-into-LLM step
   step_03_generate_audio.py
-  step_04_video_processor.py
-  step_05_render_video.py
-  run_all.py                      # chains 0→1→3→4→5, stops at 2 for manual input
+  step_04_align_subtitles.py
+  step_05_video_processor.py
+  step_06_render_video.py
+  step_07_finalize_video.py
+  run_all.py                      # chains 0→1→3→4→5→6→7, stops at 2 for manual input
   README.md                       # this file
   TODO.md                         # pipeline notes (P0/P1/P2/P3)
 
   work/<movie_slug>/              # all per-movie outputs land here
-    stage0/  stage1/  stage2/  stage3/  stage4/  stage5/
+    stage0/  stage1/  stage2/  stage3/  stage4/  stage5/  stage6/  stage7/
 ```
 
 Inputs (movie file, subtitle file, style file) stay where they already live
@@ -47,8 +50,9 @@ under `movies/` and `styles/`. Only outputs go into `tmp/work/`.
      python tmp/step_03_generate_audio.py
    ```
 
-To switch movies: change the `CONFIG = "configs/<movie>.toml"` line at the
-top of every step file (and `run_all.py`).
+To switch movies: overwrite `tmp/configs/current_movie.toml` with the movie
+you want to run. If you want to keep the old one around, store a named copy
+under `tmp/configs/backup/`.
 
 ---
 
@@ -66,6 +70,11 @@ Behaviour:
 - At Stage 2 it stops with a clear message — Stage 2 needs you to paste
   prompts into an LLM and paste the replies back. Run
   `step_02_generate_script.py` to handle that, then re-run `run_all.py`.
+- Stage 4 derives short timed subtitle cues from the real Stage 3 voiceover and
+  writes `tmp/work/<movie_slug>/stage4/subtitle_manifest.json`.
+- Stage 6 writes the watchable draft to `tmp/work/<movie_slug>/stage6/review.mp4`.
+- Stage 7 remuxes that draft with the Stage 3 narration track and writes the
+  upload-ready master to `tmp/work/<movie_slug>/stage7/final_video.mp4`.
 
 ---
 
@@ -97,8 +106,20 @@ Stage 2 is now a single planner-writer pass. The files live under
 ## Adding a new movie
 
 1. Drop the movie file + subtitle into `movies/<some_folder>/`.
-2. Copy `tmp/configs/_template.toml` to `tmp/configs/<your_slug>.toml` and
-   fill it in.
-3. In each `step_*.py` file (and `run_all.py`), change the `CONFIG`
-   constant at the top to point at your new TOML.
-4. Run.
+2. Copy `tmp/configs/_template.toml` to `tmp/configs/current_movie.toml` and
+  fill it in.
+3. If you want to preserve the old movie config, save a named copy under
+  `tmp/configs/backup/` first.
+4. **Optional but recommended:** drop `synopsis.md` into the movie folder
+  (`movies/<some_folder>/synopsis.md`) with a plot summary and named cast
+  list. The harness auto-attaches it as:
+   - **Stage 0 Cast Reference** — `step_00_index_visuals.py` passes it to
+     the VLM so character names stay consistent across chunks.
+   - **Stage 2 External Context** — `step_02_generate_script.py` injects
+     it into the planner prompt so the LLM has cultural / plot context
+     it can't infer from raw SRT + visuals.
+
+   With no synopsis present, both steps fall back to their non-synopsis
+   path (the VLM uses the conservative per-chunk re-identification rule;
+   the planner sees a "no synopsis provided" placeholder).
+5. Run.

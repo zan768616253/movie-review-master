@@ -36,8 +36,10 @@ def test_each_step_module_imports() -> None:
         "step_01_parse_subtitles",
         "step_02_generate_script",
         "step_03_generate_audio",
-        "step_04_video_processor",
-        "step_05_render_video",
+        "step_04_align_subtitles",
+        "step_05_video_processor",
+        "step_06_render_video",
+        "step_07_finalize_video",
         "run_all",
     ):
         _reload(module_name)

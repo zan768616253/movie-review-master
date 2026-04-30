@@ -13,11 +13,11 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import banner, build_paths, ensure_stage_dirs, fail, load_config
+from _common import DEFAULT_CONFIG, banner, build_paths, ensure_stage_dirs, fail, load_config
 
 from app.pipeline.stage1_parse_subtitles import parse_subtitles
 
-CONFIG = "configs/jujutsu_kaisen_0.toml"
+CONFIG = DEFAULT_CONFIG
 
 
 def run() -> int:

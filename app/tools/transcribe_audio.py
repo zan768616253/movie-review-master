@@ -28,16 +28,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Audio file or directory to transcribe",
     )
     parser.add_argument(
-        "--model-size",
-        default=DEFAULT_MODEL_SIZE,
-        help="Whisper model name or local path",
-    )
-    parser.add_argument(
-        "--device",
-        default=DEFAULT_DEVICE,
-        help="Device for faster-whisper, such as cuda or cpu",
-    )
-    parser.add_argument(
         "--language",
         default="zh",
         help='Language code to force, or "auto" to let Whisper detect it',
@@ -123,13 +113,26 @@ def main(
         source_files = collect_input_files(input_path)
         if not source_files:
             raise ValueError(f"No matching .mp3 files found in {input_path}")
-        model = model_factory(args.model_size, args.device)
+
+        pending_files = []
+        for source_path in source_files:
+            output_path = source_path.with_suffix(DEFAULT_OUTPUT_SUFFIX)
+            if output_path.exists():
+                print(f"Skipping existing transcript {output_path}")
+                continue
+            pending_files.append(source_path)
+
+        if not pending_files:
+            print(f"All transcripts already exist for {input_path}; nothing to do.")
+            return 0
+
+        model = model_factory(DEFAULT_MODEL_SIZE, DEFAULT_DEVICE)
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
     failures = 0
-    for source_path in source_files:
+    for source_path in pending_files:
         output_path = source_path.with_suffix(DEFAULT_OUTPUT_SUFFIX)
 
         try:

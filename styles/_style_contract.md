@@ -9,24 +9,24 @@
 
 ## 1. What a "style" is and isn't
 
-A style file describes **the voice and shape** of a 7-12 minute Chinese movie-review
-script. It is consumed verbatim by Stage 2's writer-pass prompt as the "Style
+A style file describes **the voice and shape** of a 10-15 minute Chinese movie-review
+script. It is consumed verbatim by Stage 2's planner-writer prompt as the "Style
 Rulebook" — the LLM is told to follow it exactly.
 
 | A style file owns | The pipeline owns (do NOT redefine in a style) |
 |---|---|
-| Voice, tone, perspective (first/third person, sarcastic, sincere, etc.) | The `[SCENE …]` marker format — see `app/pipeline/common/script_contract.py` |
+| Voice, tone, perspective (first/third person, sarcastic, sincere, etc.) | The `[ANCHOR ranges="..."]` marker format — see `app/pipeline/common/script_contract.py` |
 | Hook strategy and signature opening phrase | The structural marker hierarchy — see §3 below |
-| Character naming convention (archetypes vs original names) | Beat granularity targets — see §3 |
-| Re-engagement beat *types* (sarcasm vs interior revelation vs …) | Stage 1 / Stage 0 / Stage 4 / Stage 5 contracts |
-| Closing strategy and any signature sign-off | The 7-12 min total **duration** window (audience-retention anchor) |
-| Genre-modulation guidance | Whether timestamps appear in the writer pass (they don't) |
-| The Chinese-**character** window that maps to 7-12 min for this style's TTS pace | Whether `[BEAT N]` markers appear in the writer pass (they do) |
+| Character naming convention (archetypes vs original names) | Anchor budget formula and shot-aware constraints — see §5 |
+| Re-engagement beat *types* (sarcasm vs interior revelation vs …) | Stage 0 / Stage 1 / Stage 4 / Stage 5 / Stage 6 contracts |
+| Closing strategy and any signature sign-off | The 10-15 min total **duration** window (audience-retention anchor) |
+| Genre-modulation guidance | Per-anchor and per-range duration caps |
+| The Chinese-**character** window that maps to the duration for this style's TTS pace | The `chars_per_second` planner budget (declared in the style frontmatter, but the formula `chars(narration) ≤ sum(range_seconds) × chars_per_second` is the pipeline's) |
 | Hard constraints unique to the style | |
 
 If a style file contradicts the pipeline-owned contract, the pipeline contract
-wins. Do not document `[SCENE …]` syntax in style files — the grounder pass
-prompt is the single source of truth for that.
+wins. Do not redefine `[ANCHOR]` semantics in style files — `script_contract.py`
+and the Stage 2 planner prompt are the single source of truth for that.
 
 ---
 
@@ -79,13 +79,13 @@ Every style emits a script with these structural markers, in this order:
 **What styles must NOT vary:**
 - The marker names `[TITLE]`, `[HOOK]`, `[ACT N]`, `[CLOSING]`. Nothing else is recognized as structural.
 - The 4-act count. Three or five acts will not be parsed correctly.
-- Sub-markers like `[SELF-INTRO]`, `[BROLL]`, `[BEAT]` (the writer pass uses `[BEAT N]` internally and they are replaced with `[SCENE …]` by the grounder pass — no other sub-markers are honored downstream). Style-specific sub-markers must be expressed *inside* an act, not as a peer to it.
-- The `[SCENE …]` marker format — see §5 below.
+- The `[ANCHOR ranges="..."]` marker format — see §5 below. Style-specific sub-markers (`[SELF-INTRO]`, `我叫[name]`, etc.) must be expressed *inside* an act and *under* an `[ANCHOR]` block, not as peer structural markers.
 
-**Beat granularity (writer pass):**
-- Aim for 30-60 `[BEAT N]` blocks across the whole script.
-- Each beat is one breathable spoken sentence or one short paragraph (~30-90 Chinese chars).
-- One beat → one `[SCENE …]` marker after the grounder pass → one cut in Stage 5.
+**Anchor granularity:**
+- Aim for 30-100 `[ANCHOR]` blocks across the whole script. Exact count depends on the style's pace and target duration; longer/denser styles use more.
+- Each anchor is one narrative beat — one breathable spoken sentence or short paragraph whose chars match the anchor's source-shot duration via `chars(narration) ≤ sum(range_seconds) × chars_per_second`.
+- Each anchor's total duration (sum of its range durations) must be ≤ 12s. Longer beats split into consecutive anchors.
+- Each individual range must stay inside ONE source shot — no shot-boundary crossings. Multi-shot beats use multi-range anchors with one range per shot.
 
 ---
 
@@ -116,24 +116,32 @@ should be additive to, not in conflict with, the six above.
 
 ---
 
-## 5. Scene-marker format is owned by the prompt, not the style
+## 5. Anchor-marker format is owned by the prompt, not the style
 
-Earlier versions of this folder documented a legacy `[SCENE: HH:MM:SS-HH:MM:SS]`
-format inside each style's "Script Output Format" section. **Don't do this in
-new styles.** The grounder-pass prompt in `app/pipeline/stage2_generate_script.py`
-prescribes the canonical attribute form:
+The Stage 2 planner-writer prompt in `app/pipeline/stage2_generate_script.py`
+prescribes the canonical anchor form:
 
 ```
-[SCENE start=HH:MM:SS.mmm end=HH:MM:SS.mmm source=srt|visual confidence=0.00 evidence=srt:NNN|visual:NNN]
-[SCENE source=ungrounded confidence=0.00 evidence=none]    # for ungrounded beats
+[ANCHOR ranges="HH:MM:SS.mmm-HH:MM:SS.mmm" characters="Name A|Name B"]
+narration text bounded by sum_of_range_seconds × chars_per_second
+
+[ANCHOR ranges="HH:MM:SS.mmm-HH:MM:SS.mmm, HH:MM:SS.mmm-HH:MM:SS.mmm"]
+narration spanning two consecutive shots — multi-range anchor
 ```
 
-Style files may *show* a placeholder `[SCENE …]` in their output skeleton (so
-the LLM sees one structural example), but should not redefine its attributes,
-and must not use the legacy two-timestamp form for new styles.
+Hard contract (enforced by `validate_anchored_script` and the prompt):
 
-The script_contract parser still accepts the legacy form for compatibility with
-existing scripts; for new work, write to the attribute form only.
+- `ranges` is one or more chronological `start-end` pairs, comma-separated.
+- Range timestamps must come from `[shot:NNN]` lines in the timeline (not `[srt:NNN]`).
+- Each range stays inside ONE source shot. The validator rejects any range that crosses a shot boundary detected by Stage 0.
+- Each individual range duration ≤ `MAX_ANCHOR_RANGE_DURATION_S` (12s).
+- Each anchor's total duration (sum of range durations) ≤ `MAX_ANCHOR_TOTAL_DURATION_S` (12s).
+- `characters` is optional, pipe-separated; downstream uses are debug-only.
+- The `[CLOSING]` section contains narration but no `[ANCHOR]` — Stage 6 plays it over the most recent keyframe.
+
+Style files may *show* a placeholder `[ANCHOR ...]` in their output skeleton
+(so the LLM sees one structural example), but should not redefine its
+attributes or relax any of the duration/shot-alignment caps above.
 
 ---
 
@@ -143,15 +151,16 @@ Before adding `styles/<your-style>.md` to the folder, verify:
 
 - [ ] All 12 required sections (0-11) are present and in order.
 - [ ] The output skeleton in §10 uses `[TITLE]` / `[HOOK]` / `[ACT 1-4 - …]` / `[CLOSING]` and nothing else as structural markers.
-- [ ] Style frontmatter declares a Chinese-character window mapped to 7-12 min, with a one-line note explaining the TTS pace / sentence rhythm it assumes (see §4 constraint #5).
+- [ ] Style frontmatter declares a Chinese-character window mapped to 10-15 min, with a one-line note explaining the TTS pace / sentence rhythm it assumes (see §4 constraint #5).
+- [ ] Style frontmatter declares `chars_per_second = N.N` for the planner budget — empirically calibrated to be slightly below the slowest measured TTS chunk for this voice profile.
 - [ ] The four-act table in §4 of the style file sums to a per-act char budget within the style's declared character-count window.
 - [ ] Genre Modulation table is present and covers at least the genres expected for your target movie set.
-- [ ] Hard Constraints section restates the five universal red lines.
+- [ ] Hard Constraints section restates the universal red lines.
 - [ ] Hook section names a specific signature opening (Niu's `注意看`, first-person's in-medias-res confession, etc.) — not a generic "open with a strong scene."
 - [ ] Closing section names a specific shape (sign-off phrase, register shift, etc.) — not just "wrap up."
-- [ ] No section documents `[SCENE …]` attribute syntax. (Showing one as an example in the output skeleton is fine.)
+- [ ] No section redefines `[ANCHOR ...]` attribute semantics or the per-range/per-anchor duration caps. (Showing one example in the output skeleton is fine.)
 - [ ] The style's character-naming convention is explicit (archetype table OR original-names rule) and consistent with §1's table.
-- [ ] If your style has a signature sub-beat (Niu's `废话文学`, first-person's `我叫[name]`), it lives *inside* an act, not as a peer marker.
+- [ ] If your style has a signature sub-beat (Niu's `废话文学`, first-person's `我叫[name]`), it lives *inside* an act, *under* an `[ANCHOR]` block.
 
 A style that fails any of these is not ready for use by Stage 2.
 

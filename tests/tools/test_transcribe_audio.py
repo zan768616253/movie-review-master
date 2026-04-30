@@ -3,7 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.tools.transcribe_audio import collect_input_files, main
+from app.tools.transcribe_audio import (
+    DEFAULT_DEVICE,
+    DEFAULT_MODEL_SIZE,
+    collect_input_files,
+    main,
+)
 
 
 @dataclass
@@ -64,21 +69,54 @@ def test_main_transcribes_directory_with_injected_model(tmp_path: Path):
     second_file.write_text("audio", encoding="utf-8")
 
     fake_model = FakeModel()
+    model_factory_calls: list[tuple[str, str]] = []
+
+    def recording_model_factory(model_size: str, device: str) -> FakeModel:
+        model_factory_calls.append((model_size, device))
+        return fake_model
 
     exit_code = main(
         [
             str(source_root),
         ],
-        model_factory=lambda model_size, device: fake_model,
+        model_factory=recording_model_factory,
     )
 
     assert exit_code == 0
     # Transcripts should be next to the mp3 files
     assert (source_root / "first.txt").read_text(encoding="utf-8") == "hello\nworld\n"
     assert (nested_dir / "second.txt").read_text(encoding="utf-8") == "hello\nworld\n"
+    assert model_factory_calls == [(DEFAULT_MODEL_SIZE, DEFAULT_DEVICE)]
     assert len(fake_model.calls) == 2
     first_call_path, first_call_kwargs = fake_model.calls[0]
     assert first_call_path == first_file
     assert first_call_kwargs["beam_size"] == 5
     assert first_call_kwargs["language"] == "zh"
     assert first_call_kwargs["condition_on_previous_text"] is False
+
+
+def test_main_skips_existing_transcripts(tmp_path: Path):
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+
+    existing_source = source_root / "already.mp3"
+    existing_source.write_text("audio", encoding="utf-8")
+    existing_output = existing_source.with_suffix(".txt")
+    existing_output.write_text("preexisting transcript\n", encoding="utf-8")
+
+    model_factory_calls: list[tuple[str, str]] = []
+
+    def recording_model_factory(model_size: str, device: str) -> FakeModel:
+        model_factory_calls.append((model_size, device))
+        return FakeModel()
+
+    exit_code = main(
+        [
+            str(source_root),
+        ],
+        model_factory=recording_model_factory,
+    )
+
+    assert exit_code == 0
+    assert existing_output.read_text(encoding="utf-8") == "preexisting transcript\n"
+    assert model_factory_calls == []

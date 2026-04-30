@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import (
+    DEFAULT_CONFIG,
     PLACEHOLDER_ANCHORED,
     banner,
     build_paths,
@@ -31,6 +32,10 @@ from _common import (
 )
 
 from app.pipeline.common.script_contract import (
+    MAX_ANCHOR_RANGE_DURATION_S,
+    MAX_ANCHOR_TOTAL_DURATION_S,
+    ScriptValidation,
+    build_shot_boundary_set,
     build_timeline_intervals,
     load_visual_segments,
     read_style_chars_per_second,
@@ -39,7 +44,7 @@ from app.pipeline.common.script_contract import (
 from app.pipeline.stage1_parse_subtitles import parse_subtitles
 from app.pipeline.stage2_generate_script import build_planner_prompt
 
-CONFIG = "configs/jujutsu_kaisen_0.toml"
+CONFIG = DEFAULT_CONFIG
 
 
 def seed_placeholders(paths) -> None:
@@ -54,6 +59,10 @@ def report_validation(paths, chars_per_second: float) -> int:
     missing acts, anchor monotonicity, range provenance against real
     SRT/visual timestamps).
 
+    On failure, also writes ``validation_feedback.txt`` next to the
+    anchored script — a ready-to-paste message asking the LLM to fix only
+    the offending anchors.
+
     Returns 0 if no failures (warns tolerated), 1 if any chunk OR any
     structural issue failed.
     """
@@ -64,10 +73,12 @@ def report_validation(paths, chars_per_second: float) -> int:
         subtitle_intervals=[(s.start, s.end) for s in subtitles],
         visual_segments=visual_segments,
     )
+    shot_boundaries = build_shot_boundary_set(visual_segments)
     result = validate_anchored_script(
         text,
         chars_per_second=chars_per_second,
         timeline_intervals=timeline_intervals,
+        shot_boundaries=shot_boundaries,
     )
 
     ok = sum(1 for c in result.chunks if c.severity == "ok")
@@ -98,8 +109,90 @@ def report_validation(paths, chars_per_second: float) -> int:
             print(f"  [{issue.severity}] {issue.code}: {issue.message}")
 
     if result.has_failures:
+        feedback_path = write_validation_feedback(paths, result, chars_per_second)
+        print(f"\nFix-request written to: {feedback_path}")
+        print("Paste it into your LLM, paste the corrected anchors back into")
+        print(f"  {paths.anchored_script}")
+        print("then re-run this step.")
         return 1
+
+    # Validation passed — clear any stale fix-request from a previous failed run
+    # so the workspace doesn't show a phantom open issue.
+    stale_feedback = paths.stage2_dir / "validation_feedback.txt"
+    if stale_feedback.exists():
+        stale_feedback.unlink()
     return 0
+
+
+def write_validation_feedback(
+    paths,
+    result: ScriptValidation,
+    chars_per_second: float,
+) -> Path:
+    """Write a ready-to-paste fix-request listing every failing anchor.
+
+    The file goes to ``stage2/validation_feedback.txt`` and is structured
+    so the planner LLM can see exactly which anchors broke which rule and
+    regenerate only those — keeping the rest of the script untouched.
+    """
+    lines: list[str] = []
+    lines.append(
+        "The previous anchored script you produced has issues that violate "
+        "the hard constraints from the original prompt. Please regenerate "
+        "ONLY the affected anchors below, keeping every other anchor and all "
+        "narration text unchanged. Re-output the COMPLETE updated script."
+    )
+    lines.append("")
+    lines.append("ISSUES")
+    lines.append("------")
+
+    n = 0
+    for chunk in result.failures():
+        n += 1
+        lines.append(
+            f"{n}. [budget_overrun] chunk {chunk.index}: narration is "
+            f"{chunk.narration_chars} chars vs budget {chunk.budget_chars} "
+            f"({chunk.overrun_ratio:.2f}× over — cap is 1.10×)."
+        )
+        lines.append(f"   Anchor: {chunk.anchor.raw}")
+        lines.append("   Fix: shrink the narration text under this anchor; do not widen the ranges.")
+        lines.append("")
+
+    for issue in result.fail_issues():
+        n += 1
+        lines.append(f"{n}. [{issue.code}] {issue.message}")
+        lines.append("")
+
+    lines.append("REMINDER OF CONSTRAINTS")
+    lines.append("-----------------------")
+    lines.append(
+        f"- Each individual range must be ≤ {int(MAX_ANCHOR_RANGE_DURATION_S)} seconds."
+    )
+    lines.append(
+        f"- Each anchor's total duration (sum of range durations) must be "
+        f"≤ {int(MAX_ANCHOR_TOTAL_DURATION_S)} seconds. If a beat needs more "
+        f"screen time, split it into two consecutive anchors."
+    )
+    lines.append(
+        "- Each range must stay inside ONE [shot:NNN] from the timeline. A "
+        "range that crosses a shot boundary is rejected as a hard cut "
+        "mid-narration."
+    )
+    lines.append(
+        "- All range timestamps must come from [shot:NNN] lines in the "
+        "original prompt — never from [srt:NNN] lines, never invent times."
+    )
+    lines.append(
+        f"- Per anchor: chars(narration) ≤ sum(range_seconds) × "
+        f"{chars_per_second} × 1.10."
+    )
+    lines.append(
+        "- Anchors must stay in chronological order across the script."
+    )
+
+    feedback_path = paths.stage2_dir / "validation_feedback.txt"
+    feedback_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return feedback_path
 
 
 def run() -> int:

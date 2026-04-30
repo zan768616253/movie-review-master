@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 
 from app.pipeline.common.script_contract import (
+    MAX_ANCHOR_RANGE_DURATION_S,
+    MAX_ANCHOR_TOTAL_DURATION_S,
     AnchorMarker,
+    build_shot_boundary_set,
     build_timeline_intervals,
     parse_anchor_marker,
     parse_range_list,
@@ -398,6 +401,175 @@ def test_validator_skips_provenance_when_timeline_not_supplied() -> None:
     )
     result = validate_anchored_script(script, chars_per_second=5.0, timeline_intervals=None)
     assert not [i for i in result.issues if i.code == "range_provenance"]
+
+
+def test_validator_fails_on_single_anchor_range_that_is_too_long() -> None:
+    # Reproduces the SPL II planner-typo bug: a range whose end timestamp
+    # leaks into the next hour. Provenance can't catch this because the
+    # oversized window still overlaps real timeline entries.
+    script = (
+        "[TITLE] Demo\n"
+        '[ANCHOR ranges="00:10:00-00:12:30"]\n'  # 150s — well over the 12s cap
+        + "x" * 20 + "\n"
+    )
+    result = validate_anchored_script(script, chars_per_second=5.0)
+    too_long = [i for i in result.issues if i.code == "range_too_long"]
+    assert len(too_long) == 1
+    assert result.has_failures
+
+
+# --- Shot-aware contract: anchor total duration cap -----------------------
+
+
+def test_validator_fails_on_anchor_total_duration_over_cap() -> None:
+    # Three sub-12s ranges that sum to 18s — each individual range is
+    # legal but the multi-range anchor as a whole exceeds the 12s cap.
+    # Within-anchor drift would exceed ~3s; split into two anchors.
+    script = (
+        "[TITLE] Demo\n"
+        '[ANCHOR ranges="00:00:00-00:00:06, 00:00:10-00:00:16, 00:00:20-00:00:26"]\n'
+        + "x" * 80 + "\n"
+    )
+    result = validate_anchored_script(script, chars_per_second=5.0)
+    too_long = [i for i in result.issues if i.code == "anchor_too_long"]
+    assert len(too_long) == 1
+    assert "18.0s" in too_long[0].message
+    assert result.has_failures
+
+
+def test_validator_passes_anchor_total_exactly_at_cap() -> None:
+    # 12s total is the cap, not over it.
+    script = (
+        "[TITLE] Demo\n"
+        '[ANCHOR ranges="00:00:00-00:00:06, 00:00:10-00:00:16"]\n'
+        + "x" * 40 + "\n"
+    )
+    result = validate_anchored_script(script, chars_per_second=5.0)
+    assert not [i for i in result.issues if i.code == "anchor_too_long"]
+
+
+def test_validator_constants_match_each_other() -> None:
+    # Both caps are tied to the same shot-aware design intent. They can
+    # diverge in the future, but for now they should be equal so the
+    # validator's individual-range and total-anchor checks describe the
+    # same audience-comfort budget.
+    assert MAX_ANCHOR_RANGE_DURATION_S == MAX_ANCHOR_TOTAL_DURATION_S
+
+
+# --- Shot-aware contract: range-shot-crossing detection -------------------
+
+
+def test_build_shot_boundary_set_collects_segment_edges_and_inner_cuts() -> None:
+    segments = [
+        {
+            "start": "00:00:10.000",
+            "end": "00:00:18.000",
+            "shot_boundaries_s": [],
+        },
+        {
+            "start": "00:00:18.000",  # also a shot cut (between segs)
+            "end": "00:00:30.000",
+            "shot_boundaries_s": [22.0, 25.5],
+        },
+    ]
+    boundaries = build_shot_boundary_set(segments)
+    # 10.0 (seg-A start, but it's the first one — let's see) + 18 + 22 + 25.5 + 30
+    # build_shot_boundary_set excludes near-zero starts; 10s is far from 0 so kept.
+    assert boundaries == [10.0, 18.0, 22.0, 25.5, 30.0]
+
+
+def test_build_shot_boundary_set_skips_near_zero_movie_start() -> None:
+    segments = [
+        {"start": "00:00:00.000", "end": "00:00:08.000", "shot_boundaries_s": []},
+    ]
+    # The very first segment starts at t=0 (movie start). That's not a cut,
+    # so it should not appear in the boundary set.
+    assert build_shot_boundary_set(segments) == [8.0]
+
+
+def test_validator_fails_when_range_crosses_shot_boundary() -> None:
+    # Shot boundaries at 18.0 and 30.0. Range 10-25 contains 18.0 strictly
+    # inside (10 + 0.3 < 18 < 25 - 0.3) → failed range_shot_crossing.
+    boundaries = [10.0, 18.0, 30.0]
+    script = (
+        "[TITLE] Demo\n"
+        '[ANCHOR ranges="00:00:10-00:00:25"]\n'  # crosses 18s
+        + "x" * 40 + "\n"
+    )
+    result = validate_anchored_script(
+        script, chars_per_second=5.0, shot_boundaries=boundaries,
+    )
+    crossings = [i for i in result.issues if i.code == "range_shot_crossing"]
+    assert len(crossings) == 1
+    assert "00:00:18" in crossings[0].message
+    assert result.has_failures
+
+
+def test_validator_passes_range_inside_one_shot() -> None:
+    # Range 10-17.5 sits inside the [10, 18] shot — no boundary inside it.
+    boundaries = [10.0, 18.0, 30.0]
+    script = (
+        "[TITLE] Demo\n"
+        '[ANCHOR ranges="00:00:10-00:00:17.500"]\n'
+        + "x" * 30 + "\n"
+    )
+    result = validate_anchored_script(
+        script, chars_per_second=5.0, shot_boundaries=boundaries,
+    )
+    assert not [i for i in result.issues if i.code == "range_shot_crossing"]
+
+
+def test_validator_tolerance_forgives_boundary_at_range_edge() -> None:
+    # A boundary that lines up with the range's edge (within tolerance)
+    # is "at the edge", not "strictly inside". Range 10.0-18.1 is treated
+    # as ending at the 18.0 cut, not crossing into the next shot.
+    boundaries = [10.0, 18.0, 30.0]
+    script = (
+        "[TITLE] Demo\n"
+        '[ANCHOR ranges="00:00:10-00:00:18.100"]\n'
+        + "x" * 30 + "\n"
+    )
+    result = validate_anchored_script(
+        script, chars_per_second=5.0, shot_boundaries=boundaries,
+    )
+    assert not [i for i in result.issues if i.code == "range_shot_crossing"]
+
+
+def test_validator_skips_shot_check_when_boundaries_not_supplied() -> None:
+    # Same range that would cross a shot if boundaries were known —
+    # without boundaries we skip the check entirely (caller has no
+    # ground truth).
+    script = (
+        "[TITLE] Demo\n"
+        '[ANCHOR ranges="00:00:10-00:00:25"]\n'
+        + "x" * 40 + "\n"
+    )
+    result = validate_anchored_script(
+        script, chars_per_second=5.0, shot_boundaries=None,
+    )
+    assert not [i for i in result.issues if i.code == "range_shot_crossing"]
+
+
+def test_validator_flags_shot_crossing_per_offending_range() -> None:
+    # A multi-range anchor where two ranges each cross a different cut.
+    boundaries = [10.0, 18.0, 22.0, 30.0]
+    script = (
+        "[TITLE] Demo\n"
+        '[ANCHOR ranges="00:00:10-00:00:20, 00:00:21-00:00:25"]\n'  # crosses 18 AND nothing
+        + "x" * 30 + "\n"
+    )
+    # First range crosses 18; second range crosses 22.
+    script_two = (
+        "[TITLE] Demo\n"
+        '[ANCHOR ranges="00:00:11-00:00:19, 00:00:21-00:00:25"]\n'
+        + "x" * 30 + "\n"
+    )
+    result = validate_anchored_script(
+        script_two, chars_per_second=5.0, shot_boundaries=boundaries,
+    )
+    crossings = [i for i in result.issues if i.code == "range_shot_crossing"]
+    # Each offending range is reported once.
+    assert len(crossings) == 2
 
 
 def test_build_timeline_intervals_combines_srt_and_visuals() -> None:

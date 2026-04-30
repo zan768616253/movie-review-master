@@ -1,17 +1,21 @@
 import json
 import time
-import pytest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from app.pipeline.stage0_index_visuals import build_parser
+import pytest
+
+from app.pipeline.stage0_index_visuals import _build_strategy, build_parser
 from app.pipeline.stage0_indexers.base import (
     seconds_to_timestamp,
     snap_to_shot_boundaries,
     timestamp_to_seconds,
     merge_segments,
 )
+from app.pipeline.stage0_indexers.shared import build_prompt
 from app.pipeline.stage0_indexers.gemini import GeminiStrategy
 from app.pipeline.stage0_indexers.gemini import build_timestamp_drawtext_filter
+from app.pipeline.stage0_indexers.openrouter import OpenRouterStrategy
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +71,49 @@ class TestMergeSegments:
         chunk = [{"start": "00:00:00.000", "end": "00:00:03.000", "extra": "kept"}]
         merged = merge_segments([chunk], 600.0)
         assert merged[0]["extra"] == "kept"
+
+    def test_shifts_inner_shot_boundaries_to_absolute_time(self):
+        # Regression: ``snap_to_shot_boundaries`` populates ``shot_boundaries_s``
+        # with chunk-local seconds. Pre-2026-04-30 ``merge_segments`` shifted
+        # ``start``/``end`` but not the inner-cut list, so 96% of inner cuts
+        # ended up pointing one chunk earlier than their parent segment.
+        chunk_0 = [{
+            "start": "00:00:30.000", "end": "00:00:42.000", "summary": "s0",
+            "shot_boundaries_s": [33.0, 38.0],
+        }]
+        chunk_1 = [{
+            "start": "00:00:30.000", "end": "00:00:42.000", "summary": "s1",
+            "shot_boundaries_s": [33.0, 38.0],  # chunk-local seconds (same numbers!)
+        }]
+        merged = merge_segments([chunk_0, chunk_1], 300.0)
+        # Chunk 0 (offset 0): boundaries unchanged.
+        assert merged[0]["shot_boundaries_s"] == [33.0, 38.0]
+        # Chunk 1 (offset 300): boundaries shifted into absolute time and
+        # now fall STRICTLY INSIDE the segment's absolute window.
+        seg1 = merged[1]
+        assert seg1["start"] == "00:05:30.000"
+        assert seg1["end"] == "00:05:42.000"
+        assert seg1["shot_boundaries_s"] == [333.0, 338.0]
+
+    def test_handles_empty_inner_boundaries(self):
+        chunk = [{
+            "start": "00:00:00.000", "end": "00:00:05.000", "summary": "s",
+            "shot_boundaries_s": [],
+        }]
+        merged = merge_segments([chunk, chunk], 300.0)
+        assert merged[0]["shot_boundaries_s"] == []
+        assert merged[1]["shot_boundaries_s"] == []
+
+    def test_drops_unparseable_inner_boundary_entries(self):
+        # snap_to_shot_boundaries should never emit non-numeric entries, but
+        # an external migration / hand-edit might. The shifter must skip them
+        # rather than crash the whole pipeline.
+        chunk = [{
+            "start": "00:00:00.000", "end": "00:00:10.000", "summary": "s",
+            "shot_boundaries_s": [3.0, "bad", None, 7.0],
+        }]
+        merged = merge_segments([chunk], 300.0)  # offset 0 for chunk 0
+        assert merged[0]["shot_boundaries_s"] == [3.0, 7.0]
 
 
 class TestSnapToShotBoundaries:
@@ -124,6 +171,18 @@ def _build_fake_gemini_client(response_text: str) -> MagicMock:
     mock_response.text = response_text
     mock_client.models.generate_content.return_value = mock_response
     return mock_client
+
+
+def _build_fake_openrouter_response(response_text: str) -> MagicMock:
+    mock_http_response = MagicMock()
+    mock_http_response.read.return_value = json.dumps({
+        "choices": [{"message": {"content": response_text}}],
+    }).encode("utf-8")
+
+    mock_context_manager = MagicMock()
+    mock_context_manager.__enter__.return_value = mock_http_response
+    mock_context_manager.__exit__.return_value = False
+    return mock_context_manager
 
 
 class TestGeminiStrategy:
@@ -238,9 +297,72 @@ class TestGeminiStrategy:
         assert results[1]["start"] == "00:05:00.000"
 
 
+class TestOpenRouterStrategy:
+    @patch.object(OpenRouterStrategy, "_detect_shot_boundaries", return_value=[])
+    @patch.object(OpenRouterStrategy, "_get_video_duration", return_value=240.0)
+    @patch.object(OpenRouterStrategy, "_extract_chunk")
+    @patch("app.pipeline.stage0_indexers.openrouter.urllib.request.urlopen")
+    def test_index_video_splits_and_merges(
+        self, mock_urlopen, mock_extract, mock_duration, mock_boundaries, tmp_path,
+    ):
+        tmp_idx_dir = tmp_path / "tmp"
+        tmp_idx_dir.mkdir()
+
+        def fake_extract(_video_path, _start_s, _duration_s, out_path):
+            out_path.write_bytes(b"fake-video")
+
+        mock_extract.side_effect = fake_extract
+
+        mock_urlopen.return_value = _build_fake_openrouter_response(json.dumps([{
+            "start": "00:00:00.000", "end": "00:00:03.000", "summary": "test",
+            "ocr_text": "", "characters": []
+        }]))
+
+        strategy = OpenRouterStrategy(api_key="fake")
+        results = strategy.index_video(tmp_path / "movie.mp4", tmp_idx_dir)
+
+        assert len(results) == 2
+        assert mock_extract.call_count == 2
+        assert results[0]["start"] == "00:00:00.000"
+        assert results[1]["start"] == "00:02:00.000"
+
+    @patch("app.pipeline.stage0_indexers.openrouter.urllib.request.urlopen")
+    def test_index_chunk_sends_inline_video_and_json_schema(self, mock_urlopen, tmp_path):
+        mock_urlopen.return_value = _build_fake_openrouter_response(json.dumps([]))
+
+        chunk_path = tmp_path / "chunk.mp4"
+        chunk_path.write_bytes(b"fake-video")
+
+        strategy = OpenRouterStrategy(api_key="fake")
+        strategy._index_chunk(chunk_path)
+
+        request = mock_urlopen.call_args.args[0]
+        payload = json.loads(request.data.decode("utf-8"))
+        content = payload["messages"][0]["content"]
+
+        assert payload["model"] == "qwen/qwen2.5-vl-72b-instruct"
+        assert payload["response_format"]["type"] == "json_schema"
+        assert payload["provider"]["require_parameters"] is True
+        assert content[0]["type"] == "text"
+        assert "burned into the TOP-LEFT corner" in content[0]["text"]
+        assert content[1]["type"] == "video_url"
+        assert content[1]["video_url"]["url"].startswith("data:video/mp4;base64,")
+
+
 def test_stage0_parser_accepts_workers_flag():
     args = build_parser().parse_args(["--video", "movie.mp4", "--workers", "3"])
     assert args.workers == 3
+
+
+def test_stage0_parser_accepts_strategy_flag():
+    args = build_parser().parse_args(["--video", "movie.mp4", "--strategy", "openrouter"])
+    assert args.strategy == "openrouter"
+
+
+def test_build_strategy_returns_openrouter_strategy():
+    strategy = _build_strategy("openrouter", max_workers=2)
+    assert isinstance(strategy, OpenRouterStrategy)
+    assert strategy.max_workers == 2
 
 
 def test_build_timestamp_drawtext_filter_omits_fontfile_when_default_font_missing(monkeypatch, tmp_path):
@@ -253,6 +375,66 @@ def test_build_timestamp_drawtext_filter_omits_fontfile_when_default_font_missin
 
     assert "fontfile=" not in drawtext_filter
     assert drawtext_filter.startswith("drawtext=text=")
+
+
+# ---------------------------------------------------------------------------
+# build_prompt — synopsis-aware Cast Reference branch
+# ---------------------------------------------------------------------------
+
+
+class TestBuildPrompt:
+    def test_no_synopsis_uses_conservative_character_rule(self):
+        prompt = build_prompt()
+        assert "Cast Reference" not in prompt
+        # Original conservative rule: visual re-id only, no franchise guessing.
+        assert "visually re-identify" in prompt
+        assert "NEVER guess from general knowledge" in prompt
+
+    def test_empty_synopsis_treated_as_no_synopsis(self):
+        # Whitespace-only synopsis input is the no-reference case.
+        assert build_prompt("   \n  ") == build_prompt("")
+
+    def test_synopsis_inlines_cast_reference_block(self):
+        synopsis = "## Main Characters\n- Yuta: protagonist\n- Rika: cursed spirit"
+        prompt = build_prompt(synopsis)
+        assert "<<<CAST_REFERENCE_START>>>" in prompt
+        assert "Yuta: protagonist" in prompt
+        assert "<<<CAST_REFERENCE_END>>>" in prompt
+
+    def test_synopsis_swaps_in_reference_grounded_character_rule(self):
+        synopsis = "Yuta: protagonist"
+        prompt = build_prompt(synopsis)
+        # Reference-grounded rule: VLM may name characters from the cast
+        # but must not introduce ones outside it.
+        assert "match them to an entry in the Cast Reference below" in prompt
+        assert "do NOT introduce any character not on it" in prompt
+        # The conservative no-synopsis rule must be GONE — otherwise the VLM
+        # gets contradictory instructions.
+        assert "NEVER guess from general knowledge" not in prompt
+
+
+def test_gemini_strategy_uses_synopsis_when_provided(tmp_path):
+    strategy = GeminiStrategy(api_key="fake", synopsis_text="Yuta: protagonist")
+    assert "Cast Reference" in strategy.prompt
+    assert "Yuta: protagonist" in strategy.prompt
+
+
+def test_openrouter_strategy_uses_synopsis_when_provided():
+    strategy = OpenRouterStrategy(api_key="fake", synopsis_text="Yuta: protagonist")
+    assert "Cast Reference" in strategy.prompt
+
+
+def test_strategy_without_synopsis_keeps_conservative_rule():
+    strategy = GeminiStrategy(api_key="fake")
+    assert "Cast Reference" not in strategy.prompt
+    assert "NEVER guess from general knowledge" in strategy.prompt
+
+
+def test_stage0_parser_accepts_synopsis_flag():
+    args = build_parser().parse_args([
+        "--video", "movie.mp4", "--synopsis", "synopsis.md",
+    ])
+    assert args.synopsis == Path("synopsis.md")
 
 
 @patch("app.pipeline.stage0_indexers.gemini.genai")

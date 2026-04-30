@@ -10,7 +10,7 @@ from typing import Sequence
 
 from app.pipeline.common.json_io import dump_json
 from app.pipeline.common.script_contract import get_video_duration, validate_visual_segments
-from app.pipeline.stage0_indexers import GeminiStrategy
+from app.pipeline.stage0_indexers import GeminiStrategy, OpenRouterStrategy, VisualIndexerStrategy
 
 
 def _positive_int(value: str) -> int:
@@ -23,19 +23,44 @@ def _positive_int(value: str) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="index-visuals",
-        description="Stage 0: Index visuals using Gemini.",
+        description="Stage 0: Index visuals using a configured VLM strategy.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--video", type=Path, required=True, help="Path to full movie file")
     parser.add_argument("--output", type=Path, help="Path to output visual_segments.json")
     parser.add_argument("--tmp-dir", type=Path, default=Path("tmp/indexing"), help="Temp directory for chunks")
     parser.add_argument(
+        "--strategy",
+        choices=["gemini", "openrouter"],
+        default="gemini",
+        help="Visual indexing backend to use",
+    )
+    parser.add_argument(
         "--workers",
         type=_positive_int,
         default=5,
-        help="Parallel chunk workers for uncached Gemini requests",
+        help="Parallel chunk workers for uncached provider requests",
+    )
+    parser.add_argument(
+        "--synopsis",
+        type=Path,
+        default=None,
+        help=(
+            "Optional path to a markdown synopsis with cast list. When present, "
+            "the VLM is allowed to label characters using the cast as ground truth "
+            "(consistent names across chunks); without it, the VLM falls back to "
+            "the conservative per-chunk re-identification rule."
+        ),
     )
     return parser
+
+
+def _build_strategy(name: str, max_workers: int, synopsis_text: str = "") -> VisualIndexerStrategy:
+    if name == "gemini":
+        return GeminiStrategy(max_workers=max_workers, synopsis_text=synopsis_text)
+    if name == "openrouter":
+        return OpenRouterStrategy(max_workers=max_workers, synopsis_text=synopsis_text)
+    raise ValueError(f"Unsupported strategy: {name}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -48,7 +73,16 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args.tmp_dir.mkdir(parents=True, exist_ok=True)
 
-    strategy = GeminiStrategy(max_workers=args.workers)
+    synopsis_text = ""
+    if args.synopsis is not None:
+        synopsis_path = args.synopsis.expanduser().resolve()
+        if not synopsis_path.exists():
+            print(f"Error: --synopsis file not found: {synopsis_path}")
+            return 1
+        synopsis_text = synopsis_path.read_text(encoding="utf-8")
+        print(f"Cast Reference attached from: {synopsis_path}")
+
+    strategy = _build_strategy(args.strategy, args.workers, synopsis_text=synopsis_text)
 
     try:
         raw_segments = strategy.index_video(video_path, args.tmp_dir)

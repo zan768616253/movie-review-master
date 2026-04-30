@@ -3,9 +3,13 @@ from pathlib import Path
 from app.pipeline.common.json_io import dump_json
 from app.pipeline.stage3_generate_audio import parse_script_chunks, write_manifest
 from app.pipeline.stage5_render_video import (
+    clamp_extension_against_black,
     collect_shot_boundaries_for_range,
+    detect_black_intervals,
     main,
     plan_smart_trim,
+    subtract_black_from_range,
+    write_subtitle_script,
 )
 
 
@@ -61,15 +65,174 @@ def test_plan_smart_trim_falls_back_to_mid_shot_when_no_boundary_fits() -> None:
     assert kind == "mid-shot-tail"
 
 
-def test_plan_smart_trim_drops_whole_last_range_when_excess_exceeds_it() -> None:
+def test_plan_smart_trim_spreads_excess_across_multiple_ranges() -> None:
     # Two ranges: [10–14] (4s) and [20–22] (2s); audio 4s; excess 2s.
-    # Excess equals the last range; drop it, recurse on [10–14] alone.
-    # Recursive call sees total == audio → returns "exact".
+    # The planner picked these two ranges to anchor distinct beats — the
+    # narration tells viewers about both. So we trim each range
+    # proportionally rather than dropping the second one entirely. Each
+    # range loses excess × (range_budget / total_budget).
     ranges = [(10.0, 14.0), (20.0, 22.0)]
     shots = [[], []]
     kept, kind = plan_smart_trim(ranges, shots, audio_duration_s=4.0)
-    assert kept == [(10.0, 14.0)]
-    assert kind == "exact"
+    assert kept[0] == (10.0, 14.0 - 2.0 * (2.5 / 3.0))
+    assert kept[1] == (20.0, 22.0 - 2.0 * (0.5 / 3.0))
+    # Both ranges still represented.
+    assert len(kept) == 2
+    assert kind == "mid-shot-spread"
+
+
+def test_plan_smart_trim_snaps_each_range_to_its_own_shot_boundary() -> None:
+    # Two ranges; both have shot boundaries available within their cut
+    # windows. The proportional cut snaps each range independently.
+    ranges = [(10.0, 20.0), (30.0, 40.0)]  # 10s + 10s = 20s
+    # Shot boundaries inside each range. Audio = 16s → excess = 4s,
+    # 2s should come from each range. Cut in r0: target end = 18.0
+    # (boundary at 17 is the latest ≤ 18.8 → snap there). r1: target
+    # end = 38.0 (boundary at 38 fits, snap there).
+    shots = [[15.0, 17.0], [35.0, 38.0]]
+    kept, kind = plan_smart_trim(ranges, shots, audio_duration_s=16.0)
+    assert kept == [(10.0, 17.0), (30.0, 38.0)]
+    assert kind == "shot-aligned-spread"
+
+
+def test_plan_smart_trim_drops_last_range_only_when_spread_cannot_absorb() -> None:
+    # Three short ranges: [10–12] [20–22] [30–32], total 6s, audio 1s.
+    # Excess = 5s. Per-range budget = 0.5s × 3 = 1.5s, far less than 5s.
+    # Spread is impossible; fall back to dropping the last range and
+    # recursing. After dropping one, total=4s, still > audio + budget;
+    # drop another. After two drops, total=2s, budget=0.5s, still > 1s
+    # → drops to single range, then single-range path trims to 1s.
+    ranges = [(10.0, 12.0), (20.0, 22.0), (30.0, 32.0)]
+    shots = [[], [], []]
+    kept, kind = plan_smart_trim(ranges, shots, audio_duration_s=1.0)
+    assert kept == [(10.0, 11.0)]
+    assert kind == "mid-shot-tail"
+
+
+# --- detect_black_intervals -----------------------------------------------
+
+
+def test_detect_black_intervals_parses_ffmpeg_blackdetect_output(
+    tmp_path: Path, monkeypatch
+) -> None:
+    fake_stderr = (
+        "ffmpeg version ... blah\n"
+        "[blackdetect @ 0x1234] black_start:5.0 black_end:11.0 black_duration:6.0\n"
+        "[blackdetect @ 0x1234] black_start:25.5 black_end:27.0 black_duration:1.5\n"
+        "frame=  100 fps=30\n"
+    )
+
+    class FakeProc:
+        stderr = fake_stderr
+
+    def fake_run(cmd, capture_output, text):
+        # Sanity: must invoke the blackdetect filter.
+        assert "-vf" in cmd
+        vf_idx = cmd.index("-vf")
+        assert "blackdetect=" in cmd[vf_idx + 1]
+        return FakeProc()
+
+    monkeypatch.setattr(
+        "app.pipeline.stage5_render_video.subprocess.run", fake_run
+    )
+
+    intervals = detect_black_intervals(tmp_path / "fake.mp4")
+    assert intervals == [(5.0, 11.0), (25.5, 27.0)]
+
+
+def test_detect_black_intervals_returns_empty_when_no_match(
+    tmp_path: Path, monkeypatch
+) -> None:
+    class FakeProc:
+        stderr = "ffmpeg version 5.0\nframe= 100\n"
+
+    monkeypatch.setattr(
+        "app.pipeline.stage5_render_video.subprocess.run",
+        lambda *a, **kw: FakeProc(),
+    )
+
+    assert detect_black_intervals(tmp_path / "fake.mp4") == []
+
+
+# --- subtract_black_from_range --------------------------------------------
+
+
+def test_subtract_black_from_range_passes_through_when_no_black() -> None:
+    assert subtract_black_from_range(10.0, 20.0, 8.0, []) == [(10.0, 20.0)]
+
+
+def test_subtract_black_from_range_splits_around_mid_range_black() -> None:
+    # Range 10-20s in absolute; clip extracted starting at 8.0s; black at
+    # clip-relative 4-12 → absolute 12-20. The range covers 10-20, so
+    # black overlap is 12-20. After clip: [10-12] (2s, kept).
+    out = subtract_black_from_range(
+        range_start_abs=10.0,
+        range_end_abs=20.0,
+        extracted_start_abs=8.0,
+        clip_blacks_rel=[(4.0, 12.0)],
+    )
+    assert out == [(10.0, 12.0)]
+
+
+def test_subtract_black_from_range_keeps_two_sub_ranges_when_black_in_middle() -> None:
+    # Mirror the chunk-26 case: range straddles a fade-to-black baked
+    # into the source. We want to keep both real-footage halves.
+    out = subtract_black_from_range(
+        range_start_abs=100.0,
+        range_end_abs=120.0,
+        extracted_start_abs=98.0,
+        clip_blacks_rel=[(8.0, 14.0)],  # absolute 106-112
+    )
+    assert out == [(100.0, 106.0), (112.0, 120.0)]
+
+
+def test_subtract_black_from_range_drops_short_fragments() -> None:
+    # Range 10-13.4 with black at 11.0-12.0 → fragments [10-11] (1.0s)
+    # and [12-13.4] (1.4s); both below the 1.5s default min_keep, so
+    # nothing survives. Caller should drop the range entirely.
+    out = subtract_black_from_range(
+        range_start_abs=10.0,
+        range_end_abs=13.4,
+        extracted_start_abs=10.0,
+        clip_blacks_rel=[(1.0, 2.0)],
+    )
+    assert out == []
+
+
+# --- clamp_extension_against_black ----------------------------------------
+
+
+def test_clamp_extension_against_black_no_change_when_no_black() -> None:
+    assert clamp_extension_against_black(
+        range_end_abs=100.0,
+        extended_end_abs=103.0,
+        extracted_start_abs=98.0,
+        clip_blacks_rel=[],
+    ) == 103.0
+
+
+def test_clamp_extension_stops_at_first_black_in_post_handle() -> None:
+    # Mirror chunk-22 case: requested range ends at 100; extension wants
+    # to push to 103 to fill audio shortfall; but the source has black
+    # starting at clip-relative 4.0 (absolute 102.0). Clamp to 102.
+    clamped = clamp_extension_against_black(
+        range_end_abs=100.0,
+        extended_end_abs=103.0,
+        extracted_start_abs=98.0,
+        clip_blacks_rel=[(4.0, 6.5)],  # absolute 102-104.5
+    )
+    assert clamped == 102.0
+
+
+def test_clamp_extension_ignores_black_outside_extension_window() -> None:
+    # Black is before the requested range; extension is clean.
+    clamped = clamp_extension_against_black(
+        range_end_abs=100.0,
+        extended_end_abs=103.0,
+        extracted_start_abs=95.0,
+        clip_blacks_rel=[(0.0, 2.0)],  # absolute 95-97, well before range_end
+    )
+    assert clamped == 103.0
 
 
 # --- collect_shot_boundaries_for_range ------------------------------------
@@ -94,6 +257,31 @@ def test_collect_shot_boundaries_unions_overlapping_segments() -> None:
     boundaries = collect_shot_boundaries_for_range(10.0, 20.0, visual_segments)
     # Strictly inside (10, 20) → 12.0, 14.0, 18.0; 22 and 65 are outside.
     assert boundaries == [12.0, 14.0, 18.0]
+
+
+def test_write_subtitle_script_creates_styled_bottom_center_dialogue(tmp_path: Path) -> None:
+    subtitle_path = tmp_path / "review_subtitles.ass"
+
+    wrote_file = write_subtitle_script([
+        {
+            "index": 1,
+            "text": "First line\nSecond line",
+            "audio_start_s": 0.0,
+            "audio_end_s": 2.34,
+        },
+        {
+            "index": 2,
+            "text": "   ",
+            "audio_start_s": 2.34,
+            "audio_end_s": 3.0,
+        },
+    ], subtitle_path)
+
+    assert wrote_file is True
+    payload = subtitle_path.read_text(encoding="utf-8")
+    assert "Style: ReviewCaption" in payload
+    assert ",2,140,140,64,1" in payload
+    assert "Dialogue: 0,0:00:00.00,0:00:02.34,ReviewCaption,,0,0,0,,First line Second line" in payload
 
 
 # --- main: end-to-end with new manifest schemas ---------------------------
@@ -218,12 +406,27 @@ def test_main_renders_anchored_chunk_and_closing_keyframe(tmp_path: Path, monkey
         out_path.write_bytes(b"final")
         calls.append(("mux", video_path.name, audio_path.name, out_path.name))
 
+    def fake_write_subtitle_script(manifest, out_path):
+        out_path.write_text("ass", encoding="utf-8")
+        calls.append(("subtitle-script", len(manifest), out_path.name))
+        return True
+
+    def fake_burn_subtitles(video_path, subtitle_path, out_path, codec):
+        out_path.write_bytes(b"subtitled")
+        calls.append(("burn", video_path.name, subtitle_path.name, out_path.name, codec))
+
     monkeypatch.setattr("app.pipeline.stage5_render_video.resolve_encoder", lambda: "fake-codec")
     monkeypatch.setattr("app.pipeline.stage5_render_video.render_excerpt", fake_render_excerpt)
     monkeypatch.setattr("app.pipeline.stage5_render_video.render_stillframe_segment", fake_render_stillframe_segment)
     monkeypatch.setattr("app.pipeline.stage5_render_video.concat_segments", fake_concat_segments)
     monkeypatch.setattr("app.pipeline.stage5_render_video.split_voiceover_to_segment", fake_split_voiceover_to_segment)
+    monkeypatch.setattr("app.pipeline.stage5_render_video.write_subtitle_script", fake_write_subtitle_script)
+    monkeypatch.setattr("app.pipeline.stage5_render_video.burn_subtitles", fake_burn_subtitles)
     monkeypatch.setattr("app.pipeline.stage5_render_video.mux_audio", fake_mux_audio)
+    monkeypatch.setattr(
+        "app.pipeline.stage5_render_video.detect_black_intervals",
+        lambda *a, **kw: [],
+    )
 
     result = main([
         "--manifest", str(files["manifest"]),
@@ -249,7 +452,9 @@ def test_main_renders_anchored_chunk_and_closing_keyframe(tmp_path: Path, monkey
     assert len(split_calls) == 2
 
     # Final mux happens once.
-    assert any(c[0] == "mux" for c in calls)
+    assert ("subtitle-script", 2, "review_subtitles.ass") in calls
+    assert ("burn", "review.silent.mp4", "review_subtitles.ass", "review.subtitled.mp4", "fake-codec") in calls
+    assert ("mux", "review.subtitled.mp4", "voiceover.mp3", "review.mp4") in calls
 
     # Edit manifest is written.
     edit_manifest_path = output_path.parent / "edit_manifest.json"
@@ -337,12 +542,26 @@ def test_main_extends_anchor_chunk_from_post_handle_when_audio_runs_long(
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_bytes(b"final")
 
+    def fake_write_subtitle_script(manifest, out_path):
+        out_path.write_text("ass", encoding="utf-8")
+        return True
+
+    def fake_burn_subtitles(video_path, subtitle_path, out_path, codec):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"subtitled")
+
     monkeypatch.setattr("app.pipeline.stage5_render_video.resolve_encoder", lambda: "fake-codec")
     monkeypatch.setattr("app.pipeline.stage5_render_video.render_excerpt", fake_render_excerpt)
     monkeypatch.setattr("app.pipeline.stage5_render_video.render_stillframe_segment", fake_render_stillframe_segment)
     monkeypatch.setattr("app.pipeline.stage5_render_video.concat_segments", fake_concat_segments)
     monkeypatch.setattr("app.pipeline.stage5_render_video.split_voiceover_to_segment", fake_split_voiceover_to_segment)
+    monkeypatch.setattr("app.pipeline.stage5_render_video.write_subtitle_script", fake_write_subtitle_script)
+    monkeypatch.setattr("app.pipeline.stage5_render_video.burn_subtitles", fake_burn_subtitles)
     monkeypatch.setattr("app.pipeline.stage5_render_video.mux_audio", fake_mux_audio)
+    monkeypatch.setattr(
+        "app.pipeline.stage5_render_video.detect_black_intervals",
+        lambda *a, **kw: [],
+    )
 
     result = main([
         "--manifest", str(manifest_path),
