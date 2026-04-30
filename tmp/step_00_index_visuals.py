@@ -33,12 +33,22 @@ def run() -> int:
     print(f"output        : {paths.visual_segments}")
     print(f"chunk tmp dir : {paths.stage0_dir / 'tmp'}")
 
-    return stage0_main([
+    args = [
         "--video", str(paths.video),
         "--output", str(paths.visual_segments),
         "--tmp-dir", str(paths.stage0_dir / "tmp"),
         "--workers", "5",
-    ])
+    ]
+    # Auto-attach the movie's synopsis as a Cast Reference when available.
+    # This lets the VLM apply consistent character names across chunks
+    # without risking franchise-knowledge over-attribution.
+    if paths.synopsis.exists():
+        print(f"synopsis      : {paths.synopsis}")
+        args += ["--synopsis", str(paths.synopsis)]
+    else:
+        print(f"synopsis      : (none — no Cast Reference will be passed to the VLM)")
+
+    return stage0_main(args)
 
 
 if __name__ == "__main__":

@@ -110,4 +110,16 @@ Stage 2 is now a single planner-writer pass. The files live under
   fill it in.
 3. If you want to preserve the old movie config, save a named copy under
   `tmp/configs/backup/` first.
-4. Run.
+4. **Optional but recommended:** drop `synopsis.md` into the movie folder
+  (`movies/<some_folder>/synopsis.md`) with a plot summary and named cast
+  list. The harness auto-attaches it as:
+   - **Stage 0 Cast Reference** — `step_00_index_visuals.py` passes it to
+     the VLM so character names stay consistent across chunks.
+   - **Stage 2 External Context** — `step_02_generate_script.py` injects
+     it into the planner prompt so the LLM has cultural / plot context
+     it can't infer from raw SRT + visuals.
+
+   With no synopsis present, both steps fall back to their non-synopsis
+   path (the VLM uses the conservative per-chunk re-identification rule;
+   the planner sees a "no synopsis provided" placeholder).
+5. Run.

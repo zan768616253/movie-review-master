@@ -264,13 +264,13 @@ The baseline is deadpan sarcasm, but the *weight* and *flavor* of that sarcasm m
 
 The moviereviewer who does a horror movie in the same tone as a romcom loses the audience who came for the horror. **Register must match expectations.**
 
-### 5.5b Genre Visual Focus — which scene types dominate the hero-clip budget
+### 5.5b Genre Visual Focus — which scene types dominate the anchor budget
 
-Tonal matching isn't enough. The **visual footage** must also skew toward what the audience came for. Rule: a target fraction of your `[SCENE]` markers must point at genre-priority footage, regardless of what the narration literally describes.
+Tonal matching isn't enough. The **visual footage** must also skew toward what the audience came for. Rule: a target fraction of your `[ANCHOR]` blocks must point at genre-priority footage, regardless of what the narration literally describes.
 
-| Genre | Priority visual | Minimum clip budget | What can be deprioritized |
-|-------|-----------------|---------------------|----------------------------|
-| **Action / fight** | Combat shots, impacts, power reveals | **≥40% of total clips** | Talking-head exposition, establishing shots |
+| Genre | Priority visual | Minimum anchor budget | What can be deprioritized |
+|-------|-----------------|------------------------|----------------------------|
+| **Action / fight** | Combat shots, impacts, power reveals | **≥40% of total anchors** | Talking-head exposition, establishing shots |
 | **Horror** | Jump scares, cursed imagery, gore | ≥35% | Daytime normalcy scenes |
 | **Thriller / suspense** | Reveals, building dread, close calls | ≥30% | Over-explanation scenes |
 | **Romance** | Emotional close-ups, touching, looks | ≥30% | Action beats |
@@ -279,23 +279,22 @@ Tonal matching isn't enough. The **visual footage** must also skew toward what t
 | **Supernatural / fantasy** | Power demonstrations, creature reveals | ≥30% | World-building narration |
 | **Crime / heist** | The heist/kill execution, tension moments | ≥30% | Backstory |
 
-**B-roll cross-cuts — how to hit the budget when narration doesn't match.**
+**Cross-cut anchors — how to hit the budget when narration doesn't match.**
 
-When the narration literally describes something non-priority (e.g., "千条叔给小帅的任务很明确" — a teacher explaining to a student), you MUST cross-cut to priority footage during that narration instead of showing a teacher-student talking-head.
+When the narration literally describes something non-priority (e.g., "千条叔给小帅的任务很明确" — a teacher explaining to a student), you can use a **multi-range anchor** that points at priority footage instead of a teacher-student talking-head, as long as the chosen shots collectively support the beat.
 
-Syntax for the script — multiple timestamps per narration block:
+Example — exposition narration over priority (combat) footage:
 
 ```
-[SCENE: 00:19:38-00:19:48]                          # primary — matches narration literal
-[BROLL: 01:11:40-01:11:45, 01:20:00-01:20:05]       # cross-cuts, rotated during narration
+[ANCHOR ranges="00:19:38-00:19:42, 01:11:40-01:11:45, 01:20:00-01:20:03" characters="小帅|千条叔"]
 千条叔给小帅的任务很明确：
 接受小美的诅咒，
 一点一点灌进刀身里...
 ```
 
-`stage5_render_video.py` cycles the primary + B-roll clips to fill the narration duration. The viewer sees a talking-head-intro-shot then two quick fight flashes, even though the narration is pure exposition.
+Each range is one shot; the three together cover ~12s of mostly-combat footage while the narration delivers the exposition. The viewer hears the explanation and sees the powers it concerns.
 
-**Applying this rule to JJK0 (for reference):** the current niu-shu draft has ~14 of 57 clips (~25%) as actual combat — under the 40% action target. Act 1's 11 flashback/setup clips should be cut or cross-cut with fight B-roll. Act 2's exposition (class intros, training) should add fight B-roll from act 2's mission scenes. Fix: insert `[BROLL: ...]` markers for at least half the non-fight clips.
+**Anchor counting:** when computing your priority-genre fraction, count an anchor as "combat" (or whatever priority) if **the dominant visual content of its ranges** is priority footage — even if the narration text on top is exposition. The audience's eyes drive the genre-fit feeling, not the words.
 
 ---
 
@@ -432,7 +431,7 @@ These rules cannot be broken under any circumstances:
 
 ## 10. Script Output Format
 
-This style file is consumed by Stage 2's **writer pass**. Writer-pass output uses `[BEAT N]` markers, not timestamps. The grounder pass replaces each `[BEAT N]` with a `[SCENE …]` marker — that contract is owned by `app/pipeline/stage2_generate_script.py`'s grounder prompt, not this style file.
+This style file is consumed by Stage 2's **single-pass planner-writer**. The planner picks visual anchors AND writes narration in one LLM call. Output uses `[ANCHOR ranges="..."]` markers — each anchor names one or more source-shot ranges, with the narration text below it bounded by `sum(range_seconds) × chars_per_second`.
 
 The structural skeleton:
 
@@ -440,36 +439,39 @@ The structural skeleton:
 [TITLE] 注意看，[short hook summary that becomes the video title]
 
 [HOOK]
-[BEAT 1]
+[ANCHOR ranges="HH:MM:SS-HH:MM:SS" characters="archetype name"]
 注意看，这个男人叫小帅...
 
 [ACT 1 - SETUP]
-[BEAT 2]
-(narrative text)
-[BEAT 3]
-(narrative text — Act 1 totals ~480 characters)
+[ANCHOR ranges="HH:MM:SS-HH:MM:SS"]
+(narrative text — sized to fit sum(range_seconds) × chars_per_second)
+[ANCHOR ranges="HH:MM:SS-HH:MM:SS, HH:MM:SS-HH:MM:SS"]
+(narrative text spanning two consecutive shots — Act 1 totals ~1,000 characters)
 
 [ACT 2 - ESCALATION]
-[BEAT N]
-(narrative text — Act 2 totals ~720 characters)
+[ANCHOR ranges="..."]
+(narrative text — Act 2 totals ~1,500 characters)
 
 [ACT 3 - CLIMAX]
-[BEAT N]
-(narrative text — Act 3 totals ~720 characters)
+[ANCHOR ranges="..."]
+(narrative text — Act 3 totals ~1,500 characters)
 
 [ACT 4 - RESOLUTION]
-[BEAT N]
-(narrative text — Act 4 totals ~480 characters)
+[ANCHOR ranges="..."]
+(narrative text — Act 4 totals ~1,000 characters)
 
 [CLOSING]
-[BEAT N]
+narration with NO [ANCHOR] — plays over a still keyframe
 我们下期再见。
 ```
 
 **Rules for markers:**
-- Each beat is one breathable spoken sentence or a short paragraph (~30-90 Chinese characters). Aim for 50-80 beats total across the script.
-- Structural markers `[TITLE]`, `[HOOK]`, `[ACT N]`, `[CLOSING]` and `[BEAT N]` markers are stripped from the final voiceover but kept for downstream stages and human review.
-- Do NOT emit `[SCENE …]` or `[BROLL]` markers in the writer pass — the grounder pass adds those after evidence-based alignment to the SRT and visual-segment indexes.
+- Each `[ANCHOR]` is one narrative beat. Multi-range anchors group 2-3 source shots that visualize the same beat (e.g., wide → reaction).
+- Each range stays inside ONE source shot (one `[shot:NNN]` from the timeline the planner is given). Range timestamps come from `[shot:NNN]` lines, never from `[srt:NNN]` lines.
+- Each individual range duration ≤ 12s. Each anchor's total duration (sum of range durations) ≤ 12s.
+- The closing chunk has narration but no `[ANCHOR]` — Stage 6 plays it over the most recent keyframe.
+- Structural markers `[TITLE]`, `[HOOK]`, `[ACT N]`, `[CLOSING]` and the `[ANCHOR ...]` lines are stripped from the final voiceover but kept for downstream stages and human review.
+- Aim for 50-100 anchors total across the script (avg ~9-12s of source coverage per anchor at the 12s cap).
 
 ---
 

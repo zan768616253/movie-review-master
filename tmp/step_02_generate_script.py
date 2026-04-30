@@ -33,7 +33,9 @@ from _common import (
 
 from app.pipeline.common.script_contract import (
     MAX_ANCHOR_RANGE_DURATION_S,
+    MAX_ANCHOR_TOTAL_DURATION_S,
     ScriptValidation,
+    build_shot_boundary_set,
     build_timeline_intervals,
     load_visual_segments,
     read_style_chars_per_second,
@@ -71,10 +73,12 @@ def report_validation(paths, chars_per_second: float) -> int:
         subtitle_intervals=[(s.start, s.end) for s in subtitles],
         visual_segments=visual_segments,
     )
+    shot_boundaries = build_shot_boundary_set(visual_segments)
     result = validate_anchored_script(
         text,
         chars_per_second=chars_per_second,
         timeline_intervals=timeline_intervals,
+        shot_boundaries=shot_boundaries,
     )
 
     ok = sum(1 for c in result.chunks if c.severity == "ok")
@@ -161,10 +165,22 @@ def write_validation_feedback(
 
     lines.append("REMINDER OF CONSTRAINTS")
     lines.append("-----------------------")
-    lines.append(f"- Each individual range must be ≤ {int(MAX_ANCHOR_RANGE_DURATION_S)} seconds.")
     lines.append(
-        "- All timestamps must come from the timeline in the original prompt — "
-        "do not invent times."
+        f"- Each individual range must be ≤ {int(MAX_ANCHOR_RANGE_DURATION_S)} seconds."
+    )
+    lines.append(
+        f"- Each anchor's total duration (sum of range durations) must be "
+        f"≤ {int(MAX_ANCHOR_TOTAL_DURATION_S)} seconds. If a beat needs more "
+        f"screen time, split it into two consecutive anchors."
+    )
+    lines.append(
+        "- Each range must stay inside ONE [shot:NNN] from the timeline. A "
+        "range that crosses a shot boundary is rejected as a hard cut "
+        "mid-narration."
+    )
+    lines.append(
+        "- All range timestamps must come from [shot:NNN] lines in the "
+        "original prompt — never from [srt:NNN] lines, never invent times."
     )
     lines.append(
         f"- Per anchor: chars(narration) ≤ sum(range_seconds) × "

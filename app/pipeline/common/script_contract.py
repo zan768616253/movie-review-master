@@ -204,11 +204,25 @@ RATIO_EPSILON = 1e-9
 # flag it (warn for near-miss, fail for fabricated).
 RANGE_PROVENANCE_WARN_S = 1.0
 RANGE_PROVENANCE_FAIL_S = 5.0
-# A single anchor range is expected to represent one shot or one short
-# dialogue beat, not an entire scene or reel. Hero clips run 5-30s; cap at
-# 60s leaves slack for legitimate long takes while catching planner typos
-# in end timestamps (e.g. `00:29:53-01:00:00` where `00:30:00` was meant).
-MAX_ANCHOR_RANGE_DURATION_S = 60.0
+# A single anchor range is expected to represent ONE source shot — a
+# continuous beat in the editor's intended pacing. Most shots run 1-8s;
+# the 12s cap accommodates long takes while catching planner typos in end
+# timestamps (e.g. `00:29:53-01:00:00` where `00:30:00` was meant). Was
+# 60s before the shot-aware overhaul; tightened to keep within-anchor
+# audio-vs-video drift bounded by one shot length.
+MAX_ANCHOR_RANGE_DURATION_S = 12.0
+
+# Hard cap on an anchor's total duration (sum of its range durations).
+# Beyond this the within-anchor drift between narration pace and source-
+# editing pace can exceed ~3s, which becomes audibly out of sync. Pick a
+# new anchor instead of widening an existing one.
+MAX_ANCHOR_TOTAL_DURATION_S = 12.0
+
+# A range "crosses a shot boundary" when an internal cut lies strictly
+# inside (start, end). This tolerance is the float-safety margin around
+# start/end that we forgive — anything within this distance of an edge is
+# considered "at" the edge, not "inside" the range.
+SHOT_BOUNDARY_TOLERANCE_S = 0.3
 
 
 @dataclass
@@ -331,6 +345,89 @@ def _check_range_provenance(
     return worst
 
 
+def build_shot_boundary_set(
+    visual_segments: list[dict[str, object]] | None,
+) -> list[float]:
+    """Collect every shot-boundary timestamp from Stage 0's visual segments.
+
+    Stage 0 snaps each visual segment to ffmpeg-detected shot cuts and also
+    annotates each segment with `shot_boundaries_s` — the cut times that
+    fall strictly inside the (snapped) segment. The full set of "places
+    where a shot cut happens" is therefore:
+
+    - every visual segment's start timestamp (excluding the very first one
+      at t=0, which is the movie start, not a cut)
+    - every visual segment's end timestamp
+    - every entry in any segment's `shot_boundaries_s` list
+
+    Returns sorted, deduplicated absolute seconds. The validator uses this
+    set to reject anchor ranges that cross a cut: if any boundary B falls
+    strictly inside (start, end) — outside a small tolerance window — the
+    range bridges two shots and the audience will perceive a hard cut
+    inside what was supposed to be one continuous beat.
+    """
+    if not visual_segments:
+        return []
+
+    boundaries: set[float] = set()
+    for segment in visual_segments:
+        try:
+            start_s = timestamp_to_seconds(str(segment["start"]))
+            end_s = timestamp_to_seconds(str(segment["end"]))
+        except (KeyError, ValueError):
+            continue
+        if start_s > 0.001:
+            boundaries.add(round(start_s, 3))
+        boundaries.add(round(end_s, 3))
+        for raw in segment.get("shot_boundaries_s") or ():  # type: ignore[union-attr]
+            try:
+                boundaries.add(round(float(raw), 3))
+            except (TypeError, ValueError):
+                continue
+    return sorted(boundaries)
+
+
+def _check_range_shot_alignment(
+    anchor: AnchorMarker,
+    shot_boundaries: list[float] | None,
+    tolerance_s: float = SHOT_BOUNDARY_TOLERANCE_S,
+) -> list[StructureIssue]:
+    """Reject anchor ranges that span a source-movie shot cut.
+
+    A range with one boundary strictly inside (start + tol, end - tol)
+    contains a hard cut from one shot to another. The narration over that
+    range is one continuous sentence, but the visual jumps mid-beat —
+    exactly the within-anchor drift the shot-aware contract was added to
+    prevent. The remedy is to split the offending range into two anchors,
+    or to use a multi-range anchor with each range bounded by one shot.
+
+    Returns a StructureIssue per offending range. Returns an empty list
+    when `shot_boundaries` is None (caller has no Stage 0 data).
+    """
+    if shot_boundaries is None:
+        return []
+    issues: list[StructureIssue] = []
+    for start_ts, end_ts in anchor.ranges:
+        start_s = timestamp_to_seconds(start_ts)
+        end_s = timestamp_to_seconds(end_ts)
+        for boundary in shot_boundaries:
+            if start_s + tolerance_s < boundary < end_s - tolerance_s:
+                issues.append(
+                    StructureIssue(
+                        severity="fail",
+                        code="range_shot_crossing",
+                        message=(
+                            f"anchor range {start_ts}-{end_ts} crosses a shot "
+                            f"boundary at {seconds_to_timestamp(boundary)}; "
+                            f"split it into two anchors or use a multi-range "
+                            f"anchor with each range bounded by one shot"
+                        ),
+                    )
+                )
+                break
+    return issues
+
+
 def build_timeline_intervals(
     subtitle_intervals: list[tuple[float, float]] | None = None,
     visual_segments: list[dict[str, object]] | None = None,
@@ -359,6 +456,7 @@ def validate_anchored_script(
     text: str,
     chars_per_second: float,
     timeline_intervals: list[tuple[float, float]] | None = None,
+    shot_boundaries: list[float] | None = None,
 ) -> ScriptValidation:
     """Walk an anchored script and report per-anchor budgets + structure issues.
 
@@ -373,10 +471,18 @@ def validate_anchored_script(
         - narration text outside any [ANCHOR] /
           [CLOSING] block                          → fail (orphan_narration)
         - anchors not chronologically ordered      → fail (non_monotonic)
+        - anchor.total_seconds > MAX_ANCHOR_TOTAL_
+          DURATION_S                                → fail (anchor_too_long)
 
     Optional check (only when ``timeline_intervals`` is provided):
         - anchor range doesn't overlap any real
           SRT/visual entry                          → warn (≤1s) or fail (>5s)
+
+    Optional check (only when ``shot_boundaries`` is provided):
+        - anchor range crosses a shot cut          → fail (range_shot_crossing)
+          The shot-aware contract: each range must stay inside one source
+          shot so the narration can never describe a beat the audience
+          isn't yet seeing.
 
     Closing chunks (text after `[CLOSING]` with no anchor) are skipped for
     the budget check but DO trigger orphan_narration if encountered before
@@ -486,10 +592,32 @@ def validate_anchored_script(
                         severity="fail",
                         code="range_too_long",
                         message=(
-                            f"anchor range {start_ts}-{end_ts} spans {duration_s:.1f}s; "
+                            f"anchor range {start_ts}-{end_ts} spans {duration_s:.1f}s "
+                            f"(cap is {MAX_ANCHOR_RANGE_DURATION_S:.0f}s); "
                             f"split long beats into multiple short ranges"
                         ),
                     ))
+
+            # Reject anchors whose total duration exceeds the cap. This is
+            # the macro analogue of range_too_long: it bounds the worst-case
+            # within-anchor drift between narration pace and source-edit
+            # pace. Multi-range anchors covering more than ~12s should be
+            # split into two narrative beats.
+            if anchor.total_seconds > MAX_ANCHOR_TOTAL_DURATION_S:
+                issues.append(StructureIssue(
+                    severity="fail",
+                    code="anchor_too_long",
+                    message=(
+                        f"anchor total duration {anchor.total_seconds:.1f}s exceeds the "
+                        f"{MAX_ANCHOR_TOTAL_DURATION_S:.0f}s cap; split into two anchors "
+                        f"so within-anchor sync drift stays bounded"
+                    ),
+                ))
+
+            # Shot-aware check: each range must stay inside ONE source shot.
+            # Stage 0 emits shot boundaries; a range that contains a boundary
+            # strictly inside its window will play a hard cut mid-narration.
+            issues.extend(_check_range_shot_alignment(anchor, shot_boundaries))
 
             # Monotonicity: each new anchor's first range must start at or
             # after the previous anchor's first range. Strictly increasing

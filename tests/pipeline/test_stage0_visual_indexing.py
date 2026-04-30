@@ -1,7 +1,9 @@
 import json
 import time
-import pytest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from app.pipeline.stage0_index_visuals import _build_strategy, build_parser
 from app.pipeline.stage0_indexers.base import (
@@ -10,6 +12,7 @@ from app.pipeline.stage0_indexers.base import (
     timestamp_to_seconds,
     merge_segments,
 )
+from app.pipeline.stage0_indexers.shared import build_prompt
 from app.pipeline.stage0_indexers.gemini import GeminiStrategy
 from app.pipeline.stage0_indexers.gemini import build_timestamp_drawtext_filter
 from app.pipeline.stage0_indexers.openrouter import OpenRouterStrategy
@@ -68,6 +71,49 @@ class TestMergeSegments:
         chunk = [{"start": "00:00:00.000", "end": "00:00:03.000", "extra": "kept"}]
         merged = merge_segments([chunk], 600.0)
         assert merged[0]["extra"] == "kept"
+
+    def test_shifts_inner_shot_boundaries_to_absolute_time(self):
+        # Regression: ``snap_to_shot_boundaries`` populates ``shot_boundaries_s``
+        # with chunk-local seconds. Pre-2026-04-30 ``merge_segments`` shifted
+        # ``start``/``end`` but not the inner-cut list, so 96% of inner cuts
+        # ended up pointing one chunk earlier than their parent segment.
+        chunk_0 = [{
+            "start": "00:00:30.000", "end": "00:00:42.000", "summary": "s0",
+            "shot_boundaries_s": [33.0, 38.0],
+        }]
+        chunk_1 = [{
+            "start": "00:00:30.000", "end": "00:00:42.000", "summary": "s1",
+            "shot_boundaries_s": [33.0, 38.0],  # chunk-local seconds (same numbers!)
+        }]
+        merged = merge_segments([chunk_0, chunk_1], 300.0)
+        # Chunk 0 (offset 0): boundaries unchanged.
+        assert merged[0]["shot_boundaries_s"] == [33.0, 38.0]
+        # Chunk 1 (offset 300): boundaries shifted into absolute time and
+        # now fall STRICTLY INSIDE the segment's absolute window.
+        seg1 = merged[1]
+        assert seg1["start"] == "00:05:30.000"
+        assert seg1["end"] == "00:05:42.000"
+        assert seg1["shot_boundaries_s"] == [333.0, 338.0]
+
+    def test_handles_empty_inner_boundaries(self):
+        chunk = [{
+            "start": "00:00:00.000", "end": "00:00:05.000", "summary": "s",
+            "shot_boundaries_s": [],
+        }]
+        merged = merge_segments([chunk, chunk], 300.0)
+        assert merged[0]["shot_boundaries_s"] == []
+        assert merged[1]["shot_boundaries_s"] == []
+
+    def test_drops_unparseable_inner_boundary_entries(self):
+        # snap_to_shot_boundaries should never emit non-numeric entries, but
+        # an external migration / hand-edit might. The shifter must skip them
+        # rather than crash the whole pipeline.
+        chunk = [{
+            "start": "00:00:00.000", "end": "00:00:10.000", "summary": "s",
+            "shot_boundaries_s": [3.0, "bad", None, 7.0],
+        }]
+        merged = merge_segments([chunk], 300.0)  # offset 0 for chunk 0
+        assert merged[0]["shot_boundaries_s"] == [3.0, 7.0]
 
 
 class TestSnapToShotBoundaries:
@@ -329,6 +375,66 @@ def test_build_timestamp_drawtext_filter_omits_fontfile_when_default_font_missin
 
     assert "fontfile=" not in drawtext_filter
     assert drawtext_filter.startswith("drawtext=text=")
+
+
+# ---------------------------------------------------------------------------
+# build_prompt — synopsis-aware Cast Reference branch
+# ---------------------------------------------------------------------------
+
+
+class TestBuildPrompt:
+    def test_no_synopsis_uses_conservative_character_rule(self):
+        prompt = build_prompt()
+        assert "Cast Reference" not in prompt
+        # Original conservative rule: visual re-id only, no franchise guessing.
+        assert "visually re-identify" in prompt
+        assert "NEVER guess from general knowledge" in prompt
+
+    def test_empty_synopsis_treated_as_no_synopsis(self):
+        # Whitespace-only synopsis input is the no-reference case.
+        assert build_prompt("   \n  ") == build_prompt("")
+
+    def test_synopsis_inlines_cast_reference_block(self):
+        synopsis = "## Main Characters\n- Yuta: protagonist\n- Rika: cursed spirit"
+        prompt = build_prompt(synopsis)
+        assert "<<<CAST_REFERENCE_START>>>" in prompt
+        assert "Yuta: protagonist" in prompt
+        assert "<<<CAST_REFERENCE_END>>>" in prompt
+
+    def test_synopsis_swaps_in_reference_grounded_character_rule(self):
+        synopsis = "Yuta: protagonist"
+        prompt = build_prompt(synopsis)
+        # Reference-grounded rule: VLM may name characters from the cast
+        # but must not introduce ones outside it.
+        assert "match them to an entry in the Cast Reference below" in prompt
+        assert "do NOT introduce any character not on it" in prompt
+        # The conservative no-synopsis rule must be GONE — otherwise the VLM
+        # gets contradictory instructions.
+        assert "NEVER guess from general knowledge" not in prompt
+
+
+def test_gemini_strategy_uses_synopsis_when_provided(tmp_path):
+    strategy = GeminiStrategy(api_key="fake", synopsis_text="Yuta: protagonist")
+    assert "Cast Reference" in strategy.prompt
+    assert "Yuta: protagonist" in strategy.prompt
+
+
+def test_openrouter_strategy_uses_synopsis_when_provided():
+    strategy = OpenRouterStrategy(api_key="fake", synopsis_text="Yuta: protagonist")
+    assert "Cast Reference" in strategy.prompt
+
+
+def test_strategy_without_synopsis_keeps_conservative_rule():
+    strategy = GeminiStrategy(api_key="fake")
+    assert "Cast Reference" not in strategy.prompt
+    assert "NEVER guess from general knowledge" in strategy.prompt
+
+
+def test_stage0_parser_accepts_synopsis_flag():
+    args = build_parser().parse_args([
+        "--video", "movie.mp4", "--synopsis", "synopsis.md",
+    ])
+    assert args.synopsis == Path("synopsis.md")
 
 
 @patch("app.pipeline.stage0_indexers.gemini.genai")
