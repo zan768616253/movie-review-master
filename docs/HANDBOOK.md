@@ -92,13 +92,22 @@ The manifest is the sync contract between audio generation and rendering. It rec
 - where that chunk starts and ends inside the final concatenated voiceover
 - any attached B-roll ranges
 
+### Subtitle Manifest
+
+The subtitle manifest is the sync contract between Stage 4 and the draft renderer.
+It records, in order:
+
+- which chunk a subtitle cue belongs to
+- the exact cue text shown on screen
+- where that cue starts and ends inside the final concatenated voiceover
+
 ### Draft Render
 
-`review.mp4` is the Stage 5 watchable draft. `final_video.mp4` is the Stage 6 upload-ready master created by remuxing the Stage 5 picture lock with the Stage 3 narration track.
+`review.mp4` is the Stage 6 watchable draft. `final_video.mp4` is the Stage 7 upload-ready master created by remuxing the Stage 6 picture lock with the Stage 3 narration track.
 
 ## 5. End-to-End Pipeline Design
 
-The logical pipeline has seven stages.
+The logical pipeline has eight stages.
 
 ### Stage 0: Visual Indexing
 
@@ -182,7 +191,22 @@ Design decisions:
 - the final voiceover is one audio file plus one timing manifest
 - loudness normalization happens before render assembly
 
-### Stage 4: Visual Extraction
+### Stage 4: Subtitle Alignment
+
+Purpose:
+
+- split long narration chunks into shorter subtitle cues
+- align those cues to the real Stage 3 voiceover timing using pause detection
+- emit a subtitle manifest that later stages can burn into the draft render
+
+Stable alignment rules:
+
+- cue timing is derived from the actual synthesized audio, not from character counts alone
+- cue text stays in script order and never crosses chunk boundaries
+- when the audio exposes clear pauses, cue boundaries should prefer those pauses
+- when the audio has no usable pause inside a chunk, the stage may split timing proportionally inside that chunk rather than fabricating still more structure upstream
+
+### Stage 5: Visual Extraction
 
 Purpose:
 
@@ -195,10 +219,10 @@ The extracted clips are not supposed to carry movie audio. The review soundtrack
 High-precision extraction rules:
 
 - primary hero clips are re-encoded instead of stream-copied so short beats do not drift on keyframe boundaries
-- each extraction includes pre/post handles so Stage 5 can absorb small timing mismatches without an immediate freeze
+- each extraction includes pre/post handles so Stage 6 can absorb small timing mismatches without an immediate freeze
 - safe-boundary extension may stretch past the requested `end`, but only inside a capped window after Stage 0 validation has already clamped the visual index to the real movie duration
 
-### Stage 5: Draft Render
+### Stage 6: Draft Render
 
 Purpose:
 
@@ -211,21 +235,22 @@ Stable render rules:
 - narration duration is authoritative
 - renderer follows a fixed fallback order: exact hero window, then extracted handles or safe-boundary extension, then explicit or semantic B-roll, then freeze as the last fallback
 - B-roll is a style tool; hard freezes are a grounding failure signal and should stay rare
+- subtitle timing should come from the Stage 4 subtitle manifest, not from one chunk-wide caption event
 - the first working render can favor determinism over polish
-- later iterations add transitions, subtitles, and richer audio mixing
+- later iterations add transitions and richer audio mixing
 
-### Stage 6: Upload Finalize
+### Stage 7: Upload Finalize
 
 Purpose:
 
-- preserve the Stage 5 picture lock
+- preserve the Stage 6 picture lock
 - remux the Stage 3 narration track onto that draft
 - emit an upload-ready MP4 with `+faststart`
 
 Stable finalize rules:
 
-- Stage 6 takes video from `review.mp4`, not from the source movie
-- Stage 6 takes audio from the Stage 3 voiceover, even if the Stage 5 draft already has muxed narration
+- Stage 7 takes video from `review.mp4`, not from the source movie
+- Stage 7 takes audio from the Stage 3 voiceover, even if the Stage 6 draft already has muxed narration
 - the final master should be directly playable and ready for YouTube upload without a manual remux step
 
 ### Post-Pipeline: DaVinci Handoff

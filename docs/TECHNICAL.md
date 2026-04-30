@@ -39,8 +39,10 @@ movie-review-master/
       stage1_parse_subtitles.py
       stage2_generate_script.py
       stage3_generate_audio.py
-      stage4_video_processor.py
-      stage5_render_video.py
+      stage4_align_subtitles.py
+      stage5_video_processor.py
+      stage6_render_video.py
+      stage7_finalize_video.py
       common/
         __init__.py
         script_contract.py
@@ -143,11 +145,29 @@ Important contract:
 - output is `voiceover_<tag>_voiceclone.mp3`
 - manifest is `voiceover_<tag>_voiceclone.manifest.json`
 
-### `app/pipeline/stage4_video_processor.py`
+### `app/pipeline/stage4_align_subtitles.py`
 
 Purpose:
 
-- parse `[SCENE]` and `[BROLL]` markers from a script
+- split Stage 3 narration chunks into shorter subtitle cues
+- derive cue timing from the real Stage 3 voiceover using pause detection
+- emit `subtitle_manifest.json` for the render stage
+
+Current state:
+
+- implemented
+- exposes `align-subtitles` entry point
+
+Important contract:
+
+- output is `subtitle_manifest.json`
+- each cue entry carries `index`, `chunk_index`, `text`, `start_s`, and `end_s`
+
+### `app/pipeline/stage5_video_processor.py`
+
+Purpose:
+
+- parse `[ANCHOR]` markers from a script
 - extract silent source clips and keyframes with `ffmpeg`
 
 Current state:
@@ -155,17 +175,12 @@ Current state:
 - implemented
 - exposes `video-processor` entry point
 
-Key CLI flags:
-
-- `--handle-seconds` (default 1.5) — pre/post handle applied around every hero clip.
-- `--max-extension-seconds` (default 30.0) — upper bound on safe-boundary extension triggered by `visual_segments.json`. Required because a single hallucinated visual segment can otherwise turn one clip into a full-movie re-encode.
-- `--encoder {auto,nvenc,libx264}` (default `auto`) — `auto` picks `h264_nvenc` when available, otherwise falls back to `libx264 -preset fast`.
-
-### `app/pipeline/stage5_render_video.py`
+### `app/pipeline/stage6_render_video.py`
 
 Purpose:
 
 - read the voiceover manifest
+- read the subtitle manifest
 - render per-chunk video segments
 - concatenate segments
 - mux the narration track into `review.mp4`
@@ -178,19 +193,19 @@ Current state:
 Current stage-1 characteristics:
 
 - hard cuts
-- no subtitle burn
+- subtitle burn from `subtitle_manifest.json`
 - no background music
 - B-roll rotation supported through pre-extracted clip inputs
 
 Key CLI flags:
 
-- `--encoder {auto,nvenc,libx264}` (default `auto`) — same selector used by Stage 4. Used for hero slices, manual B-roll re-encodes, semantic B-roll re-encodes, and still-frame segments.
+- `--encoder {auto,nvenc,libx264}` (default `auto`) — same selector used by Stage 5. Used for hero slices, manual B-roll re-encodes, semantic B-roll re-encodes, and still-frame segments.
 
-### `app/pipeline/stage6_finalize_video.py`
+### `app/pipeline/stage7_finalize_video.py`
 
 Purpose:
 
-- take the Stage 5 draft render as the locked picture source
+- take the Stage 6 draft render as the locked picture source
 - take the Stage 3 voiceover as the authoritative narration source
 - emit `final_video.mp4` with `+faststart` for direct upload
 
@@ -204,7 +219,7 @@ Current state:
 Shared helpers used by multiple pipeline stages.
 
 - `script_contract.py` — scene marker parsing, timestamp helpers, visual-segment loading, and `validate_visual_segments()` (the Stage 0 trust boundary).
-- `video_encoder.py` — `resolve_encoder()`, `nvenc_available()`, `encoder_ffmpeg_args()`. Used by Stage 4 and Stage 5 to produce the `-c:v ...` argument list.
+- `video_encoder.py` — `resolve_encoder()`, `nvenc_available()`, `encoder_ffmpeg_args()`. Used by Stage 5 and Stage 6 to produce the `-c:v ...` argument list.
 
 ### `app/pipeline/stage0_indexers/`
 
@@ -309,18 +324,25 @@ Notes:
 `stage3_generate_audio.py` writes a JSON list where each entry contains:
 
 - `index`
-- `scene_start`
-- `scene_end`
-- `scene_source`
-- `scene_confidence`
-- `scene_evidence`
-- `scene_characters`
+- `ranges`
+- `characters`
 - `text`
-- `broll`
 - `audio_start_s`
 - `audio_end_s`
 
-This manifest is the primary sync contract for `stage5_render_video.py`.
+This manifest is the primary sync contract for `stage6_render_video.py`.
+
+### Subtitle Manifest Contract
+
+`stage4_align_subtitles.py` writes a JSON list where each entry contains:
+
+- `index`
+- `chunk_index`
+- `text`
+- `start_s`
+- `end_s`
+
+This manifest is the subtitle sync contract for `stage6_render_video.py`.
 
 ### Visual Segment Contract
 
@@ -365,9 +387,10 @@ Configured in `pyproject.toml`:
 - `parse-subtitles = app.pipeline.stage1_parse_subtitles:main`
 - `generate-script = app.pipeline.stage2_generate_script:main`
 - `generate-audio = app.pipeline.stage3_generate_audio:main`
-- `video-processor = app.pipeline.stage4_video_processor:main`
-- `render-video = app.pipeline.stage5_render_video:main`
-- `finalize-video = app.pipeline.stage6_finalize_video:main`
+- `align-subtitles = app.pipeline.stage4_align_subtitles:main`
+- `video-processor = app.pipeline.stage5_video_processor:main`
+- `render-video = app.pipeline.stage6_render_video:main`
+- `finalize-video = app.pipeline.stage7_finalize_video:main`
 - `transcribe = app.tools.transcribe_audio:main`
 - `prepare-voice-reference = app.tools.prepare_voice_reference:main`
 
@@ -381,10 +404,10 @@ Automated coverage currently exists for:
 - transcription CLI flow with a fake model
 - reference-preparation CLI flow with injected ffmpeg, transcription, and analysis helpers
 
-Verified baseline on 2026-04-21:
+Verified baseline:
 
 - `conda run -n py312_machine_learning --no-capture-output pytest`
-- result: `16 passed`
+- result: `140 passed, 1 skipped`
 
 ## 9. Known Technical Gaps
 

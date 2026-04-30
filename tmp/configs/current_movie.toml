@@ -35,7 +35,7 @@ genre         = "action"
 
 # Roughly how long the final review should be, in seconds.
 # Used as a hint in the Stage 2 writer prompt.
-target_seconds = 1500.0
+target_seconds = 1200.0
 
 [stage3]
 # Optional override for the stage3 output filename tag.

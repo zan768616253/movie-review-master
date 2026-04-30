@@ -5,7 +5,7 @@ re-run any number of times.
 
 Flow:
     step_00 → step_01 → [STOP at step_02 if anchored_script
-    not filled] → step_03 → step_04 → step_05 → step_06
+    not filled] → step_03 → step_04 → step_05 → step_06 → step_07
 
 To run a different movie, edit tmp/configs/current_movie.toml.
 """
@@ -30,9 +30,10 @@ from _common import (
 import step_00_index_visuals
 import step_01_parse_subtitles
 import step_03_generate_audio
-import step_04_video_processor
-import step_05_render_video
-import step_06_finalize_video
+import step_04_align_subtitles
+import step_05_video_processor
+import step_06_render_video
+import step_07_finalize_video
 
 CONFIG = DEFAULT_CONFIG
 
@@ -51,9 +52,10 @@ def run() -> int:
         step_00_index_visuals,
         step_01_parse_subtitles,
         step_03_generate_audio,
-        step_04_video_processor,
-        step_05_render_video,
-        step_06_finalize_video,
+        step_04_align_subtitles,
+        step_05_video_processor,
+        step_06_render_video,
+        step_07_finalize_video,
     )
 
     # Stage 0
@@ -96,29 +98,38 @@ def run() -> int:
             return rc
 
     # Stage 4
-    if paths.stage4_clip_manifest.exists():
-        banner("Stage 4 — skipping (clip_manifest.json already exists)")
-        print(f"  {paths.stage4_clip_manifest}")
+    if paths.stage4_subtitle_manifest.exists():
+        banner("Stage 4 — skipping (subtitle_manifest.json already exists)")
+        print(f"  {paths.stage4_subtitle_manifest}")
     else:
-        rc = step_04_video_processor.run()
+        rc = step_04_align_subtitles.run()
         if rc != 0:
             return rc
 
     # Stage 5
-    if paths.stage5_review_video.exists():
-        banner("Stage 5 — skipping (draft review video already exists)")
-        print(f"  {paths.stage5_review_video}")
+    if paths.stage5_clip_manifest.exists():
+        banner("Stage 5 — skipping (clip_manifest.json already exists)")
+        print(f"  {paths.stage5_clip_manifest}")
     else:
-        rc = step_05_render_video.run()
+        rc = step_05_video_processor.run()
         if rc != 0:
             return rc
 
     # Stage 6
+    if paths.stage6_review_video.exists():
+        banner("Stage 6 — skipping (draft review video already exists)")
+        print(f"  {paths.stage6_review_video}")
+    else:
+        rc = step_06_render_video.run()
+        if rc != 0:
+            return rc
+
+    # Stage 7
     if paths.final_video.exists():
-        banner("Stage 6 — skipping (upload-ready final video already exists)")
+        banner("Stage 7 — skipping (upload-ready final video already exists)")
         print(f"  {paths.final_video}")
     else:
-        rc = step_06_finalize_video.run()
+        rc = step_07_finalize_video.run()
         if rc != 0:
             return rc
 

@@ -38,6 +38,7 @@ class Paths:
     stage4_dir: Path
     stage5_dir: Path
     stage6_dir: Path
+    stage7_dir: Path
 
     # Stage 0
     visual_segments: Path
@@ -56,14 +57,17 @@ class Paths:
     stage3_manifest: Path
 
     # Stage 4
-    stage4_clips_dir: Path
-    stage4_keyframes_dir: Path
-    stage4_clip_manifest: Path
+    stage4_subtitle_manifest: Path
 
     # Stage 5
-    stage5_review_video: Path
+    stage5_clips_dir: Path
+    stage5_keyframes_dir: Path
+    stage5_clip_manifest: Path
 
     # Stage 6
+    stage6_review_video: Path
+
+    # Stage 7
     final_video: Path
     final_video_manifest: Path
 
@@ -96,6 +100,7 @@ def build_paths(config: dict) -> Paths:
     stage4_dir = work_dir / "stage4"
     stage5_dir = work_dir / "stage5"
     stage6_dir = work_dir / "stage6"
+    stage7_dir = work_dir / "stage7"
 
     tag = stage3_cfg.get("tag") or style.stem
 
@@ -111,6 +116,7 @@ def build_paths(config: dict) -> Paths:
         stage4_dir=stage4_dir,
         stage5_dir=stage5_dir,
         stage6_dir=stage6_dir,
+        stage7_dir=stage7_dir,
         visual_segments=stage0_dir / "visual_segments.json",
         subtitles_text=stage1_dir / "subtitles.txt",
         planner_prompt=stage2_dir / "planner_prompt.txt",
@@ -118,12 +124,13 @@ def build_paths(config: dict) -> Paths:
         synopsis=movie_dir / "synopsis.md",
         stage3_voiceover=stage3_dir / f"voiceover_{tag}_voiceclone.mp3",
         stage3_manifest=stage3_dir / f"voiceover_{tag}_voiceclone.manifest.json",
-        stage4_clips_dir=stage4_dir / "clips",
-        stage4_keyframes_dir=stage4_dir / "keyframes",
-        stage4_clip_manifest=stage4_dir / "clip_manifest.json",
-        stage5_review_video=stage5_dir / "review.mp4",
-        final_video=stage6_dir / "final_video.mp4",
-        final_video_manifest=stage6_dir / "delivery_manifest.json",
+        stage4_subtitle_manifest=stage4_dir / "subtitle_manifest.json",
+        stage5_clips_dir=stage5_dir / "clips",
+        stage5_keyframes_dir=stage5_dir / "keyframes",
+        stage5_clip_manifest=stage5_dir / "clip_manifest.json",
+        stage6_review_video=stage6_dir / "review.mp4",
+        final_video=stage7_dir / "final_video.mp4",
+        final_video_manifest=stage7_dir / "delivery_manifest.json",
     )
 
 
@@ -136,6 +143,7 @@ def ensure_stage_dirs(paths: Paths) -> None:
         paths.stage4_dir,
         paths.stage5_dir,
         paths.stage6_dir,
+        paths.stage7_dir,
     ):
         d.mkdir(parents=True, exist_ok=True)
 

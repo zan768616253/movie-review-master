@@ -75,6 +75,7 @@ def test_build_planner_prompt_inlines_style_and_merged_timeline(tmp_path: Path) 
     # Movie metadata appears.
     assert "Title: Demo" in prompt
     assert "Genre: action" in prompt
+    assert "Prefer fewer longer holds over many tiny snippets." in prompt
     # Closing rule.
     assert "[CLOSING]" in prompt
     assert "no [ANCHOR]" in prompt

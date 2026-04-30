@@ -246,10 +246,12 @@ the two inside one multi-range anchor often produces awkward cuts.
    for a {target_seconds:.0f}s review (more for longer reviews, fewer for shorter).
 5. For each beat, choose the [ANCHOR] ranges:
    - To reach your total target budget, the selected ranges within each anchor MUST collectively cover enough seconds! If you use ~{anchor_count_low} anchors for a {target_seconds:.0f}s review, each anchor needs to cover ~12-20 seconds of source video on average.
-   - Achieve this by aggressively using **multi-range anchors** (listing 2-4 consecutive or relevant shots) for almost every beat, e.g.
-     `ranges="00:23:10-00:23:14, 00:23:18-00:23:24, 00:24:01-00:24:06"`.
-   - DO NOT use one wide range like `ranges="00:23:10-00:23:30"` to cover
-     multiple shots — that spans cuts and looks broken to the audience. Always specify discrete shots as multiple ranges.
+    - Achieve this by using **multi-range anchors** when one shot is not enough, usually as 2-3 strong ranges for one beat, e.g.
+      `ranges="00:23:10-00:23:14, 00:23:18-00:23:24, 00:24:01-00:24:06"`.
+    - Prefer fewer longer holds over many tiny snippets. Do not add a 1-2s
+      tag shot at the end of an anchor unless that visual beat is essential.
+    - DO NOT use one wide range like `ranges="00:23:10-00:23:30"` to cover
+      multiple shots — that spans cuts and looks broken to the audience. Always specify discrete shots as multiple ranges.
 6. Write narration in the style voice. Size each beat's character count
    to fit the budget. Self-check before finalizing.
 7. Total review length: aim for roughly {target_seconds:.0f}s
@@ -314,7 +316,8 @@ confirm these numbers (originally stated under "TTS Budget — HARD CONSTRAINT")
   Act 3 ≈ {int(total_budget_chars * 0.30)} chars, Act 4 ≈ {int(total_budget_chars * 0.20)} chars.
 - **Anchor coverage:** the sum of all your selected anchor seconds should
   be approximately {target_seconds:.0f}s. With ~{anchor_count_low}-{anchor_count_high} anchors,
-  each anchor's ranges must average ~12-20s — use multi-range anchors freely.
+  each anchor's ranges must average ~12-20s — use multi-range anchors when needed,
+  but prefer fewer longer holds over many tiny snippets.
 - **Per-anchor cap:** chars(narration) ≤ sum(range_seconds) × {chars_per_second}.
 
 **Pre-output self-check (do this mentally before emitting the script):**

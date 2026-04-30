@@ -22,15 +22,16 @@ tmp/
   step_01_parse_subtitles.py
   step_02_generate_script.py      # the manual paste-prompt-into-LLM step
   step_03_generate_audio.py
-  step_04_video_processor.py
-  step_05_render_video.py
-  step_06_finalize_video.py
-  run_all.py                      # chains 0→1→3→4→5→6, stops at 2 for manual input
+  step_04_align_subtitles.py
+  step_05_video_processor.py
+  step_06_render_video.py
+  step_07_finalize_video.py
+  run_all.py                      # chains 0→1→3→4→5→6→7, stops at 2 for manual input
   README.md                       # this file
   TODO.md                         # pipeline notes (P0/P1/P2/P3)
 
   work/<movie_slug>/              # all per-movie outputs land here
-    stage0/  stage1/  stage2/  stage3/  stage4/  stage5/  stage6/
+    stage0/  stage1/  stage2/  stage3/  stage4/  stage5/  stage6/  stage7/
 ```
 
 Inputs (movie file, subtitle file, style file) stay where they already live
@@ -69,9 +70,11 @@ Behaviour:
 - At Stage 2 it stops with a clear message — Stage 2 needs you to paste
   prompts into an LLM and paste the replies back. Run
   `step_02_generate_script.py` to handle that, then re-run `run_all.py`.
-- Stage 5 writes the watchable draft to `tmp/work/<movie_slug>/stage5/review.mp4`.
-- Stage 6 remuxes that draft with the Stage 3 narration track and writes the
-  upload-ready master to `tmp/work/<movie_slug>/stage6/final_video.mp4`.
+- Stage 4 derives short timed subtitle cues from the real Stage 3 voiceover and
+  writes `tmp/work/<movie_slug>/stage4/subtitle_manifest.json`.
+- Stage 6 writes the watchable draft to `tmp/work/<movie_slug>/stage6/review.mp4`.
+- Stage 7 remuxes that draft with the Stage 3 narration track and writes the
+  upload-ready master to `tmp/work/<movie_slug>/stage7/final_video.mp4`.
 
 ---
 
