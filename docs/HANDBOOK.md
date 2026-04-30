@@ -59,38 +59,39 @@ The `.srt` or `.ass` file used to reconstruct plot structure, find dialogue anch
 
 A style-constrained narration document that retells the full movie in review form. The script is not plain prose only; it also carries structural markers used by later pipeline steps.
 
-### `[SCENE ...]`
+### `[ANCHOR ...]`
 
-The primary synchronization marker. Each `[SCENE]` binds one narration beat to one source-movie visual range.
+The primary synchronization marker. Each `[ANCHOR]` binds one narrative beat to one or more source-movie shot ranges, with the narration text directly below it sized to fit those ranges.
 
-Older scripts may use `[SCENE: HH:MM:SS-HH:MM:SS]`. Grounded scripts should prefer the richer attribute form, for example:
+Form:
 
-`[SCENE start=... end=... source=srt|visual|ungrounded confidence=... evidence=...]`
+```
+[ANCHOR ranges="HH:MM:SS-HH:MM:SS, HH:MM:SS-HH:MM:SS" characters="Name A|Name B"]
+narration text bounded by sum_of_range_seconds × chars_per_second
+```
 
 Rules:
 
-- one primary narration beat maps to one `[SCENE]`
-- dialogue beats should anchor to SRT evidence first
-- non-dialogue beats should anchor to visual-segment evidence
-- if evidence is weak, the beat should be marked `ungrounded` rather than assigned an invented timestamp
+- one narrative beat maps to one `[ANCHOR]`
+- ranges are chronological `start-end` pairs from `[shot:NNN]` lines (not `[srt:NNN]`)
+- each range must stay inside ONE source shot (the validator rejects shot-boundary crossings)
+- each individual range duration ≤ 12s; each anchor's total range duration ≤ 12s
+- multi-shot beats use multi-range anchors with one range per shot
+- narration char count ≤ `sum(range_seconds) × chars_per_second` (the per-style planner budget)
 - the marker is for pipeline coordination, not for spoken narration
-
-### `[BROLL: ...]`
-
-Optional supplemental visual ranges attached to the current scene. These are used to improve visual energy and genre fit when the primary scene alone is not enough.
+- the `[CLOSING]` section contains narration but no `[ANCHOR]` — Stage 6 plays it over the most recent keyframe
 
 ### Narration Chunk
 
-The unit of alignment between script, TTS, and rendering. In the current design, chunk boundaries follow scene boundaries.
+The unit of alignment between script, TTS, and rendering. Each `[ANCHOR]` block is one chunk; the closing passage (no anchor) is its own chunk.
 
 ### Voiceover Manifest
 
-The manifest is the sync contract between audio generation and rendering. It records, in order:
+The manifest is the sync contract between audio generation and rendering. It records, per chunk:
 
 - which script chunk was spoken
-- which `[SCENE]` it belongs to
+- the chunk's `ranges` (the source-movie windows the planner picked) and `characters`
 - where that chunk starts and ends inside the final concatenated voiceover
-- any attached B-roll ranges
 
 ### Subtitle Manifest
 
@@ -155,28 +156,36 @@ Design expectation:
 Purpose:
 
 - convert movie plot into a review script in the selected style
-- include structural markers for visuals and later alignment
+- bind narration to specific source-movie shots via `[ANCHOR]` markers
 
-Two-pass grounding strategy:
+Single-pass planner-writer (replaces the legacy writer + grounder two-pass design):
 
-- writer pass produces beat-level narration only; it ignores timestamps and focuses on tone, plot, and pacing
-- grounding pass classifies each beat as dialogue or action before assigning any timing
-- dialogue beats search the full SRT first and use subtitle timestamps whenever spoken lines are the real anchor
-- action beats search `visual_segments.json`, favoring character overlap and semantic similarity
-- weak matches stay `ungrounded`; the system must not hallucinate precise timestamps
-- final output is an evidence-bearing grounded script, not raw prose
+- one LLM call picks visual anchors AND writes narration in the selected style
+- the prompt carries the style rulebook verbatim, an optional synopsis, and a chronological timeline mixing `[srt:NNN]` dialogue lines with per-shot `[shot:NNN]` entries
+- each anchor is constrained by `chars(narration) ≤ sum(range_seconds) × chars_per_second` so narration can never outlast the chosen visuals — Stage 6 trims any small video slack shot-aware
+- final output is an `[ANCHOR]`-bound script ready for Stage 3 audio generation
+
+Shot-aware range contract:
+
+- each anchor range stays inside ONE source shot (no shot-boundary crossings)
+- each range duration ≤ 12s; each anchor's total duration ≤ 12s
+- multi-shot beats use multi-range anchors with one range per shot
+- range timestamps come from `[shot:NNN]` lines, not `[srt:NNN]` — SRT timestamps mark speech onset, not shot cuts
+- the validator (`validate_anchored_script`) enforces all of the above against `build_shot_boundary_set(visual_segments)`
+
+Why the contract: per-chunk durations are matched at the rendering layer, but inside an anchor audio runs at a uniform pace while source video runs at the editor's pace. Long anchors that span multiple internal beats let those paces diverge by several seconds, producing the perception that audio is "ahead" of the video describing the same beat. Constraining each range to one shot keeps every visible moment a single editorial beat, so audio cannot describe content the audience isn't yet watching.
 
 The script stage must do two jobs at once:
 
-1. create engaging narration
-2. define enough structure for the media pipeline to remain deterministic
+1. create engaging narration in the chosen style's voice
+2. bind that narration to shot-aligned ranges so the media pipeline plays content the audience is hearing about
 
 Stable rules:
 
 - the hook must front-load attention
 - the full story arc must be covered
 - style rules come from the chosen file in `styles/`
-- scene markers must be specific and usable
+- ranges are shot-atomic; narration is sacred (never auto-trimmed)
 
 ### Stage 3: Voiceover Generation
 
@@ -261,11 +270,12 @@ The output folder is meant to be reopened and improved manually. This is part of
 
 Use these targets when judging whether alignment quality is acceptable:
 
-- evidence coverage should stay above 95%: most `[SCENE]` markers should cite either an SRT line or a visual-segment ID
-- freeze ratio should stay below 5% of runtime; semantic B-roll is acceptable, hard freezes are the failure signal
+- range provenance: every `[ANCHOR]` range should overlap a real `[shot:NNN]` or `[srt:NNN]` entry from the timeline; the validator's `range_provenance` check catches fabricated timestamps
+- shot alignment: zero `range_shot_crossing` validator failures — every range stays inside one source shot
+- freeze ratio should stay below 1% of runtime outside the closing chunk; smart-trim slack absorbs most timing mismatches without freezing
+- extension-needed ratio should stay below 5%; chunks where audio overruns the chosen ranges fall back to post-handle extension and risk a still-fill
 - hero clips should show no visible keyframe jitter
-- ungrounded beat rate should stay below 10%; spikes usually mean the narration drifted from the movie or the visual index is too sparse
-- a short slice review should read as "no visible drift" to a human viewer
+- a short slice review should read as "no audio-visual drift" to a human viewer
 
 ## 6. Style System
 
@@ -341,7 +351,7 @@ Useful distilled knowledge from the earlier validation work:
 
 - `ffmpeg` is the baseline media engine
 - extracted review clips are silent
-- timing-critical hero clips are re-encoded instead of stream-copied so `[SCENE]` boundaries stay stable
+- timing-critical hero clips are re-encoded instead of stream-copied so `[ANCHOR]` range boundaries stay stable
 - GPU encoding is the default path on this project's target hardware (RTX 4060). Stages 4 and 5 pick `h264_nvenc` when the local ffmpeg advertises it, and fall back to `libx264 -preset fast` so CI and non-GPU hosts still work. Falling back to CPU encoding is expected to be 3-5x slower on 1080p re-encodes, which is acceptable but not a path to production throughput.
 
 ### Render Synchronization

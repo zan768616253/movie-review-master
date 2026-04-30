@@ -18,7 +18,6 @@ from .shared import (
     DEFAULT_SHOT_DETECT_THRESHOLD,
     DEFAULT_SHOT_SNAP_TOLERANCE_S,
     DEFAULT_TIMESTAMP_FONT_PATH as SHARED_DEFAULT_TIMESTAMP_FONT_PATH,
-    PROMPT,
     build_timestamp_drawtext_filter as _build_timestamp_drawtext_filter,
 )
 
@@ -53,7 +52,12 @@ _RESPONSE_SCHEMA = types.Schema(
 
 
 class GeminiStrategy(ChunkedVisualIndexerStrategy):
-    def __init__(self, api_key: str | None = None, max_workers: int = 1):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        max_workers: int = 1,
+        synopsis_text: str = "",
+    ):
         key = api_key if api_key is not None else os.getenv("GOOGLE_API_KEY")
         self.api_key = key
         super().__init__(
@@ -63,6 +67,7 @@ class GeminiStrategy(ChunkedVisualIndexerStrategy):
             chunk_minutes=DEFAULT_CHUNK_MINUTES,
             shot_snap_tolerance_s=DEFAULT_SHOT_SNAP_TOLERANCE_S,
             shot_detect_threshold=DEFAULT_SHOT_DETECT_THRESHOLD,
+            synopsis_text=synopsis_text,
         )
 
     def _get_video_duration(self, video_path: Path) -> float:
@@ -129,7 +134,7 @@ class GeminiStrategy(ChunkedVisualIndexerStrategy):
             print(f"Requesting inference for {video_chunk_path.name}...")
             response = client.models.generate_content(
                 model=self.model_name,
-                contents=[video_file, PROMPT],
+                contents=[video_file, self.prompt],
                 config=types.GenerateContentConfig(
                     thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.HIGH),
                     response_mime_type="application/json",
