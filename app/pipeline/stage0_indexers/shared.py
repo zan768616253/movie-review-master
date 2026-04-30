@@ -34,7 +34,7 @@ def build_timestamp_drawtext_filter(font_path: Path | None = None) -> str:
     )
 
 
-PROMPT = """\
+_PROMPT_HEADER = """\
 # Role
 You are indexing a movie for VISUAL events only. Dialogue is indexed separately from SRT subtitles; do NOT duplicate dialogue coverage here.
 
@@ -58,7 +58,17 @@ Emit one segment per visually distinct event: a shot cut, a location change, a n
 # Field rules
 - summary: one short phrase describing the visible action. No dialogue paraphrasing.
 - ocr_text: transcribe on-screen text clearly visible in-scene. Do NOT transcribe the burned-in timestamp in the top-left corner. Empty string if nothing.
+"""
+
+_CHARACTERS_RULE_NO_REFERENCE = """\
 - characters: only include a character you can visually re-identify across MULTIPLE segments in THIS chunk. If unsure, leave empty. NEVER guess from general knowledge or franchise assumptions.
+"""
+
+_CHARACTERS_RULE_WITH_REFERENCE = """\
+- characters: name a character ONLY if you can match them to an entry in the Cast Reference below. The reference is the authoritative cast list — do NOT introduce any character not on it. When the same on-screen person appears across multiple segments in this chunk, label them consistently using the reference name. When you genuinely cannot tell which referenced character is on screen, leave the array empty rather than guess.
+"""
+
+_PROMPT_FOOTER = """\
 
 # Self-check before returning
 - every start < end
@@ -66,6 +76,40 @@ Emit one segment per visually distinct event: a shot cut, a location change, a n
 - no segment longer than 12 seconds
 - no start or end exceeds the chunk length
 """
+
+
+def build_prompt(synopsis_text: str = "") -> str:
+    """Assemble the Stage 0 VLM prompt with an optional Cast Reference block.
+
+    When ``synopsis_text`` is empty (no synopsis provided), the character
+    rule is the conservative one: only label characters re-identified
+    visually across this chunk; never guess from franchise knowledge.
+
+    When ``synopsis_text`` is non-empty, the character rule flips: the
+    VLM is allowed (and expected) to label characters using the cast
+    list — but is forbidden from introducing characters NOT on the list.
+    This is how we get consistent character names across chunks without
+    risking franchise-knowledge over-attribution.
+    """
+    body = _PROMPT_HEADER
+    synopsis_text = (synopsis_text or "").strip()
+    if synopsis_text:
+        body += (
+            "\n# Cast Reference (use these names; do not invent others)\n"
+            "<<<CAST_REFERENCE_START>>>\n"
+            f"{synopsis_text}\n"
+            "<<<CAST_REFERENCE_END>>>\n"
+        )
+        body += _CHARACTERS_RULE_WITH_REFERENCE
+    else:
+        body += _CHARACTERS_RULE_NO_REFERENCE
+    body += _PROMPT_FOOTER
+    return body
+
+
+# Default prompt with no Cast Reference. Tests and callers that don't
+# need synopsis enrichment can use this directly.
+PROMPT = build_prompt()
 
 
 class ChunkedVisualIndexerStrategy(VisualIndexerStrategy, ABC):
@@ -78,6 +122,7 @@ class ChunkedVisualIndexerStrategy(VisualIndexerStrategy, ABC):
         chunk_minutes: int,
         shot_snap_tolerance_s: float = DEFAULT_SHOT_SNAP_TOLERANCE_S,
         shot_detect_threshold: float = DEFAULT_SHOT_DETECT_THRESHOLD,
+        synopsis_text: str = "",
     ):
         self.provider_label = provider_label
         self.model_name = model_name
@@ -85,6 +130,12 @@ class ChunkedVisualIndexerStrategy(VisualIndexerStrategy, ABC):
         self.chunk_minutes = chunk_minutes
         self.shot_snap_tolerance_s = shot_snap_tolerance_s
         self.shot_detect_threshold = shot_detect_threshold
+        self.synopsis_text = synopsis_text or ""
+
+    @property
+    def prompt(self) -> str:
+        """The fully-assembled VLM prompt (includes Cast Reference if present)."""
+        return build_prompt(self.synopsis_text)
 
     def _get_video_duration(self, video_path: Path) -> float:
         return get_video_duration(video_path)

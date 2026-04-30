@@ -41,14 +41,25 @@ def build_parser() -> argparse.ArgumentParser:
         default=5,
         help="Parallel chunk workers for uncached provider requests",
     )
+    parser.add_argument(
+        "--synopsis",
+        type=Path,
+        default=None,
+        help=(
+            "Optional path to a markdown synopsis with cast list. When present, "
+            "the VLM is allowed to label characters using the cast as ground truth "
+            "(consistent names across chunks); without it, the VLM falls back to "
+            "the conservative per-chunk re-identification rule."
+        ),
+    )
     return parser
 
 
-def _build_strategy(name: str, max_workers: int) -> VisualIndexerStrategy:
+def _build_strategy(name: str, max_workers: int, synopsis_text: str = "") -> VisualIndexerStrategy:
     if name == "gemini":
-        return GeminiStrategy(max_workers=max_workers)
+        return GeminiStrategy(max_workers=max_workers, synopsis_text=synopsis_text)
     if name == "openrouter":
-        return OpenRouterStrategy(max_workers=max_workers)
+        return OpenRouterStrategy(max_workers=max_workers, synopsis_text=synopsis_text)
     raise ValueError(f"Unsupported strategy: {name}")
 
 
@@ -62,7 +73,16 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args.tmp_dir.mkdir(parents=True, exist_ok=True)
 
-    strategy = _build_strategy(args.strategy, args.workers)
+    synopsis_text = ""
+    if args.synopsis is not None:
+        synopsis_path = args.synopsis.expanduser().resolve()
+        if not synopsis_path.exists():
+            print(f"Error: --synopsis file not found: {synopsis_path}")
+            return 1
+        synopsis_text = synopsis_path.read_text(encoding="utf-8")
+        print(f"Cast Reference attached from: {synopsis_path}")
+
+    strategy = _build_strategy(args.strategy, args.workers, synopsis_text=synopsis_text)
 
     try:
         raw_segments = strategy.index_video(video_path, args.tmp_dir)

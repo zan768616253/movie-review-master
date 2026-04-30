@@ -16,7 +16,6 @@ from .shared import (
     ChunkedVisualIndexerStrategy,
     DEFAULT_SHOT_DETECT_THRESHOLD,
     DEFAULT_SHOT_SNAP_TOLERANCE_S,
-    PROMPT,
     build_timestamp_drawtext_filter,
 )
 
@@ -59,7 +58,12 @@ _RESPONSE_FORMAT: dict[str, Any] = {
 
 
 class OpenRouterStrategy(ChunkedVisualIndexerStrategy):
-    def __init__(self, api_key: str | None = None, max_workers: int = 1):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        max_workers: int = 1,
+        synopsis_text: str = "",
+    ):
         self.api_key = api_key if api_key is not None else os.getenv("OPENROUTER_API_KEY")
         super().__init__(
             provider_label="OpenRouter",
@@ -68,6 +72,7 @@ class OpenRouterStrategy(ChunkedVisualIndexerStrategy):
             chunk_minutes=DEFAULT_CHUNK_MINUTES,
             shot_snap_tolerance_s=DEFAULT_SHOT_SNAP_TOLERANCE_S,
             shot_detect_threshold=DEFAULT_SHOT_DETECT_THRESHOLD,
+            synopsis_text=synopsis_text,
         )
         self.api_url = os.getenv("OPENROUTER_API_URL", DEFAULT_API_URL)
         self.http_referer = os.getenv("OPENROUTER_REFERER")
@@ -183,7 +188,7 @@ class OpenRouterStrategy(ChunkedVisualIndexerStrategy):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": PROMPT},
+                        {"type": "text", "text": self.prompt},
                         {"type": "video_url", "video_url": {"url": self._inline_video_data_url(video_chunk_path)}},
                     ],
                 }
