@@ -59,6 +59,11 @@ def run() -> int:
     # boundaries to land cuts at clean shot junctions.
     if paths.visual_segments.exists():
         argv.extend(["--visual-segments", str(paths.visual_segments)])
+    # source_video is optional — when present, the closing chunk's visuals
+    # continue from where the last anchor's rendered video ended in the
+    # source movie, instead of freezing on a still keyframe.
+    if paths.video.exists():
+        argv.extend(["--source-video", str(paths.video)])
     return stage6_main(argv)
 
 

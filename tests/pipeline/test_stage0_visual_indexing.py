@@ -196,7 +196,7 @@ class TestGeminiStrategy:
         tmp_idx_dir = tmp_path / "tmp"
         tmp_idx_dir.mkdir()
 
-        mock_duration.return_value = 600.0  # 10 mins -> 2 chunks of 5 minutes
+        mock_duration.return_value = 600.0  # 10 mins -> 2 chunks with a 6-minute default
 
         response_text = json.dumps([{
             "start": "00:00:00.000", "end": "00:00:03.000", "summary": "test",
@@ -210,7 +210,7 @@ class TestGeminiStrategy:
         assert len(results) == 2
         assert mock_extract.call_count == 2
         assert results[0]["start"] == "00:00:00.000"
-        assert results[1]["start"] == "00:05:00.000"
+        assert results[1]["start"] == "00:06:00.000"
 
     @patch("app.pipeline.stage0_indexers.gemini.detect_shot_boundaries", return_value=[])
     @patch("app.pipeline.stage0_indexers.gemini.genai")
@@ -264,7 +264,7 @@ class TestGeminiStrategy:
         assert (cache_dir / "chunk_000.json").exists()
         assert chunk_001_cache.exists()
         assert json.loads(chunk_001_cache.read_text())[0]["start"] == "00:00:00.000"
-        assert first_results[1]["start"] == "00:05:00.000"
+        assert first_results[1]["start"] == "00:06:00.000"
 
         with patch.object(strategy, "_extract_chunk", side_effect=AssertionError("should not extract")), \
              patch.object(strategy, "_index_chunk", side_effect=AssertionError("should not reindex")), \
@@ -294,7 +294,7 @@ class TestGeminiStrategy:
             results = strategy.index_video(tmp_path / "movie.mp4", tmp_idx_dir)
 
         assert [segment["summary"] for segment in results] == ["chunk-0", "chunk-1"]
-        assert results[1]["start"] == "00:05:00.000"
+        assert results[1]["start"] == "00:06:00.000"
 
 
 class TestOpenRouterStrategy:

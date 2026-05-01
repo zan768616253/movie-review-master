@@ -319,6 +319,38 @@ Each line is one event in movie order. Two entry kinds:
   duration (e.g. only the last 3s of an 8s shot), but you MUST stay
   inside that one shot — never let a range cross a `[shot:NNN]` boundary.
 
+# Final Budget Reminder — READ NOW, BEFORE THE TIMELINE
+The timeline below is long. Lock these numbers in working memory now,
+because once you start scanning shots it is easy to forget the macro
+budget and stop expanding the script too early.
+
+- **Total narration must land in {int(total_budget_chars * 0.85)}-{total_budget_chars} characters
+  (target {total_budget_chars}).** Anything below {int(total_budget_chars * 0.85)} is a failure
+  — the resulting audio will be too short to cover the movie's plot.
+- **Per-act guideline (sums to {total_budget_chars}, climax-weighted):**
+  Act 1 ≈ {int(total_budget_chars * 0.16)} chars, Act 2 ≈ {int(total_budget_chars * 0.24)} chars,
+  Act 3 ≈ {int(total_budget_chars * 0.40)} chars, Act 4 ≈ {int(total_budget_chars * 0.20)} chars.
+  The climax (Act 3) is the largest act on purpose — it is where maximum
+  information density and the biggest payoff land. Compress Act 1/Act 2
+  ruthlessly (cut subplots, merge minor characters) before borrowing from
+  Act 3.
+- **Anchor coverage:** the sum of all your selected anchor seconds should
+  be approximately {target_seconds:.0f}s, distributed across ~{anchor_count_low}-{anchor_count_high}
+  anchors (avg ~{int(target_seconds / max(anchor_count_low, 1))}s per anchor, capped at {int(MAX_ANCHOR_TOTAL_DURATION_S)}s).
+- **Per-anchor budget:** chars(narration) ≤ sum(range_seconds) × {chars_per_second}.
+- **Per-anchor duration cap:** sum(range_seconds) ≤ {int(MAX_ANCHOR_TOTAL_DURATION_S)}s.
+- **Per-range shot rule:** each range must stay inside ONE `[shot:NNN]`.
+
+**Pre-output self-check (do this mentally before emitting the script):**
+1. Will my total narration fall in {int(total_budget_chars * 0.85)}-{total_budget_chars} chars?
+2. Does each act's char count match its share above (Act 3 the largest)?
+3. Have I selected enough anchor seconds (~{target_seconds:.0f}s total) to support the budget?
+4. Does every range I wrote come from a `[shot:NNN]` line, not `[srt:NNN]`?
+5. Does every anchor's total duration stay ≤ {int(MAX_ANCHOR_TOTAL_DURATION_S)}s?
+
+If any answer is "no", expand the script before outputting — do NOT emit
+a short script "to be safe."
+
 <<<TIMELINE_START>>>
 {merged_timeline}
 <<<TIMELINE_END>>>
@@ -398,33 +430,6 @@ The exact ACT suffixes follow the style rulebook (some styles use
 - **Each anchor's total duration (sum of range durations) must be ≤ {int(MAX_ANCHOR_TOTAL_DURATION_S)}s.**
   If a beat needs more screen time, split into two consecutive anchors.
 - Closing chunk has narration but no [ANCHOR].
-
-# Final Budget Reminder — RE-STATED because this prompt is long
-This prompt contains a large timeline above. Before you start writing,
-confirm these numbers (originally stated under "TTS Budget — HARD CONSTRAINT"):
-
-- **Total narration must land in {int(total_budget_chars * 0.85)}-{total_budget_chars} characters
-  (target {total_budget_chars}).** Anything below {int(total_budget_chars * 0.85)} is a failure
-  — the resulting audio will be too short to cover the movie's plot.
-- **Per-act guideline (sums to {total_budget_chars}):**
-  Act 1 ≈ {int(total_budget_chars * 0.20)} chars, Act 2 ≈ {int(total_budget_chars * 0.30)} chars,
-  Act 3 ≈ {int(total_budget_chars * 0.30)} chars, Act 4 ≈ {int(total_budget_chars * 0.20)} chars.
-- **Anchor coverage:** the sum of all your selected anchor seconds should
-  be approximately {target_seconds:.0f}s, distributed across ~{anchor_count_low}-{anchor_count_high}
-  anchors (avg ~{int(target_seconds / max(anchor_count_low, 1))}s per anchor, capped at {int(MAX_ANCHOR_TOTAL_DURATION_S)}s).
-- **Per-anchor budget:** chars(narration) ≤ sum(range_seconds) × {chars_per_second}.
-- **Per-anchor duration cap:** sum(range_seconds) ≤ {int(MAX_ANCHOR_TOTAL_DURATION_S)}s.
-- **Per-range shot rule:** each range must stay inside ONE `[shot:NNN]`.
-
-**Pre-output self-check (do this mentally before emitting the script):**
-1. Will my total narration fall in {int(total_budget_chars * 0.85)}-{total_budget_chars} chars?
-2. Does each act's char count match its share above?
-3. Have I selected enough anchor seconds (~{target_seconds:.0f}s total) to support the budget?
-4. Does every range I wrote come from a `[shot:NNN]` line, not `[srt:NNN]`?
-5. Does every anchor's total duration stay ≤ {int(MAX_ANCHOR_TOTAL_DURATION_S)}s?
-
-If any answer is "no", expand the script before outputting — do NOT emit
-a short script "to be safe."
 
 # Produce
 Output ONLY the anchored script. No preamble, no code fences, no commentary.

@@ -35,6 +35,7 @@ from pathlib import Path
 
 from app.pipeline.common.json_io import dump_json, load_json
 from app.pipeline.common.script_contract import (
+    get_video_duration,
     load_visual_segments,
     probe_media_duration,
     timestamp_to_seconds,
@@ -93,6 +94,10 @@ MIN_NON_BLACK_SUB_RANGE_S = 1.5
 # real MP3 tail plus this pad so Stage 7's `-shortest` mux can never run
 # out of video before the narration ends.
 CLOSING_TAIL_PAD_S = 0.5
+# Minimum length of a source-movie tail clip before we'll use it for the
+# closing chunk. If the last anchor lands less than this from the end of
+# the movie, the tail would be a flicker — fall back to the still.
+MIN_CLOSING_TAIL_S = 1.0
 
 
 # --- ffmpeg helpers -------------------------------------------------------
@@ -976,6 +981,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Optional override; defaults to <clips-dir>/../clip_manifest.json.")
     parser.add_argument("--visual-segments", type=Path,
                         help="Optional Stage 0 visual_segments.json — used for shot-aware smart-trim.")
+    parser.add_argument("--source-video", type=Path,
+                        help="Optional source movie file. When provided, the closing chunk's "
+                             "visuals continue from where the last anchor's rendered video "
+                             "ended in the source — instead of freezing on a still keyframe.")
     parser.add_argument("--output", type=Path, required=True,
                         help="Draft review.mp4 path.")
     return parser
@@ -991,6 +1000,8 @@ def main(argv=None) -> int:
     args.output = args.output.expanduser().resolve()
     if args.subtitle_manifest is not None:
         args.subtitle_manifest = args.subtitle_manifest.expanduser().resolve()
+    if args.source_video is not None:
+        args.source_video = args.source_video.expanduser().resolve()
     if args.clip_manifest is not None:
         args.clip_manifest = args.clip_manifest.expanduser().resolve()
     elif default_clip_manifest_path(args.clips_dir).exists():
@@ -1037,9 +1048,25 @@ def main(argv=None) -> int:
     voiceover_total_s = probe_media_duration(args.voiceover)
     last_manifest_pos = len(manifest) - 1
 
+    # Probe the source movie's length so we can clamp the closing tail
+    # extraction at the end of the file. Optional — we just skip the
+    # tail-clip path and fall back to a still if no source-video given.
+    source_video_total_s: float | None = None
+    if args.source_video is not None:
+        try:
+            source_video_total_s = get_video_duration(args.source_video)
+        except RuntimeError as exc:
+            print(f"  warn: could not probe --source-video ({exc}); "
+                  f"closing chunk will fall back to still keyframe", file=sys.stderr)
+
     segment_paths: list[Path] = []
     edit_entries: list[dict[str, object]] = []
     last_anchor_index: int | None = None
+    # Source-time second at which the most recent anchor's *rendered*
+    # video ended. Smart-trim cuts from the tail, so this is the end of
+    # the last kept range. Used to seed closing-chunk tail extraction so
+    # the visual continues naturally from where the last anchor left off.
+    last_anchor_kept_end_s: float | None = None
     tally: dict[str, int] = {
         "exact": 0,
         "shot-aligned-tail": 0,
@@ -1050,6 +1077,7 @@ def main(argv=None) -> int:
         "freeze": 0,
         "freeze-replaced-black": 0,
         "spliced-replaced-black": 0,
+        "closing-tail": 0,
     }
 
     total_t0 = time.time()
@@ -1067,26 +1095,68 @@ def main(argv=None) -> int:
         t0 = time.time()
 
         if not ranges_s:
-            # Closing chunk: render still over the most recent keyframe.
-            still = _choose_keyframe(args.keyframes_dir, idx, last_anchor_index)
-            if still is None:
-                print(f"  chunk {idx}: closing with no usable keyframe", file=sys.stderr)
-                return 1
-            still_duration = audio_duration
+            # Closing chunk: target duration covers the manifest audio
+            # plus the actual-vs-encoded MP3 drift, with a small safety
+            # pad on top. -shortest mux in stage 7 trims any overshoot.
+            target_duration = audio_duration
             if (
                 manifest_pos == last_manifest_pos
                 and voiceover_total_s is not None
             ):
-                # Cover the real MP3 tail, not the pre-encoding estimate,
-                # plus a small pad. Stage 7's -shortest mux trims any
-                # overshoot back to the actual audio end.
                 remaining_audio = max(0.0, voiceover_total_s - audio_start_s)
-                still_duration = max(audio_duration, remaining_audio) + CLOSING_TAIL_PAD_S
-            print(f"  chunk {idx:>3} (closing): still {still.name} x {still_duration:.2f}s", end=" ")
-            render_stillframe_segment(still, still_duration, segment_path, codec)
-            actual_kind = "freeze"
-            tally[actual_kind] = tally.get(actual_kind, 0) + 1
-            print(f"({time.time() - t0:.1f}s)")
+                target_duration = max(audio_duration, remaining_audio) + CLOSING_TAIL_PAD_S
+
+            # Preferred: continue playing from where the last anchor's
+            # rendered video ended in the source movie. Falls through to
+            # the still-keyframe path if we can't (no source video, no
+            # prior anchor, or the movie ran out of footage).
+            rendered_from_clip = False
+            if (
+                args.source_video is not None
+                and source_video_total_s is not None
+                and last_anchor_kept_end_s is not None
+            ):
+                tail_start_s = last_anchor_kept_end_s
+                available_s = max(0.0, source_video_total_s - tail_start_s)
+                tail_duration = min(target_duration, available_s)
+                if tail_duration >= MIN_CLOSING_TAIL_S:
+                    print(
+                        f"  chunk {idx:>3} (closing): tail-clip from "
+                        f"{tail_start_s:.2f}s x {tail_duration:.2f}s",
+                        end=" ",
+                    )
+                    render_excerpt(args.source_video, tail_start_s, tail_duration,
+                                   segment_path, codec)
+                    # If the source movie ran out before target_duration,
+                    # top up the tail with a still over the last keyframe
+                    # so audio still has video underneath it.
+                    shortfall_s = target_duration - tail_duration
+                    if shortfall_s > 0.05:
+                        still = _choose_keyframe(args.keyframes_dir, idx, last_anchor_index)
+                        if still is not None:
+                            tail_part = segments_dir / f"segment_{idx:03d}_part00_tail.mp4"
+                            fill_part = segments_dir / f"segment_{idx:03d}_part01_freeze.mp4"
+                            segment_path.replace(tail_part)
+                            render_stillframe_segment(still, shortfall_s, fill_part, codec)
+                            concat_segments([tail_part, fill_part], segment_path)
+                            tail_part.unlink(missing_ok=True)
+                            fill_part.unlink(missing_ok=True)
+                    rendered_from_clip = True
+                    actual_kind = "closing-tail"
+                    tally[actual_kind] = tally.get(actual_kind, 0) + 1
+                    print(f"({time.time() - t0:.1f}s)")
+
+            if not rendered_from_clip:
+                # Fallback: render still over the most recent keyframe.
+                still = _choose_keyframe(args.keyframes_dir, idx, last_anchor_index)
+                if still is None:
+                    print(f"  chunk {idx}: closing with no usable keyframe", file=sys.stderr)
+                    return 1
+                print(f"  chunk {idx:>3} (closing): still {still.name} x {target_duration:.2f}s", end=" ")
+                render_stillframe_segment(still, target_duration, segment_path, codec)
+                actual_kind = "freeze"
+                tally[actual_kind] = tally.get(actual_kind, 0) + 1
+                print(f"({time.time() - t0:.1f}s)")
         else:
             clip_meta = clip_manifest.get(idx) or {}
             clip_meta_ranges = list(clip_meta.get("ranges") or [])  # type: ignore[arg-type]
@@ -1191,6 +1261,10 @@ def main(argv=None) -> int:
                 for p in part_paths:
                     p.unlink(missing_ok=True)
             last_anchor_index = idx
+            if actual_ranges:
+                # Where in source-time the last kept range ends — the
+                # natural "resume here" point for the closing tail clip.
+                last_anchor_kept_end_s = actual_ranges[-1][1]
             tally[actual_kind] = tally.get(actual_kind, 0) + 1
             print(
                 f"  chunk {idx:>3}: {actual_kind:<18} ranges={len(actual_ranges)} "
@@ -1202,7 +1276,11 @@ def main(argv=None) -> int:
         # with residual black at part boundaries. We surgically splice
         # those out — only the black sub-windows are replaced with a
         # still, so good footage in the rest of the chunk is preserved.
-        if segment_path.exists() and ranges_s:
+        # Closing chunks rendered from a real source-movie tail also need
+        # this check (movie-end fades / credits roll), but a still-only
+        # closing chunk does not.
+        rendered_from_clip = bool(ranges_s) or actual_kind == "closing-tail"
+        if segment_path.exists() and rendered_from_clip:
             black_intervals = detect_black_intervals(segment_path)
             black_total = sum(end - start for start, end in black_intervals)
             if black_total > BLACK_FRAME_THRESHOLD_S:
