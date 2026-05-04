@@ -8,11 +8,8 @@ movie_title   = "TODO Display Title"
 video_file    = "TODO.mkv"
 subtitle_file = "TODO.srt"
 style_path    = "styles/niu-shu.md"
-genre         = "action"                          # action / drama / etc — used in the Stage 2 prompt
+genre         = "action"                          # action / drama / etc
 
-# Authoritative Stage 2 review target, in seconds.
-# The planner prompt and Stage 2 validation both use this value.
+# Target final-review length in seconds. The new video-driven pipeline
+# uses this as a soft hint for how much rough cut to assemble.
 target_seconds = 300.0
-
-[stage3]
-# tag = "custom_tag"
