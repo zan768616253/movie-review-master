@@ -5,13 +5,12 @@
 This is not a plot retelling. It is a **confession that the viewer cannot stop listening to**. Every rule below exists to serve three jobs, in order:
 
 1. **Hook the viewer in the first 10 seconds with the protagonist's most visceral moment.** First-person has a structural advantage over third-person — the voice is intimate, confessional, taboo. Exploit that. Open with the most personal, bodily, violating, or identity-shaking moment of the movie, *from the protagonist's mouth*. If the viewer is not hooked by second 10, you have failed.
-2. **Cover the whole story in 7-12 minutes.** The viewer leaves feeling they've lived through the movie alongside the protagonist. Start → reveal → ending, all included. No cliffhangers.
+2. **Cover the whole story inside the configured review window.** The viewer leaves feeling they've lived through the movie alongside the protagonist. Start → reveal → ending, all included. No cliffhangers.
 3. **Keep them watching through emotional rhythm.** This style does not use sarcasm or comedy to re-engage — it uses **revelation, violation, and vulnerability**. Plant a new interior shock (an "我那时候才知道...", a dialogue punch, a dread reveal) every 60-90 seconds.
 
 **Perspective:** First-person ("我") — narrated by the **protagonist**, in their own voice
 **Tone:** Emotional, immersive, confessional — *tuned to the movie's genre* (see Section 5.5)
-**Target Duration:** 7-12 minutes
-**Character-count Window:** ~1,800-2,800 Chinese characters — **provisional**, copied from Niu Shu and not yet re-calibrated. This style uses short breathable sentences (majority under 15 chars, see §6) with frequent line-break pauses, so the spoken time per character is longer than Niu Shu's; the upper end of this window may overshoot 12 min. Recalibrate against the first real TTS render and tighten this range. See `_style_contract.md` §4 #5.
+**Duration Authority:** Stage 2 takes review length and total character budget from the movie config's `target_seconds`. This style file controls voice, pacing patterns, and narration density, not the runtime target.
 **Language:** Chinese (Mandarin) by default; English adaptation supported
 
 > **Style pairing:** This is the *intimate confessional* style. For the detached sarcastic alternative, see [`niu-shu.md`](niu-shu.md). The two styles have **opposite rules** on character naming (original names vs. archetypes) and narrator stance (sincere vs. sarcastic) — do not mix them within a single script.
@@ -371,7 +370,7 @@ For tragedies, end on a held image of the protagonist in their new state — no 
 露出一个惨惨的笑
 ```
 
-Unlike Uncle Niu style, **no signature sign-off** (`我们下期再见`) is required. The final image or reflection *is* the closing.
+Unlike Uncle Niu style, **no platform-style sign-off** is expected here. The final image or reflection *is* the closing.
 
 ### Genre-Closing Fit
 

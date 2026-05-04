@@ -63,19 +63,26 @@ class AnchorMarker:
     """One `[ANCHOR ...]` block from the planner-writer output.
 
     Example line:
-        [ANCHOR ranges="00:23:10.000-00:23:18.000, 00:24:02.000-00:24:09.000" characters="Yuta|Rika"]
+        [ANCHOR id="chunk-024" ranges="00:23:10.000-00:23:18.000, 00:24:02.000-00:24:09.000" characters="Yuta|Rika"]
 
     Parsed into:
         AnchorMarker(
+            id="chunk-024",
             ranges=[("00:23:10.000", "00:23:18.000"),
                     ("00:24:02.000", "00:24:09.000")],
             characters=["Yuta", "Rika"],
         )
+
+    `id` is the stable handle the validator uses to refer back to a specific
+    anchor in feedback messages. The planner is asked to emit `id="chunk-NNN"`
+    on every anchor; if it doesn't, callers can use ``inject_missing_anchor_ids``
+    to fill them in sequentially before validation runs.
     """
 
     ranges: list[tuple[str, str]]
     characters: list[str] = field(default_factory=list)
     raw: str | None = None
+    id: str | None = None
 
     @property
     def total_seconds(self) -> float:
@@ -162,12 +169,88 @@ def parse_anchor_marker(line: str) -> AnchorMarker | None:
         ranges=ranges,
         characters=split_packed_list(attributes.get("characters")),
         raw=stripped,
+        id=(attributes.get("id") or None),
     )
+
+
+# Regex used by ``inject_missing_anchor_ids`` to locate `[ANCHOR ...]` lines
+# from a script verbatim, so we can rewrite only the marker line and leave
+# narration text byte-identical.
+ANCHOR_LINE_RE = re.compile(r"^(\s*)\[ANCHOR\s+(.*?)\]\s*$")
+
+
+def inject_missing_anchor_ids(text: str, prefix: str = "chunk-") -> tuple[str, int]:
+    """Add ``id="chunk-NNN"`` to every anchor line that lacks one.
+
+    Returns ``(new_text, injected_count)``. Existing ids are preserved
+    untouched. Ids assigned to anchors that already have an id are NOT
+    renumbered — only missing ones get filled in, sequenced from 1.
+
+    The function rewrites whole `[ANCHOR ...]` lines but never touches the
+    narration text below them, so it is safe to call before validation
+    without disturbing the human-edited script body.
+    """
+    out_lines: list[str] = []
+    next_index = 1
+    used_ids: set[str] = set()
+    # First pass — collect ids already present so we can avoid colliding
+    # when we generate new ones.
+    for line in text.splitlines():
+        match = ANCHOR_LINE_RE.match(line)
+        if not match:
+            continue
+        try:
+            marker = parse_anchor_marker(line.strip())
+        except ValueError:
+            continue
+        if marker is not None and marker.id:
+            used_ids.add(marker.id)
+
+    injected = 0
+    for line in text.splitlines():
+        match = ANCHOR_LINE_RE.match(line)
+        if not match:
+            out_lines.append(line)
+            continue
+        indent, body = match.group(1), match.group(2)
+        try:
+            marker = parse_anchor_marker(line.strip())
+        except ValueError:
+            # Malformed anchor — leave it for the validator to flag rather
+            # than try to repair it here.
+            out_lines.append(line)
+            continue
+        if marker is None or marker.id:
+            out_lines.append(line)
+            continue
+        # Find the next unused chunk-NNN id.
+        while True:
+            candidate = f"{prefix}{next_index:03d}"
+            next_index += 1
+            if candidate not in used_ids:
+                used_ids.add(candidate)
+                break
+        out_lines.append(f'{indent}[ANCHOR id="{candidate}" {body}]')
+        injected += 1
+    return "\n".join(out_lines) + ("\n" if text.endswith("\n") else ""), injected
 
 
 # --- Style file reader ----------------------------------------------------
 
 CHARS_PER_SECOND_RE = re.compile(r"chars_per_second\s*=\s*([\d.]+)")
+
+# Real measured TTS speech rate for the pipeline's target voice
+# (Qwen3-TTS Voice Clone on the Niu Shu base voice). Mean across 57 chunks
+# of real JJK0 niu-shu output (2026-04-27): 6.74 ± 0.58 cps. This is the
+# *truth-in-conversion* rate from Chinese chars to audio seconds — used
+# for macro-budget computation (target_seconds × REAL_TTS_CPS = total
+# chars to produce that many seconds of audio).
+#
+# This is intentionally distinct from the per-anchor `chars_per_second`
+# in the style file, which is the planner's *writing cap* and must sit
+# below this value so audio always fits inside its anchor's video. See
+# styles/niu-shu.md TTS Budget paragraph for the rationale.
+REAL_TTS_CPS = 6.74
 
 
 def read_style_chars_per_second(style_path: Path, default: float = 5.0) -> float:
@@ -180,13 +263,71 @@ def read_style_chars_per_second(style_path: Path, default: float = 5.0) -> float
 
     Example:
         >>> read_style_chars_per_second(Path("styles/niu-shu.md"))
-        5.0
+        6.0
     """
     text = style_path.read_text(encoding="utf-8")
     match = CHARS_PER_SECOND_RE.search(text)
     if match:
         return float(match.group(1))
     return default
+
+
+@dataclass(frozen=True)
+class ReviewBudget:
+    """Authoritative Stage 2 review-length budget derived from target_seconds."""
+
+    target_seconds: float
+    min_seconds: float
+    max_seconds: float
+    target_chars: int
+    min_chars: int
+
+
+def build_review_budget(target_seconds: float, chars_per_second: float) -> ReviewBudget:
+    """Convert the movie config's target_seconds into Stage 2 macro budgets."""
+    safe_target_seconds = max(1.0, float(target_seconds))
+    target_chars = int(round(safe_target_seconds * chars_per_second))
+    return ReviewBudget(
+        target_seconds=safe_target_seconds,
+        min_seconds=max(60.0, safe_target_seconds * 0.7),
+        max_seconds=safe_target_seconds * 1.3,
+        target_chars=target_chars,
+        min_chars=int(round(target_chars * 0.85)),
+    )
+
+
+@dataclass(frozen=True)
+class CoverageBudget:
+    """Target window for total selected anchor coverage in Stage 2."""
+
+    target_seconds: float
+    min_seconds: float
+    max_seconds: float
+
+
+def build_coverage_budget(
+    target_seconds: float,
+    chars_per_second: float,
+    *,
+    macro_chars_per_second: float = REAL_TTS_CPS,
+) -> CoverageBudget:
+    """Derive a total anchor-coverage window from the review target + planner cap.
+
+    Stage 2 needs enough selected source-video seconds to hold the narration
+    it plans to write at the local per-anchor cap, but not so much that Stage 6
+    must throw away huge portions of the chosen visual sequence.
+    """
+    review_budget = build_review_budget(target_seconds, macro_chars_per_second)
+    safe_planner_cps = max(0.1, float(chars_per_second))
+    coverage_target_seconds = max(
+        review_budget.target_seconds,
+        review_budget.target_chars / safe_planner_cps,
+    )
+    return CoverageBudget(
+        target_seconds=coverage_target_seconds,
+        min_seconds=max(review_budget.min_seconds, coverage_target_seconds * 0.85),
+        max_seconds=max(review_budget.max_seconds, coverage_target_seconds * 1.20),
+    )
 
 
 # --- Anchored-script validator (Phase 2 of the overhaul) ------------------
@@ -233,6 +374,11 @@ class AnchorValidation:
     ``"warn"`` (over by ≤10%, Stage 5 can absorb it visually), or
     ``"fail"`` (over by >10%, requires manual rewrite — narration is
     sacred, the pipeline never trims it automatically).
+
+    ``chunk_id`` is the stable handle from the anchor's ``id="..."``
+    attribute. Falls back to ``"anchor-#N"`` when the planner did not emit
+    an id; the validator's caller should normally inject ids via
+    ``inject_missing_anchor_ids`` before validation so this fallback is rare.
     """
 
     index: int
@@ -242,14 +388,24 @@ class AnchorValidation:
     overrun_ratio: float
     severity: str
 
+    @property
+    def chunk_id(self) -> str:
+        return self.anchor.id or f"anchor-#{self.index}"
+
 
 @dataclass
 class StructureIssue:
-    """A script-level problem that isn't tied to a single anchor's budget."""
+    """A script-level problem that isn't tied to a single anchor's budget.
+
+    ``chunk_id`` is set when the issue can be traced to a specific anchor
+    (the common case), or None for script-level issues (missing TITLE,
+    zero anchors, orphan narration).
+    """
 
     severity: str  # "warn" or "fail"
     code: str
     message: str
+    chunk_id: str | None = None
 
 
 @dataclass
@@ -263,6 +419,8 @@ class ScriptValidation:
 
     chunks: list[AnchorValidation]
     issues: list[StructureIssue] = field(default_factory=list)
+    total_narration_chars: int = 0
+    total_anchor_seconds: float = 0.0
 
     @property
     def has_failures(self) -> bool:
@@ -299,6 +457,7 @@ def _grade_overrun(ratio: float) -> str:
 def _check_range_provenance(
     anchor: AnchorMarker,
     timeline_intervals: list[tuple[float, float]] | None,
+    chunk_id: str | None = None,
 ) -> StructureIssue | None:
     """Verify each anchor range overlaps a real SRT/visual timeline entry.
 
@@ -339,10 +498,77 @@ def _check_range_provenance(
             f"anchor range {start_ts}-{end_ts} does not overlap any "
             f"timeline entry (closest gap {best_gap:.2f}s)"
         )
-        candidate = StructureIssue(severity=severity, code="range_provenance", message=msg)
+        candidate = StructureIssue(
+            severity=severity, code="range_provenance", message=msg, chunk_id=chunk_id,
+        )
         if worst is None or (candidate.severity == "fail" and worst.severity != "fail"):
             worst = candidate
     return worst
+
+
+# Sub-shots produced by Stage 0's scene-detect that are shorter than this
+# threshold are treated as "false granularity" — micro-cuts inside what
+# was editorially one continuous beat (rapid action, motion changes,
+# camera shake). When ANY sub-shot of a Stage 0 segment falls below this
+# bar after flicker-drop, the whole segment's inner cuts are collapsed:
+# the shot menu emits one shot for the segment, and the validator's
+# boundary set excludes the segment's `shot_boundaries_s`. This kills
+# the "LLM merges 4 adjacent same-summary shots into one range" failure
+# mode — those shots no longer appear separately. Long-shot segments
+# (every sub-shot ≥ this threshold) are still split, because the LLM
+# should be choosing among them at fine granularity.
+COLLAPSE_INNER_CUTS_BELOW_S = 3.0
+
+
+def should_collapse_segment_inner_cuts(
+    segment: dict[str, object], min_subshot_s: float = 0.5
+) -> bool:
+    """Decide whether to merge a segment's inner shot boundaries.
+
+    Returns True iff, after dropping flickers (sub-shots shorter than
+    ``min_subshot_s``), any remaining sub-shot is still shorter than
+    ``COLLAPSE_INNER_CUTS_BELOW_S``. In that case the segment is
+    treated as one editorial beat throughout the pipeline:
+
+    - ``split_segment_into_shots`` emits one shot for the whole segment
+    - ``build_shot_boundary_set`` skips the segment's inner cuts
+
+    Both consumers must apply the same rule, otherwise the prompt would
+    show one shot but the validator would still reject ranges that
+    cross the omitted cuts.
+    """
+    try:
+        seg_start = timestamp_to_seconds(str(segment["start"]))
+        seg_end = timestamp_to_seconds(str(segment["end"]))
+    except (KeyError, ValueError):
+        return False
+    if seg_end <= seg_start:
+        return False
+
+    inner: list[float] = []
+    for raw in segment.get("shot_boundaries_s") or ():  # type: ignore[union-attr]
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if seg_start < value < seg_end:
+            inner.append(value)
+    if not inner:
+        return False
+    inner.sort()
+
+    # Walk the cut points and drop flicker sub-shots first, mirroring
+    # what split_segment_into_shots does. After flicker drop, check
+    # whether any surviving sub-shot is still under the collapse bar.
+    cut_points = [seg_start, *inner, seg_end]
+    surviving: list[tuple[float, float]] = []
+    for i in range(len(cut_points) - 1):
+        a, b = cut_points[i], cut_points[i + 1]
+        if b - a >= min_subshot_s:
+            surviving.append((a, b))
+    if not surviving:
+        return False
+    return any((b - a) < COLLAPSE_INNER_CUTS_BELOW_S for a, b in surviving)
 
 
 def build_shot_boundary_set(
@@ -358,7 +584,11 @@ def build_shot_boundary_set(
     - every visual segment's start timestamp (excluding the very first one
       at t=0, which is the movie start, not a cut)
     - every visual segment's end timestamp
-    - every entry in any segment's `shot_boundaries_s` list
+    - every entry in any segment's `shot_boundaries_s` list — UNLESS the
+      segment qualifies for inner-cut collapse (see
+      ``should_collapse_segment_inner_cuts``); in that case the inner
+      cuts are omitted so the validator and the prompt agree on the
+      effective shot granularity.
 
     Returns sorted, deduplicated absolute seconds. The validator uses this
     set to reject anchor ranges that cross a cut: if any boundary B falls
@@ -379,6 +609,8 @@ def build_shot_boundary_set(
         if start_s > 0.001:
             boundaries.add(round(start_s, 3))
         boundaries.add(round(end_s, 3))
+        if should_collapse_segment_inner_cuts(segment):
+            continue
         for raw in segment.get("shot_boundaries_s") or ():  # type: ignore[union-attr]
             try:
                 boundaries.add(round(float(raw), 3))
@@ -391,6 +623,7 @@ def _check_range_shot_alignment(
     anchor: AnchorMarker,
     shot_boundaries: list[float] | None,
     tolerance_s: float = SHOT_BOUNDARY_TOLERANCE_S,
+    chunk_id: str | None = None,
 ) -> list[StructureIssue]:
     """Reject anchor ranges that span a source-movie shot cut.
 
@@ -422,6 +655,7 @@ def _check_range_shot_alignment(
                             f"split it into two anchors or use a multi-range "
                             f"anchor with each range bounded by one shot"
                         ),
+                        chunk_id=chunk_id,
                     )
                 )
                 break
@@ -457,6 +691,7 @@ def validate_anchored_script(
     chars_per_second: float,
     timeline_intervals: list[tuple[float, float]] | None = None,
     shot_boundaries: list[float] | None = None,
+    target_seconds: float | None = None,
 ) -> ScriptValidation:
     """Walk an anchored script and report per-anchor budgets + structure issues.
 
@@ -484,9 +719,18 @@ def validate_anchored_script(
           shot so the narration can never describe a beat the audience
           isn't yet seeing.
 
+    Optional macro checks (only when ``target_seconds`` is provided):
+        - total spoken narration below the movie
+          config floor                             → fail (script_too_short)
+        - total selected anchor coverage below
+          the movie config floor                   → fail (anchor_coverage_short)
+        - total selected anchor coverage above
+          the planner-support ceiling              → fail (anchor_coverage_long)
+
     Closing chunks (text after `[CLOSING]` with no anchor) are skipped for
-    the budget check but DO trigger orphan_narration if encountered before
-    the [CLOSING] marker.
+    the per-anchor budget check but DO count toward the script-level spoken
+    total. Narration before the [CLOSING] marker still triggers
+    orphan_narration when it appears outside an anchor.
 
     Example anchored-script fragment::
 
@@ -504,6 +748,7 @@ def validate_anchored_script(
     in_bad_anchor = False
     saw_title = False
     last_anchor_first_start_s: float | None = None
+    closing_narration_chars = 0
 
     def flush() -> None:
         nonlocal current_anchor, current_narration
@@ -512,15 +757,18 @@ def validate_anchored_script(
             narration_chars = len(narration)
             budget_chars_f = current_anchor.total_seconds * chars_per_second
             ratio = narration_chars / budget_chars_f if budget_chars_f > 0 else float("inf")
-            chunks.append(AnchorValidation(
+            validation = AnchorValidation(
                 index=len(chunks) + 1,
                 anchor=current_anchor,
                 narration_chars=narration_chars,
                 budget_chars=int(round(budget_chars_f)),
                 overrun_ratio=ratio,
                 severity=_grade_overrun(ratio),
-            ))
-            provenance = _check_range_provenance(current_anchor, timeline_intervals)
+            )
+            chunks.append(validation)
+            provenance = _check_range_provenance(
+                current_anchor, timeline_intervals, chunk_id=validation.chunk_id,
+            )
             if provenance is not None:
                 issues.append(provenance)
         current_anchor = None
@@ -580,6 +828,12 @@ def validate_anchored_script(
             current_anchor = anchor
             in_closing = False
             in_bad_anchor = False
+            # Stable handle for every issue tied to this anchor. The harness
+            # is expected to call ``inject_missing_anchor_ids`` before
+            # validation, so anchor.id is normally set; the "anchor-#N"
+            # fallback exists for direct callers (e.g. unit tests) that
+            # don't bother with ids.
+            current_chunk_id = anchor.id or f"anchor-#{len(chunks) + 1}"
 
             # Reject any single range that's grossly too long. Provenance
             # alone can't catch this — a 30-min range still "overlaps"
@@ -596,6 +850,7 @@ def validate_anchored_script(
                             f"(cap is {MAX_ANCHOR_RANGE_DURATION_S:.0f}s); "
                             f"split long beats into multiple short ranges"
                         ),
+                        chunk_id=current_chunk_id,
                     ))
 
             # Reject anchors whose total duration exceeds the cap. This is
@@ -612,32 +867,46 @@ def validate_anchored_script(
                         f"{MAX_ANCHOR_TOTAL_DURATION_S:.0f}s cap; split into two anchors "
                         f"so within-anchor sync drift stays bounded"
                     ),
+                    chunk_id=current_chunk_id,
                 ))
 
             # Shot-aware check: each range must stay inside ONE source shot.
             # Stage 0 emits shot boundaries; a range that contains a boundary
             # strictly inside its window will play a hard cut mid-narration.
-            issues.extend(_check_range_shot_alignment(anchor, shot_boundaries))
+            issues.extend(_check_range_shot_alignment(
+                anchor, shot_boundaries, chunk_id=current_chunk_id,
+            ))
 
-            # Monotonicity: each new anchor's first range must start at or
-            # after the previous anchor's first range. Strictly increasing
-            # is too tight — back-to-back beats from the same scene get a
-            # legitimate equality.
+            # Monotonicity: each new anchor's first range starts at or
+            # after the previous anchor's first range — UNLESS the planner
+            # is deliberately cross-cutting between two parallel
+            # storylines (a standard niu-shu device, signaled in narration
+            # by `另一边` / `与此同时`). The pipeline plays anchors in
+            # script order regardless of timestamp, so a cross-cut works
+            # downstream; only narrative quality is at stake. Emit as a
+            # `warn` so the planner sees the jump but is not blocked —
+            # genuine planner scrambling is rare and the user can decide
+            # case-by-case from the warning output.
             first_start_s = timestamp_to_seconds(anchor.ranges[0][0])
             if last_anchor_first_start_s is not None and first_start_s < last_anchor_first_start_s:
                 issues.append(StructureIssue(
-                    severity="fail",
+                    severity="warn",
                     code="non_monotonic",
                     message=(
-                        f"anchor #{len(chunks) + 1} starts at {anchor.ranges[0][0]} "
-                        f"which is earlier than the previous anchor's start"
+                        f"anchor {current_chunk_id} starts at {anchor.ranges[0][0]} "
+                        f"which is earlier than the previous anchor's start "
+                        f"(intentional cross-cut? if not, reorder)"
                     ),
+                    chunk_id=current_chunk_id,
                 ))
             last_anchor_first_start_s = first_start_s
             continue
 
         if in_closing:
-            # Closing narration plays over a still keyframe — no budget check.
+            # Closing narration plays over a still keyframe, so it skips the
+            # per-anchor budget check. It still counts toward the total spoken
+            # runtime because Stage 3 voices it into the final mp3.
+            closing_narration_chars += len(line)
             continue
 
         if in_bad_anchor:
@@ -671,7 +940,56 @@ def validate_anchored_script(
             message="script contains zero [ANCHOR] blocks",
         ))
 
-    return ScriptValidation(chunks=chunks, issues=issues)
+    total_anchor_seconds = sum(chunk.anchor.total_seconds for chunk in chunks)
+    total_narration_chars = sum(chunk.narration_chars for chunk in chunks) + closing_narration_chars
+
+    if target_seconds is not None and chunks:
+        # Macro budget uses real TTS speech rate, not the per-anchor writing
+        # cap. The script-too-short check needs to know how many chars are
+        # required to produce `target_seconds` of audio, which is governed by
+        # how fast TTS reads the text — not by what the planner is allowed
+        # to write per anchor.
+        review_budget = build_review_budget(target_seconds, REAL_TTS_CPS)
+        coverage_budget = build_coverage_budget(target_seconds, chars_per_second)
+        if total_narration_chars < review_budget.min_chars:
+            issues.append(StructureIssue(
+                severity="fail",
+                code="script_too_short",
+                message=(
+                    f"total spoken narration is {total_narration_chars} chars, below the "
+                    f"minimum {review_budget.min_chars} chars for a "
+                    f"{review_budget.target_seconds:.0f}s target"
+                ),
+            ))
+        if total_anchor_seconds < coverage_budget.min_seconds:
+            issues.append(StructureIssue(
+                severity="fail",
+                code="anchor_coverage_short",
+                message=(
+                    f"selected anchor coverage is {total_anchor_seconds:.1f}s, below the "
+                    f"minimum {coverage_budget.min_seconds:.1f}s needed to support a "
+                    f"{review_budget.target_seconds:.0f}s target at "
+                    f"{chars_per_second:g} chars/s"
+                ),
+            ))
+        if total_anchor_seconds > coverage_budget.max_seconds:
+            issues.append(StructureIssue(
+                severity="fail",
+                code="anchor_coverage_long",
+                message=(
+                    f"selected anchor coverage is {total_anchor_seconds:.1f}s, above the "
+                    f"maximum {coverage_budget.max_seconds:.1f}s allowed for a "
+                    f"{review_budget.target_seconds:.0f}s target at "
+                    f"{chars_per_second:g} chars/s"
+                ),
+            ))
+
+    return ScriptValidation(
+        chunks=chunks,
+        issues=issues,
+        total_narration_chars=total_narration_chars,
+        total_anchor_seconds=total_anchor_seconds,
+    )
 
 
 def load_visual_segments(path: Path | None) -> list[dict[str, object]]:

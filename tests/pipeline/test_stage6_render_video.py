@@ -32,21 +32,22 @@ def test_plan_smart_trim_returns_extension_needed_when_video_too_short() -> None
 
 def test_plan_smart_trim_snaps_to_shot_boundary_within_grace() -> None:
     # 14s of video, 11s of audio → excess 3s.
-    # Inner shot boundaries at 14.0, 17.0 (last range 10.0–24.0).
-    # new_end = 24 - 3 = 21 → only candidate ≤ 21+grace is 17 → shot-aligned.
+    # Inner shot boundaries at 14.0, 20.6 (last range 10.0–24.0).
+    # new_end = 24 - 3 = 21. A boundary at 20.6 is close enough to the
+    # desired trim point, so Stage 6 keeps the clean cut.
     ranges = [(10.0, 24.0)]
-    shots = [[14.0, 17.0]]
+    shots = [[14.0, 20.6]]
     kept, kind = plan_smart_trim(ranges, shots, audio_duration_s=11.0)
-    assert kept == [(10.0, 17.0)]
+    assert kept == [(10.0, 20.6)]
     assert kind == "shot-aligned-tail"
 
 
 def test_plan_smart_trim_picks_latest_shot_boundary_to_preserve_payoff() -> None:
     # Last range 10–24s (14s); audio 6s → need new_end = 16 (exact target).
-    # Boundaries at 12, 13, 16 are all candidates ≤ 16+grace; we want the
+    # Boundaries at 15.3, 15.6, 16 are all near the target. We want the
     # LATEST one (16) so we keep the most footage including the payoff.
     ranges = [(10.0, 24.0)]
-    shots = [[12.0, 13.0, 16.0]]
+    shots = [[15.3, 15.6, 16.0]]
     kept, kind = plan_smart_trim(ranges, shots, audio_duration_s=6.0)
     assert kept == [(10.0, 16.0)]
     assert kind == "shot-aligned-tail"
@@ -62,6 +63,17 @@ def test_plan_smart_trim_falls_back_to_mid_shot_when_no_boundary_fits() -> None:
     shots = [[23.0]]  # boundary at 23 > 21.55 → does not fit
     kept, kind = plan_smart_trim(ranges, shots, audio_duration_s=11.0)
     assert kept == [(10.0, 21.0)]  # mid-shot tail cut at exact target
+    assert kind == "mid-shot-tail"
+
+
+def test_plan_smart_trim_ignores_boundary_far_before_target_even_if_it_fits_grace() -> None:
+    # new_end target = 21.0. A boundary at 19.0 is technically ≤ 21+grace,
+    # but snapping 2s early would create a visible freeze tail; prefer the
+    # mid-shot trim instead.
+    ranges = [(10.0, 24.0)]
+    shots = [[19.0]]
+    kept, kind = plan_smart_trim(ranges, shots, audio_duration_s=11.0)
+    assert kept == [(10.0, 21.0)]
     assert kind == "mid-shot-tail"
 
 
@@ -108,11 +120,11 @@ def test_plan_smart_trim_snaps_each_range_to_its_own_shot_boundary() -> None:
     ranges = [(10.0, 20.0), (30.0, 40.0)]  # 10s + 10s = 20s
     # Shot boundaries inside each range. Audio = 16s → excess = 4s,
     # 2s should come from each range. Cut in r0: target end = 18.0
-    # (boundary at 17 is the latest ≤ 18.8 → snap there). r1: target
+    # (boundary at 17.6 is close enough to keep a clean cut). r1: target
     # end = 38.0 (boundary at 38 fits, snap there).
-    shots = [[15.0, 17.0], [35.0, 38.0]]
+    shots = [[15.0, 17.6], [35.0, 38.0]]
     kept, kind = plan_smart_trim(ranges, shots, audio_duration_s=16.0)
-    assert kept == [(10.0, 17.0), (30.0, 38.0)]
+    assert kept == [(10.0, 17.6), (30.0, 38.0)]
     assert kind == "shot-aligned-spread"
 
 
@@ -278,6 +290,20 @@ def test_collect_shot_boundaries_unions_overlapping_segments() -> None:
     boundaries = collect_shot_boundaries_for_range(10.0, 20.0, visual_segments)
     # Strictly inside (10, 20) → 12.0, 14.0, 18.0; 22 and 65 are outside.
     assert boundaries == [12.0, 14.0, 18.0]
+
+
+def test_collect_shot_boundaries_ignores_collapsed_inner_cuts() -> None:
+    visual_segments = [
+        {
+            "start": "00:00:08.000",
+            "end": "00:00:16.000",
+            "shot_boundaries_s": [10.0, 12.0, 14.0],
+        },
+    ]
+    # Sub-shots are [8-10]=2s, [10-12]=2s, [12-14]=2s, [14-16]=2s, so Stage 2's
+    # collapse rule treats these as micro-cuts and Stage 6 must ignore them too.
+    boundaries = collect_shot_boundaries_for_range(8.0, 16.0, visual_segments)
+    assert boundaries == []
 
 
 def test_write_subtitle_script_creates_styled_bottom_center_dialogue(tmp_path: Path) -> None:

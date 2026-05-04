@@ -38,6 +38,7 @@ from app.pipeline.common.script_contract import (
     get_video_duration,
     load_visual_segments,
     probe_media_duration,
+    should_collapse_segment_inner_cuts,
     timestamp_to_seconds,
 )
 from app.pipeline.common.video_encoder import (
@@ -67,6 +68,12 @@ DEFAULT_SUBTITLE_MAX_LINE_CHARS = 14
 # overrun absorbed by post-handle extension or still fallback; smaller = more
 # mid-shot cuts.
 SMART_TRIM_GRACE_PCT = 0.05
+# Shot-boundary snaps are only allowed when the boundary lands close to the
+# desired trim point. Otherwise a clean mid-shot trim is better than snapping
+# several seconds early and padding the rest with a still.
+SMART_TRIM_SNAP_BACKTRACK_PCT = 0.15
+SMART_TRIM_MIN_SNAP_BACKTRACK_S = 0.25
+SMART_TRIM_MAX_SNAP_BACKTRACK_S = 0.75
 # Multi-range trim spreads the excess across every range so each range is
 # represented in the final chunk. We refuse to cut a range below this floor
 # — anything shorter is a flicker, not a shot. If the spread can't honor the
@@ -623,6 +630,8 @@ def collect_shot_boundaries_for_range(
             continue
         if seg_end < range_start_s or seg_start > range_end_s:
             continue
+        if should_collapse_segment_inner_cuts(seg):
+            continue
         for b in seg.get("shot_boundaries_s") or []:  # type: ignore[union-attr]
             try:
                 bf = float(b)
@@ -635,6 +644,29 @@ def collect_shot_boundaries_for_range(
 
 def _ranges_total_duration(ranges_s: list[tuple[float, float]]) -> float:
     return sum(max(0.0, end - start) for start, end in ranges_s)
+
+
+def _smart_trim_snap_backtrack_window(audio_duration_s: float, grace_s: float) -> float:
+    scaled_window = max(
+        SMART_TRIM_MIN_SNAP_BACKTRACK_S,
+        audio_duration_s * SMART_TRIM_SNAP_BACKTRACK_PCT,
+    )
+    return max(grace_s, min(SMART_TRIM_MAX_SNAP_BACKTRACK_S, scaled_window))
+
+
+def _shot_boundaries_near_target(
+    candidates: list[float],
+    range_start_s: float,
+    desired_end_s: float,
+    grace_s: float,
+    snap_backtrack_s: float,
+) -> list[float]:
+    earliest_allowed = desired_end_s - snap_backtrack_s
+    return [
+        boundary for boundary in candidates
+        if range_start_s < boundary <= desired_end_s + grace_s
+        and boundary >= earliest_allowed
+    ]
 
 
 # --- Smart trim -----------------------------------------------------------
@@ -659,8 +691,9 @@ def _plan_smart_trim_core(
             from Stage 4 post-handles and freeze only if still short.
 
     For a **single range**, trim from the tail and (when possible) snap
-    to a shot boundary inside the range. Latest-shot-boundary wins to
-    preserve the payoff frame.
+    to a shot boundary inside the range, but only when that boundary lands
+    close to the desired trim point. Latest-shot-boundary wins to preserve
+    the payoff frame.
 
     For **multiple ranges**, the planner has chosen a chronological
     sequence ("first I show A, then B, then C"). Tail-greedy trim used
@@ -678,6 +711,7 @@ def _plan_smart_trim_core(
 
     total = sum(end - start for start, end in ranges_s)
     grace = grace_pct * audio_duration_s
+    snap_backtrack_s = _smart_trim_snap_backtrack_window(audio_duration_s, grace)
 
     if total + grace < audio_duration_s:
         return ranges_s, "extension-needed"
@@ -691,7 +725,13 @@ def _plan_smart_trim_core(
         rs, re_ = ranges_s[0]
         new_end = max(rs, re_ - excess)
         candidates = shot_boundaries_per_range[0] if shot_boundaries_per_range else []
-        in_window = [b for b in candidates if rs < b <= new_end + grace]
+        in_window = _shot_boundaries_near_target(
+            candidates,
+            rs,
+            new_end,
+            grace,
+            snap_backtrack_s,
+        )
         if in_window:
             return [(rs, max(in_window))], "shot-aligned-tail"
         return [(rs, new_end)], "mid-shot-tail"
@@ -724,7 +764,13 @@ def _plan_smart_trim_core(
             continue
         new_end = re_ - cut
         candidates = shot_boundaries_per_range[i] if i < len(shot_boundaries_per_range) else []
-        in_window = [b for b in candidates if rs < b <= new_end + grace]
+        in_window = _shot_boundaries_near_target(
+            candidates,
+            rs,
+            new_end,
+            grace,
+            snap_backtrack_s,
+        )
         if in_window:
             new_ranges.append((rs, max(in_window)))
             any_snapped = True
