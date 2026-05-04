@@ -1,11 +1,12 @@
 # Movie-Review-Master Handbook
 
-> **NOTE (2026-04-27):** Stage 2 is being rewritten on the `develop` branch
-> from a two-pass writer + grounder into a single planner-writer that
-> co-plans visual anchors and narration. While that is in flight, the
-> Stage 2 / Stage 5 sections below describe the **current** behaviour, not
-> the target. See [`OVERHAUL_PLAN.md`](OVERHAUL_PLAN.md) for the target
-> architecture and phased plan.
+> **NOTE (2026-05-04):** The audio-driven `[ANCHOR]` pipeline was retired in
+> May 2026 after structural audio/video sync problems proved to be a
+> consequence of the architecture rather than implementation bugs. The
+> project is now mid-rebuild as a **video-driven** pipeline. See
+> [`plan.md`](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/plan.md)
+> for current implementation status; sections below describe the new
+> target architecture.
 
 This handbook is the central source of truth for stable project knowledge: concepts, design decisions, pipeline logic, conventions, and style-system rules. It is intentionally not a progress log.
 
@@ -45,7 +46,17 @@ Project assumptions:
 - primary plot source: subtitle text
 - primary media tool: `ffmpeg`
 
-## 4. Core Concepts
+## 4. Architectural Principle: Video Drives Audio
+
+The single rule that defines the pipeline shape:
+
+> **Visuals are picked first. Narration is written against the chosen visuals. Audio is generated from that narration. Then the visuals are trimmed to fit the actual audio.**
+
+The earlier audio-driven pipeline (the `[ANCHOR]` system) tried to bind narration timing to fixed source-movie ranges *before* the audio existed. This created a structural conflict: TTS duration is variable (one sentence is 2.8s or 4.5s depending on emphasis, pacing, punctuation), but source-shot duration is fixed. Forcing those two together produces audible mismatches no amount of micro-tuning could resolve.
+
+The video-driven model avoids that mismatch by reversing the dependency. Each "beat" of the review is a fixed visual sequence whose internal timing is shaped *after* the narration audio is rendered.
+
+## 5. Core Concepts
 
 ### Source Movie
 
@@ -53,231 +64,203 @@ The full `.mp4` or `.mkv` file that all clips are extracted from.
 
 ### Subtitle Source
 
-The `.srt` or `.ass` file used to reconstruct plot structure, find dialogue anchors, and guide scene selection.
+The `.srt` or `.ass` file used as plot context for narration writing.
 
-### Review Script
+### Shot
 
-A style-constrained narration document that retells the full movie in review form. The script is not plain prose only; it also carries structural markers used by later pipeline steps.
+A single continuous take detected by the VLM + ffmpeg scene-detect pass. The atomic unit of visual selection.
 
-### `[ANCHOR ...]`
+### Selected Shots
 
-The primary synchronization marker. Each `[ANCHOR]` binds one narrative beat to one or more source-movie shot ranges, with the narration text directly below it sized to fit those ranges.
+The chronological subset of shots that should appear in the review. Selection is the human (or scorer) judgment about which moments matter for the plot.
 
-Form:
+### Narrative Beat
 
-```
-[ANCHOR ranges="HH:MM:SS-HH:MM:SS, HH:MM:SS-HH:MM:SS" characters="Name A|Name B"]
-narration text bounded by sum_of_range_seconds × chars_per_second
-```
-
-Rules:
-
-- one narrative beat maps to one `[ANCHOR]`
-- ranges are chronological `start-end` pairs from `[shot:NNN]` lines (not `[srt:NNN]`)
-- each range must stay inside ONE source shot (the validator rejects shot-boundary crossings)
-- each individual range duration ≤ 12s; each anchor's total range duration ≤ 12s
-- multi-shot beats use multi-range anchors with one range per shot
-- narration char count ≤ `sum(range_seconds) × chars_per_second` (the per-style planner budget)
-- the marker is for pipeline coordination, not for spoken narration
-- the `[CLOSING]` section contains narration but no `[ANCHOR]` — Stage 6 plays it over the most recent keyframe
-
-### Narration Chunk
-
-The unit of alignment between script, TTS, and rendering. Each `[ANCHOR]` block is one chunk; the closing passage (no anchor) is its own chunk.
+A 30–60s segment of the rough cut that contains 5–15 micro-shots and corresponds to one narration line. The beat is the unit of narration writing AND the unit of visual fitting: micro-shots inside one beat are trimmed/looped together to match the beat's TTS duration.
 
 ### Voiceover Manifest
 
-The manifest is the sync contract between audio generation and rendering. It records, per chunk:
+The manifest is the sync contract between audio generation and the rest of the pipeline. It records, per beat:
 
-- which script chunk was spoken
-- the chunk's `ranges` (the source-movie windows the planner picked) and `characters`
-- where that chunk starts and ends inside the final concatenated voiceover
+- `index`
+- `text` (the narration spoken in this beat)
+- `audio_start_s` and `audio_end_s` (where the beat lives in the concatenated voiceover)
+
+Field names are preserved from the legacy manifest where possible to ease migration.
 
 ### Subtitle Manifest
 
-The subtitle manifest is the sync contract between Stage 4 and the draft renderer.
-It records, in order:
+The subtitle manifest is the sync contract between subtitle alignment and the renderer. It records, in order:
 
-- which chunk a subtitle cue belongs to
-- the exact cue text shown on screen
-- where that cue starts and ends inside the final concatenated voiceover
+- `index`, `chunk_index`, `text`, `start_s`, `end_s`
+
+`chunk_index` here refers to the beat index from the voiceover manifest.
 
 ### Draft Render
 
-`review.mp4` is the Stage 6 watchable draft. `final_video.mp4` is the Stage 7 upload-ready master created by remuxing the Stage 6 picture lock with the Stage 3 narration track.
+`review.mp4` is the watchable draft. `final_video.mp4` is the upload-ready master created by remuxing the draft picture lock with the voiceover track.
 
-## 5. End-to-End Pipeline Design
+## 6. End-to-End Pipeline Design
 
-The logical pipeline has eight stages.
+The pipeline has 10 stages. Stages 0–1 and 7–9 reuse existing modules; stages 2–6 are the new video-driven core.
+
+| # | Stage | Auto/Manual | Status |
+|---|---|---|---|
+| 0 | Visual Indexing (shot detection) | Auto | Survives from old pipeline |
+| 1 | Subtitle Intake | Auto | Survives from old pipeline |
+| 2 | Shot Selection | Manual v1 → Auto v2 | New |
+| 3 | Rough Cut Assembly | Auto | New |
+| 4 | Narration Writing | Manual v1 → Auto v2 | New |
+| 5 | Voiceover Generation | Auto | New (TTS engine reused via git history) |
+| 6 | Visual Fitting | Auto | New |
+| 7 | Subtitle Alignment | Auto | Survives (was old Stage 4) |
+| 8 | Draft Render | Auto | New |
+| 9 | Upload Finalize | Auto | Survives (was old Stage 7) |
+
+Each manual stage is a **replaceable module**: its output is a stable JSON file with a versioned schema, so the manual editor can be swapped for an automated scorer/writer without changing any downstream code. The first iteration is "human in the loop" and the second iteration replaces those humans with code, one at a time.
 
 ### Stage 0: Visual Indexing
 
 Purpose:
 
-- provide visual-only search metadata for the full movie
-- generate `visual_segments.json` containing event-based segments (typical 2-8s, hard cap 12s) that cover action beats, reactions, transitions, and establishing shots
+- detect every shot in the source movie and emit a per-shot summary
+- the foundation that all selection, scoring, and assembly stages build on
 
-Grounding strategy:
-
-- subtitles are the primary anchor for dialogue; Stage 0 exists to cover the non-dialogue gap, not to redescribe subtitle-covered moments
-- the VLM is explicitly told to skip shot-reverse-shot dialogue scenes, since dialogue beats are grounded via SRT
-- VLM chunking is only an input batching concern; a full movie should still yield many event-level candidates rather than a handful of broad summaries
-- downstream matching works best when each segment describes one distinct visual event with characters and OCR when available
-
-Timestamp accuracy (Gemini Fast):
-
-- each chunk has its chunk-local PTS (HH:MM:SS.mmm) burned into the top-left corner of every frame so the VLM reads timestamps off the image instead of estimating them
-- after inference, every segment's `start` and `end` are snapped to the nearest ffmpeg-detected shot cut within 1.5s; outside that tolerance the original timestamp is kept
-- chunks are 5 minutes each to reduce context drift; this also gives the validator less room for long-range hallucinated spans
-
-VLM trust boundary:
-
-- VLMs (both Gemini and local Qwen2.5-VL) routinely return timestamps that exceed the movie duration or span implausible ranges. Stage 0's output is only trusted after it has been passed through `validate_visual_segments`, which clamps `end` to the real video duration, drops segments with inverted or out-of-range times, and drops segments longer than `MAX_VISUAL_SEGMENT_DURATION_S` (30s). Downstream stages must use the validated file, not the raw model response.
+Carried over from the previous architecture without changes. Output: `visual_segments.json`.
 
 ### Stage 1: Subtitle Intake
 
 Purpose:
 
-- normalize subtitle formats into downstream-friendly text and structured data
-- preserve timing so later steps can recover exact scene locations
+- normalize `.srt`/`.ass` into clean text + timing
+- provide plot context to the narration-writing stage
 
-Accepted subtitle formats:
+Carried over without changes.
 
-- `.srt`
-- `.ass`
-
-Design expectation:
-
-- plain-text output is useful for reading and grep-style scene discovery
-- structured output is useful for tooling and future automation
-
-### Stage 2: Script Authoring
+### Stage 2: Shot Selection
 
 Purpose:
 
-- convert movie plot into a review script in the selected style
-- bind narration to specific source-movie shots via `[ANCHOR]` markers
+- cut the shot list down to the high-information subset
+- preserve chronological order
 
-Single-pass planner-writer (replaces the legacy writer + grounder two-pass design):
+Output: `selected_shots.json` — a list of references back to entries in `visual_segments.json`, plus optional per-shot tags ("hook", "twist", "climax").
 
-- one LLM call picks visual anchors AND writes narration in the selected style
-- the prompt carries the style rulebook verbatim, an optional synopsis, and a chronological timeline mixing `[srt:NNN]` dialogue lines with per-shot `[shot:NNN]` entries
-- each anchor is constrained by `chars(narration) ≤ sum(range_seconds) × chars_per_second` so narration can never outlast the chosen visuals — Stage 6 trims any small video slack shot-aware
-- final output is an `[ANCHOR]`-bound script ready for Stage 3 audio generation
+v1 (manual): the user opens the JSON in an editor and marks `keep`/`skip`. A simple TUI helper is acceptable but not required.
 
-Shot-aware range contract:
+v2 (auto): a scoring function combines heuristics (face presence, motion, OCR change, scene novelty) and optional VLM judgment. It runs after v1 has produced enough labeled examples to validate the scorer.
 
-- each anchor range stays inside ONE source shot (no shot-boundary crossings)
-- each range duration ≤ 12s; each anchor's total duration ≤ 12s
-- multi-shot beats use multi-range anchors with one range per shot
-- range timestamps come from `[shot:NNN]` lines, not `[srt:NNN]` — SRT timestamps mark speech onset, not shot cuts
-- the validator (`validate_anchored_script`) enforces all of the above against `build_shot_boundary_set(visual_segments)`
+The contract — input/output schema — does not change between v1 and v2.
 
-Why the contract: per-chunk durations are matched at the rendering layer, but inside an anchor audio runs at a uniform pace while source video runs at the editor's pace. Long anchors that span multiple internal beats let those paces diverge by several seconds, producing the perception that audio is "ahead" of the video describing the same beat. Constraining each range to one shot keeps every visible moment a single editorial beat, so audio cannot describe content the audience isn't yet watching.
-
-The script stage must do two jobs at once:
-
-1. create engaging narration in the chosen style's voice
-2. bind that narration to shot-aligned ranges so the media pipeline plays content the audience is hearing about
-
-Stable rules:
-
-- the hook must front-load attention
-- the full story arc must be covered
-- style rules come from the chosen file in `styles/`
-- ranges are shot-atomic; narration is sacred (never auto-trimmed)
-
-### Stage 3: Voiceover Generation
+### Stage 3: Rough Cut Assembly
 
 Purpose:
 
-- turn the script into a single narration track
-- retain chunk timing through a manifest
+- concatenate the selected shots in chronological order
+- group adjacent shots into 30–60s narrative beats
+- emit a per-beat manifest
 
-Design decisions:
+Output: `rough_cut.mp4` plus `rough_cut.json`. Each beat in the manifest carries:
 
-- TTS output is chunked by script structure, then concatenated
-- the final voiceover is one audio file plus one timing manifest
-- loudness normalization happens before render assembly
+- `beat_index`, `shot_ids` (the micro-shots in this beat), `start_s`/`end_s` in the rough cut, `total_duration_s`.
 
-### Stage 4: Subtitle Alignment
+Auto. Pure ffmpeg concat plus a deterministic beat grouper.
 
-Purpose:
-
-- split long narration chunks into shorter subtitle cues
-- align those cues to the real Stage 3 voiceover timing using pause detection
-- emit a subtitle manifest that later stages can burn into the draft render
-
-Stable alignment rules:
-
-- cue timing is derived from the actual synthesized audio, not from character counts alone
-- cue text stays in script order and never crosses chunk boundaries
-- when the audio exposes clear pauses, cue boundaries should prefer those pauses
-- when the audio has no usable pause inside a chunk, the stage may split timing proportionally inside that chunk rather than fabricating still more structure upstream
-
-### Stage 5: Visual Extraction
+### Stage 4: Narration Writing
 
 Purpose:
 
-- extract silent source clips for each primary scene
-- extract fallback keyframes
-- optionally extract B-roll clips attached to the same narration chunk
+- write one narration line per beat, in the chosen review style
+- ground each line in the visual content of the beat plus the surrounding subtitle context
 
-The extracted clips are not supposed to carry movie audio. The review soundtrack is built around narration-first timing.
+Output: `narration.json` — a list of `{ beat_index, text }` objects.
 
-High-precision extraction rules:
+v1 (manual): an LLM prompt is generated containing the beat's micro-shot summaries, surrounding subtitle context, the synopsis, and the style rulebook. The user pastes the prompt into Gemini 3 Pro / Qwen 3.6, pastes the reply back, and a validator checks per-beat character counts.
 
-- primary hero clips are re-encoded instead of stream-copied so short beats do not drift on keyframe boundaries
-- each extraction includes pre/post handles so Stage 6 can absorb small timing mismatches without an immediate freeze
-- safe-boundary extension may stretch past the requested `end`, but only inside a capped window after Stage 0 validation has already clamped the visual index to the real movie duration
+v2 (auto): direct LLM call from the harness, same prompt structure.
 
-### Stage 6: Draft Render
+### Stage 5: Voiceover Generation
 
 Purpose:
 
-- shape clip timing around narration timing
-- assemble a coherent watchable draft
-- keep enough intermediate structure for debugging and manual refinement
+- TTS each narration line
+- concatenate into a single voiceover file
+- emit the voiceover manifest with real measured `audio_start_s`/`audio_end_s`
 
-Stable render rules:
+Auto. Uses Qwen3-TTS Voice Clone on the chosen style's reference audio. The TTS engine code is recovered from git history when this stage is implemented.
 
-- narration duration is authoritative
-- renderer follows a fixed fallback order: exact hero window, then extracted handles or safe-boundary extension, then explicit or semantic B-roll, then freeze as the last fallback
-- B-roll is a style tool; hard freezes are a grounding failure signal and should stay rare
-- subtitle timing should come from the Stage 4 subtitle manifest, not from one chunk-wide caption event
-- the first working render can favor determinism over polish
-- later iterations add transitions and richer audio mixing
-
-### Stage 7: Upload Finalize
+### Stage 6: Visual Fitting
 
 Purpose:
 
-- preserve the Stage 6 picture lock
-- remux the Stage 3 narration track onto that draft
-- emit an upload-ready MP4 with `+faststart`
+- shape the rough cut to match the actual audio durations
+- per beat: trim, loop, or extend the micro-shots so the beat's video length equals its `audio_end_s − audio_start_s`
 
-Stable finalize rules:
+Auto. Deterministic strategy:
 
-- Stage 7 takes video from `review.mp4`, not from the source movie
-- Stage 7 takes audio from the Stage 3 voiceover, even if the Stage 6 draft already has muxed narration
-- the final master should be directly playable and ready for YouTube upload without a manual remux step
+1. Compute target duration for each beat from the voiceover manifest.
+2. Compare to the rough-cut beat duration.
+3. If TTS is shorter than the beat → trim from the tails of the least-important micro-shots.
+4. If TTS is longer than the beat → loop the most-static micro-shot or hold on the most-recent micro-shot to fill.
+5. Output per-beat fitted clips (not yet concatenated) so the renderer can recombine cleanly.
 
-### Post-Pipeline: DaVinci Handoff
+Output: `fitted/beat_NNN.mp4`.
 
-The output folder is meant to be reopened and improved manually. This is part of the design, not a failure of automation.
+### Stage 7: Subtitle Alignment
 
-### Grounding Quality Signals
+Purpose:
 
-Use these targets when judging whether alignment quality is acceptable:
+- split each beat's narration into shorter subtitle cues
+- align cue boundaries to real pauses detected in the voiceover
 
-- range provenance: every `[ANCHOR]` range should overlap a real `[shot:NNN]` or `[srt:NNN]` entry from the timeline; the validator's `range_provenance` check catches fabricated timestamps
-- shot alignment: zero `range_shot_crossing` validator failures — every range stays inside one source shot
-- freeze ratio should stay below 1% of runtime outside the closing chunk; smart-trim slack absorbs most timing mismatches without freezing
-- extension-needed ratio should stay below 5%; chunks where audio overruns the chosen ranges fall back to post-handle extension and risk a still-fill
-- hero clips should show no visible keyframe jitter
-- a short slice review should read as "no audio-visual drift" to a human viewer
+Carried over from the legacy `stage4_align_subtitles.py`. Output: `subtitle_manifest.json`.
 
-## 6. Style System
+### Stage 8: Draft Render
+
+Purpose:
+
+- concatenate fitted beat clips in order
+- burn subtitles from the subtitle manifest
+- mux the voiceover track
+- emit `review.mp4`
+
+Auto. ffmpeg concat + libass burn-in + audio mux.
+
+### Stage 9: Upload Finalize
+
+Purpose:
+
+- preserve the Stage 8 picture lock
+- remux with the voiceover
+- emit `final_video.mp4` with `+faststart`
+
+Carried over from the legacy `stage7_finalize_video.py`.
+
+## 7. Auto vs Manual + Recommended Tools
+
+This table is the operator-facing reference. Every entry is intentionally tool-agnostic at the contract level — the per-stage JSON schemas are stable across tool changes.
+
+| # | Stage | Auto/Manual (v1) | Recommended Tool | Notes |
+|---|---|---|---|---|
+| 0 | Visual Indexing | Auto | **Gemini 3 Flash** via `google-generativeai` | Local Qwen2.5-VL is a fallback on the RTX 4060; slower. |
+| 1 | Subtitle Intake | Auto | Built-in Python parser | No external tool. |
+| 2 | Shot Selection | **Manual** | VSCode editing `selected_shots.json`, with the source movie open in **DaVinci Resolve / VLC / mpv** for reference | Auto v2 will be a heuristic scorer + optional local VL ranker. |
+| 3 | Rough Cut Assembly | Auto | `ffmpeg` concat | No external tool. |
+| 4 | Narration Writing | **Manual** | **Gemini 3 Pro** in browser (highest quality) or **Qwen 3.6** locally; paste prompt → paste reply | Validator catches char-count violations. Auto v2 will direct-call the same model via API. |
+| 5 | Voiceover Generation | Auto | **Qwen3-TTS Voice Clone** on Base model (`Qwen/Qwen3-TTS-12Hz-1.7B-Base`) | Style A reference voice lives at `styles/voice-assets/niu-shu/reference/clone_reference.{mp3,txt}`. |
+| 6 | Visual Fitting | Auto | `ffmpeg` trim + loop | No external tool. |
+| 7 | Subtitle Alignment | Auto | `ffmpeg` `silencedetect` filter | No external tool. |
+| 8 | Draft Render | Auto | `ffmpeg` concat + libass | NVENC preferred (`h264_nvenc`), `libx264` fallback. |
+| 9 | Upload Finalize | Auto | `ffmpeg` remux | `+faststart` for direct upload. |
+| Post | Manual Polish | **Manual** | **DaVinci Resolve** (Windows) | Optional. The output folder is structured so DaVinci can import each fitted beat as a separate clip and the user can swap micro-shots, color grade, or add BGM. |
+
+Tool decisions to revisit later:
+
+- Stage 2 v2 scorer: build manually-scored data first; do not over-invest before there's ground truth.
+- Stage 4 v2 direct-call: only after manual prompt + reply has stabilized into a fixed template across multiple movies.
+- Stage 6 fallback strategies (slow-motion, B-roll cutaway): only add if simple trim/loop produces visible problems.
+
+## 8. Style System
 
 The project is built around style-specific narration rulebooks.
 
@@ -306,68 +289,54 @@ Source of truth: [styles/first-person-pov.md](/home/ericw/Project/Learn/AI/agent
 
 Current research reference: [docs/style-c-xiaodao-research.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/style-c-xiaodao-research.md)
 
-## 7. Technology Decisions
+## 9. Technology Decisions
 
 These are the cross-project decisions that should stay consistent unless deliberately replaced.
 
 ### Subtitle Parsing
 
-- treat subtitle text as the primary semantic input
+- treat subtitle text as plot context, not as a sync source
 - support `.srt` and `.ass`
 - preserve timing as numeric seconds for tooling
 
 ### TTS
 
 - local TTS is preferred
-- Qwen3-TTS has three relevant generation modes:
-  - Voice Clone: clone from reference audio plus transcript
-  - Custom Voice: use built-in preset speakers
-  - Voice Design: synthesize a voice from a natural-language description
-- Style A currently standardizes on Qwen3-TTS Voice Clone on the Base model, not Custom Voice and not Voice Design
-- Stage 3 should receive the same `--style` input used in Stage 2, then default the voice reference from `styles/voice-assets/<style>/reference/`
-- styles without a canonical `reference/clone_reference.{mp3,txt}` pair yet still need explicit `--ref-audio` / `--ref-text` overrides
-- narration should be generated chunk-by-chunk on script scene boundaries, then concatenated into one voiceover file plus one manifest
-- long-form output should be loudness-normalized before render assembly
+- Qwen3-TTS Voice Clone on the Base model is the standard for Style A
+- narration is generated beat-by-beat, then concatenated into one voiceover file plus one manifest
+- long-form output is loudness-normalized before render assembly
 - fallback hosted/preset TTS is acceptable only when the main local path is unavailable
 
-### TTS Voice Characteristics For Style A
+### TTS Voice Characteristics for Style A
 
-Useful distilled knowledge from the earlier validation work:
+Useful distilled knowledge from the validation work:
 
 - target pace is fast, roughly around 6 Chinese characters per second
-- delivery should feel dry, deadpan, and storyteller-like rather than theatrical
-- short pauses work better than long dramatic pauses
-- the winning implementation path favored recognizability of timbre over purely description-driven synthesis
+- delivery should feel dry, deadpan, storyteller-like, not theatrical
+- short pauses work better than long dramatic ones
+- the winning implementation favored timbre recognizability over description-driven synthesis
 
 ### TTS Reference-Audio Caveats
 
-- some older Uncle Niu sample files are mislabeled by nominal duration, so filenames alone are not a reliable measurement source
+- some older Uncle Niu sample files are mislabeled by nominal duration; filenames alone are not a reliable measurement source
 - background music in source samples can distort pitch and pause analysis
-- if voice analysis is needed again, use a cleaner harmonic-focused measurement path instead of trusting raw full-mix readings
-- a good fresh voice-clone reference should stay relatively short and clean; the current repo policy targets a 90-second single-speaker dialogue reference for ICL preparation, but shorter clips are still preferable when they capture the voice well
-- Stage 3 now expects a prepared short transcript-conditioned ICL reference rather than trying to adapt long clips at runtime
+- a good fresh voice-clone reference should stay relatively short and clean; the current target is a 90-second single-speaker dialogue reference for ICL
+- prefer prepared transcript-conditioned references over runtime adaptation of long clips
 
 ### Video Processing
 
 - `ffmpeg` is the baseline media engine
 - extracted review clips are silent
-- timing-critical hero clips are re-encoded instead of stream-copied so `[ANCHOR]` range boundaries stay stable
-- GPU encoding is the default path on this project's target hardware (RTX 4060). Stages 4 and 5 pick `h264_nvenc` when the local ffmpeg advertises it, and fall back to `libx264 -preset fast` so CI and non-GPU hosts still work. Falling back to CPU encoding is expected to be 3-5x slower on 1080p re-encodes, which is acceptable but not a path to production throughput.
+- micro-shots are re-encoded rather than stream-copied so trim boundaries stay frame-stable
+- GPU encoding (`h264_nvenc`) is the default on the RTX 4060 target; `libx264 -preset fast` is the fallback so CI and non-GPU hosts still work
 
 ### Render Synchronization
 
-- the manifest is the contract between TTS and render
-- audio timing drives visual timing
-- scene and B-roll markers are part of the script contract, not optional decoration
-- grounded scene metadata such as `source`, `evidence`, and optional `characters` is part of that sync contract when available
+- the voiceover manifest is the authoritative timing source for every downstream stage
+- visual fitting always shapes video to audio, never the reverse
+- subtitle cues come from `silencedetect` on the real voiceover, not from character counts alone
 
-### Rendering Baseline
-
-- the first stable renderer should prefer deterministic alignment over visual polish
-- stage-1 rendering can use hard cuts and stillframe fallback
-- later polish layers include transitions, subtitles, and background-music mixing, but they should not weaken the core sync contract
-
-## 8. Asset Model and Naming Conventions
+## 10. Asset Model and Naming Conventions
 
 Per-movie working directory:
 
@@ -375,18 +344,20 @@ Per-movie working directory:
 movies/<title>/
   <title>.mkv or <title>.mp4
   <subtitle>.srt or <subtitle>.ass
-  <title>.txt or <title>.json
-  script_<style>_draft.txt
+  synopsis.md                              # optional plot/cast context
+  selected_shots.json
+  narration.json
   voiceover_<style>_voiceclone.mp3
   voiceover_<style>_voiceclone.manifest.json
   output/
-    clips/
+    rough_cut/
+    fitted/
     keyframes/
-    segments/
+    review.mp4
     final_video.mp4
 ```
 
-Shared voice assets live under the `styles/` tree rather than inside per-movie folders:
+Shared voice assets live under the `styles/` tree:
 
 ```text
 styles/
@@ -404,14 +375,13 @@ styles/
 
 Naming rules:
 
-- style-tagged files make side-by-side experiments possible
-- manifest filename must track the voiceover filename
+- style-tagged files allow side-by-side experiments
+- manifest filename tracks the voiceover filename
 - output assets stay grouped under the movie directory, not in a global build folder
-- `analysis/` holds audio and transcript pairs used for style study
-- `reference/` holds the canonical clone source for a style when that style has a default reusable voice
-- the default Stage 3 output tag should match the style filename stem unless the caller explicitly overrides it
+- `analysis/` holds audio + transcript pairs used for style study
+- `reference/` holds the canonical clone source for a style
 
-## 9. Environment Rules
+## 11. Environment Rules
 
 Python execution and dependency management are standardized:
 
@@ -419,21 +389,25 @@ Python execution and dependency management are standardized:
 - follow [docs/agent-rules/python-environment.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/agent-rules/python-environment.md) as the canonical command rule
 - treat `pyproject.toml` as the dependency source of truth
 
-## 10. Design Principles
+## 12. Design Principles
 
 These principles explain many of the specific choices above.
 
-### Narration-First Assembly
+### Visual-First Assembly
 
-The review is paced by the narration, not by the original film edit. Visuals are selected to serve the narration.
+Visuals drive the timeline. Audio is rendered against fixed visual beats, and visual durations are then adjusted to match real audio. This avoids the structural sync problems of audio-first assembly.
+
+### Replaceable Modules
+
+Every manual stage is designed so its output schema is stable and identical to the schema the future automated version will produce. This lets manual and automated steps coexist and lets the project automate one step at a time without rewriting downstream code.
 
 ### Deterministic Contracts
 
-Marker-driven contracts are preferred over fuzzy matching whenever possible. This is why scene markers and manifests are important.
+Marker-driven JSON contracts are preferred over fuzzy matching. The manifests (selected_shots, rough_cut, voiceover, subtitle) are the load-bearing surfaces; everything else is implementation.
 
 ### Draft First, Polish Later
 
-The pipeline should first produce something coherent, inspectable, and re-editable. Production polish can be layered on once the deterministic path is stable.
+The pipeline first produces something coherent, inspectable, and re-editable. Production polish (transitions, BGM ducking, advanced motion graphics) is layered on once the deterministic path is stable.
 
 ### Keep Stable Knowledge Separate From Session Logs
 

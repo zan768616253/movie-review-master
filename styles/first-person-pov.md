@@ -461,7 +461,7 @@ Before writing the script, the agent MUST:
 2. **Rank characters** by emotional arc + agency + screen time + viscerality
 3. **Select one protagonist** using the Section 3 criteria
 4. **Identify hook candidates** — scan the full plot for the top 3 most visceral / intimate / taboo moments from the protagonist's POV (by Section 1 criteria), and pick one
-5. **Extract a voice reference** — locate 3-10 seconds of clean dialogue from the selected protagonist in the movie file. This is the TTS reference for `stage3_generate_audio.py` voice cloning.
+5. **Extract a voice reference** — locate 3-10 seconds of clean dialogue from the selected protagonist in the movie file. This is the TTS reference for the voice-cloning stage (Qwen3-TTS Voice Clone).
 6. **Output a protagonist pick + hook pick** for user review:
 
 ```
