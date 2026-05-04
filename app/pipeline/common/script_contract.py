@@ -233,7 +233,7 @@ def validate_visual_segments(
     return validated, diagnostics
 
 
-def probe_media_duration(media_path: Path) -> float | None:
+def probe_media_duration(media_path: Path) -> float:
     cmd = [
         "ffprobe",
         "-v", "error",
@@ -243,21 +243,32 @@ def probe_media_duration(media_path: Path) -> float | None:
     ]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"Unable to determine media duration for {media_path}: ffprobe was not found on PATH. "
+            "If you just installed FFmpeg with winget, restart your terminal or VS Code and try again."
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or "").strip()
+        stdout = (exc.stdout or "").strip()
+        details = stderr or stdout or "ffprobe did not provide an error message"
+        raise RuntimeError(
+            f"Unable to determine media duration for {media_path}: ffprobe exited with code {exc.returncode}. {details}"
+        ) from exc
 
     output = result.stdout.strip()
     if not output:
-        return None
+        raise RuntimeError(
+            f"Unable to determine media duration for {media_path}: ffprobe returned no duration."
+        )
 
     try:
         return float(output)
-    except ValueError:
-        return None
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Unable to determine media duration for {media_path}: ffprobe returned a non-numeric duration: {output!r}."
+        ) from exc
 
 
 def get_video_duration(video_path: Path) -> float:
-    duration = probe_media_duration(video_path)
-    if duration is None:
-        raise RuntimeError(f"Unable to determine media duration for {video_path}")
-    return duration
+    return probe_media_duration(video_path)
