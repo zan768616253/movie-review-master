@@ -10,6 +10,8 @@ subtitle_file = "TODO.srt"
 style_path    = "styles/niu-shu.md"
 genre         = "action"                          # action / drama / etc — used in the Stage 2 prompt
 
+# Authoritative Stage 2 review target, in seconds.
+# The planner prompt and Stage 2 validation both use this value.
 target_seconds = 300.0
 
 [stage3]

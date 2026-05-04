@@ -52,12 +52,18 @@ def build_parser() -> argparse.ArgumentParser:
             "the conservative per-chunk re-identification rule."
         ),
     )
+    parser.add_argument(
+        "--characters-dir",
+        type=Path,
+        default=None,
+        help="Optional path to a directory containing character reference images (e.g., Kit.jpg).",
+    )
     return parser
 
 
-def _build_strategy(name: str, max_workers: int, synopsis_text: str = "") -> VisualIndexerStrategy:
+def _build_strategy(name: str, max_workers: int, synopsis_text: str = "", characters_dir: Path | None = None) -> VisualIndexerStrategy:
     if name == "gemini":
-        return GeminiStrategy(max_workers=max_workers, synopsis_text=synopsis_text)
+        return GeminiStrategy(max_workers=max_workers, synopsis_text=synopsis_text, characters_dir=characters_dir)
     if name == "openrouter":
         return OpenRouterStrategy(max_workers=max_workers, synopsis_text=synopsis_text)
     raise ValueError(f"Unsupported strategy: {name}")
@@ -82,7 +88,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         synopsis_text = synopsis_path.read_text(encoding="utf-8")
         print(f"Cast Reference attached from: {synopsis_path}")
 
-    strategy = _build_strategy(args.strategy, args.workers, synopsis_text=synopsis_text)
+    characters_dir = None
+    if args.characters_dir is not None:
+        characters_dir = args.characters_dir.expanduser().resolve()
+        if not characters_dir.exists() or not characters_dir.is_dir():
+            print(f"Error: --characters-dir is not a valid directory: {characters_dir}")
+            return 1
+        print(f"Face Gallery attached from: {characters_dir}")
+
+    strategy = _build_strategy(args.strategy, args.workers, synopsis_text=synopsis_text, characters_dir=characters_dir)
 
     try:
         raw_segments = strategy.index_video(video_path, args.tmp_dir)

@@ -10,6 +10,8 @@ from app.pipeline.common.script_contract import (
     MAX_ANCHOR_RANGE_DURATION_S,
     MAX_ANCHOR_TOTAL_DURATION_S,
     AnchorMarker,
+    build_coverage_budget,
+    build_review_budget,
     build_shot_boundary_set,
     build_timeline_intervals,
     parse_anchor_marker,
@@ -137,6 +139,22 @@ def test_read_style_chars_per_second_reads_real_niu_shu_file() -> None:
     assert 4.0 <= cps <= 8.0  # sanity range for a Chinese narration style
 
 
+def test_build_review_budget_derives_macro_targets_from_target_seconds() -> None:
+    budget = build_review_budget(720.0, 7.0)
+    assert budget.target_seconds == pytest.approx(720.0)
+    assert budget.min_seconds == pytest.approx(504.0)
+    assert budget.max_seconds == pytest.approx(936.0)
+    assert budget.target_chars == 5040
+    assert budget.min_chars == 4284
+
+
+def test_build_coverage_budget_limits_total_selected_video() -> None:
+    budget = build_coverage_budget(300.0, 5.0)
+    assert budget.target_seconds == pytest.approx(404.4)
+    assert budget.min_seconds == pytest.approx(343.74)
+    assert budget.max_seconds == pytest.approx(485.28)
+
+
 # --- validate_anchored_script ---------------------------------------------
 
 
@@ -213,6 +231,82 @@ def test_validate_anchored_script_skips_closing_chunk() -> None:
     assert not result.has_failures
 
 
+def test_validator_flags_script_that_is_globally_too_short() -> None:
+    script = _build_script(
+        ('[ANCHOR ranges="00:00:00-00:00:10"]', "x" * 40),
+    )
+    result = validate_anchored_script(
+        script,
+        chars_per_second=5.0,
+        target_seconds=300.0,
+    )
+    codes = {issue.code for issue in result.issues}
+    assert "script_too_short" in codes
+    assert "anchor_coverage_short" in codes
+    assert result.total_narration_chars == 40
+    assert result.total_anchor_seconds == pytest.approx(10.0)
+    assert result.has_failures
+
+
+def test_validator_counts_closing_toward_total_spoken_length() -> None:
+    # Macro min_chars = target_seconds × REAL_TTS_CPS × 0.85
+    #                 = 300 × 6.74 × 0.85 ≈ 1719.
+    # Anchor narration alone (40 chars) is far below the threshold; the
+    # closing block (1700 chars) brings the running total to 1740, just
+    # over min — confirming that closing IS counted toward the macro
+    # spoken-length check.
+    script = (
+        "[TITLE] Demo\n"
+        "[HOOK]\n"
+        '[ANCHOR ranges="00:00:00-00:00:10"]\n'
+        + "x" * 40 + "\n"
+        + "[CLOSING]\n"
+        + "y" * 1700 + "\n"
+    )
+    result = validate_anchored_script(
+        script,
+        chars_per_second=5.0,
+        target_seconds=300.0,
+    )
+    codes = {issue.code for issue in result.issues}
+    assert "script_too_short" not in codes
+    assert "anchor_coverage_short" in codes
+    assert result.total_narration_chars == 1740
+
+
+def test_validator_flags_script_that_is_globally_overcovered() -> None:
+    chunks = []
+    for index in range(60):
+        start_s = index * 10
+        end_s = start_s + 10
+        chunks.append((
+            f'[ANCHOR ranges="00:{start_s // 60:02d}:{start_s % 60:02d}-00:{end_s // 60:02d}:{end_s % 60:02d}"]',
+            "x" * 30,
+        ))
+    script = _build_script(*chunks)
+    result = validate_anchored_script(
+        script,
+        chars_per_second=5.0,
+        target_seconds=300.0,
+    )
+    codes = {issue.code for issue in result.issues}
+    assert "script_too_short" not in codes
+    assert "anchor_coverage_short" not in codes
+    assert "anchor_coverage_long" in codes
+    assert result.total_anchor_seconds == pytest.approx(600.0)
+
+
+def test_validator_skips_macro_duration_checks_without_target_seconds() -> None:
+    script = _build_script(
+        ('[ANCHOR ranges="00:00:00-00:00:10"]', "x" * 40),
+    )
+    result = validate_anchored_script(script, chars_per_second=5.0)
+    codes = {issue.code for issue in result.issues}
+    assert "script_too_short" not in codes
+    assert "anchor_coverage_short" not in codes
+    assert "anchor_coverage_long" not in codes
+
+
 # --- Structure checks (added in fix-up turn) ------------------------------
 
 
@@ -248,7 +342,12 @@ def test_validator_flags_orphan_narration_between_act_and_anchor() -> None:
     assert "this orphan line" in orphans[0].message
 
 
-def test_validator_flags_non_monotonic_anchors() -> None:
+def test_validator_flags_non_monotonic_anchors_as_warn() -> None:
+    # Non-monotonic anchors are flagged but not blocked: the niu-shu
+    # style legitimately cross-cuts between parallel threads, and the
+    # downstream pipeline plays anchors in script order regardless of
+    # timestamp. Surface as `warn` so the planner sees the jump but is
+    # not forced to rewrite a deliberate cross-cut.
     script = (
         "[TITLE] Demo\n"
         '[ANCHOR ranges="00:00:30-00:00:40"]\n'
@@ -257,8 +356,11 @@ def test_validator_flags_non_monotonic_anchors() -> None:
         + "x" * 40 + "\n"
     )
     result = validate_anchored_script(script, chars_per_second=5.0)
-    assert any(i.code == "non_monotonic" for i in result.issues)
-    assert result.has_failures
+    non_monotonic = [i for i in result.issues if i.code == "non_monotonic"]
+    assert len(non_monotonic) == 1
+    assert non_monotonic[0].severity == "warn"
+    assert result.has_warnings
+    assert not result.has_failures
 
 
 def test_validator_allows_hook_to_act_backward_jump() -> None:
@@ -278,10 +380,13 @@ def test_validator_allows_hook_to_act_backward_jump() -> None:
     assert not [i for i in result.issues if i.code == "non_monotonic"]
 
 
-def test_validator_still_flags_scramble_within_one_act() -> None:
-    # Per-section monotonic: jumps across sections are fine, but anchors
-    # inside a single ACT must still march forward. Otherwise the audience
-    # sees a confusing zigzag inside what should be linear storytelling.
+def test_validator_warns_on_scramble_within_one_act() -> None:
+    # Per-section monotonic check: jumps across sections are fine, and
+    # backward jumps inside a single ACT used to be a hard fail. After
+    # the niu-shu cross-cut review (parallel storylines weave between
+    # threads inside one ACT), this is downgraded to a warn — the user
+    # decides whether the jump is a deliberate cross-cut or planner
+    # scrambling.
     script = (
         "[TITLE] Demo\n"
         "[ACT 1 - SETUP]\n"
@@ -293,8 +398,10 @@ def test_validator_still_flags_scramble_within_one_act() -> None:
         + "x" * 40 + "\n"
     )
     result = validate_anchored_script(script, chars_per_second=5.0)
-    assert any(i.code == "non_monotonic" for i in result.issues)
-    assert result.has_failures
+    non_monotonic = [i for i in result.issues if i.code == "non_monotonic"]
+    assert len(non_monotonic) == 1
+    assert non_monotonic[0].severity == "warn"
+    assert not result.has_failures
 
 
 def test_validator_allows_cross_act_backward_jump() -> None:

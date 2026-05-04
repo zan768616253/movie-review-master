@@ -88,6 +88,10 @@ Stage 2 is now a single planner-writer pass. The files live under
   `anchored_script.txt` (overwriting the placeholder).
 3. Run `step_02_generate_script.py` again. It validates `anchored_script.txt`
   and prints per-chunk `ok / warn / fail` counts plus any structure issues.
+  If validation fails, it also writes `validation_feedback.txt` with the
+  current script, the style context, and an inlined `<<<SHOT_MENU_START>>>`
+  block so you can paste the whole fix prompt into a fresh LLM chat without
+  separately uploading `visual_segments.json`.
 4. Continue with `step_03_generate_audio.py` or `run_all.py` once validation passes.
 
 ---

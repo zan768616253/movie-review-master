@@ -170,7 +170,7 @@ A style that fails any of these is not ready for use by Stage 2.
 
 | File | Perspective | Naming | Closing signature |
 |------|-------------|--------|-------------------|
-| `niu-shu.md` | Third-person omniscient, sarcastic | Archetypes (小帅, 小美, 丧彪 …) | `我们下期再见` sign-off (mandatory) |
+| `niu-shu.md` | External reviewer, judgmental | Archetypes (小帅, 小美, 丧彪 …) | Bitter/fake-life-lesson close; sign-off optional |
 | `first-person-pov.md` | First-person protagonist, sincere | Original character names | Register shift to reflection / image / blessing (no sign-off) |
 
 The two styles have **opposite rules** on naming and stance. They are

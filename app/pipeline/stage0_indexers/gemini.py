@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
 import subprocess
 import time
@@ -22,7 +23,7 @@ from .shared import (
 )
 
 DEFAULT_MODEL = "gemini-3-flash-preview"
-DEFAULT_CHUNK_MINUTES = 6
+DEFAULT_CHUNK_MINUTES = 7
 DEFAULT_TIMESTAMP_FONT_PATH = SHARED_DEFAULT_TIMESTAMP_FONT_PATH
 
 
@@ -57,6 +58,7 @@ class GeminiStrategy(ChunkedVisualIndexerStrategy):
         api_key: str | None = None,
         max_workers: int = 1,
         synopsis_text: str = "",
+        characters_dir: Path | None = None,
     ):
         key = api_key if api_key is not None else os.getenv("GOOGLE_API_KEY")
         self.api_key = key
@@ -68,6 +70,7 @@ class GeminiStrategy(ChunkedVisualIndexerStrategy):
             shot_snap_tolerance_s=DEFAULT_SHOT_SNAP_TOLERANCE_S,
             shot_detect_threshold=DEFAULT_SHOT_DETECT_THRESHOLD,
             synopsis_text=synopsis_text,
+            characters_dir=characters_dir,
         )
 
     def _get_video_duration(self, video_path: Path) -> float:
@@ -100,8 +103,33 @@ class GeminiStrategy(ChunkedVisualIndexerStrategy):
 
     def _index_chunk(self, video_chunk_path: Path) -> List[Dict]:
         client = self._create_client()
+        gemini_files_to_cleanup: List[str] = []
+        contents = []
+
+        if self.characters_dir and self.characters_dir.exists():
+            print(f"Loading character reference images from {self.characters_dir.name}...")
+            # Match common image extensions
+            for img_path in sorted(self.characters_dir.glob("*.[jp][pn]*[g]")):
+                char_name = img_path.stem
+                try:
+                    mime_type, _ = mimetypes.guess_type(str(img_path))
+                    with open(img_path, "rb") as f:
+                        img_file = client.files.upload(
+                            file=f,
+                            config=types.UploadFileConfig(
+                                display_name=char_name,
+                                mime_type=mime_type or "image/jpeg"
+                            )
+                        )
+                    if img_file.name:
+                        gemini_files_to_cleanup.append(img_file.name)
+                        contents.append(f"Reference Image for {char_name}:")
+                        contents.append(img_file)
+                except Exception as e:
+                    print(f"Failed to upload reference image {img_path.name}: {e}")
+
         print(f"Uploading {video_chunk_path.name} to Gemini...")
-        video_file = client.files.upload(file=str(video_chunk_path))
+        video_file = client.files.upload(file=video_chunk_path)
         video_file_name: str | None = None
 
         state = video_file.state
@@ -113,6 +141,7 @@ class GeminiStrategy(ChunkedVisualIndexerStrategy):
         if video_file.name is None:
             raise ValueError(f"Uploaded file missing name: {video_file}")
         video_file_name = video_file.name
+        gemini_files_to_cleanup.append(video_file_name)
 
         try:
             while state_name == "PROCESSING":
@@ -131,10 +160,13 @@ class GeminiStrategy(ChunkedVisualIndexerStrategy):
             if state_name == "FAILED":
                 raise ValueError(f"Video processing failed for {video_chunk_path}")
 
+            contents.append(video_file)
+            contents.append(self.prompt)
+
             print(f"Requesting inference for {video_chunk_path.name}...")
             response = client.models.generate_content(
                 model=self.model_name,
-                contents=[video_file, self.prompt],
+                contents=contents,
                 config=types.GenerateContentConfig(
                     thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.HIGH),
                     response_mime_type="application/json",
@@ -150,8 +182,8 @@ class GeminiStrategy(ChunkedVisualIndexerStrategy):
                 print(f"Failed to parse JSON for {video_chunk_path.name}. Raw text snippet: {response.text[:200]}")
                 raise e
         finally:
-            if video_file_name is not None:
+            for f_name in gemini_files_to_cleanup:
                 try:
-                    client.files.delete(name=video_file_name)
+                    client.files.delete(name=f_name)
                 except Exception:
                     pass

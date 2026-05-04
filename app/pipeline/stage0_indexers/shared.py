@@ -78,8 +78,8 @@ _PROMPT_FOOTER = """\
 """
 
 
-def build_prompt(synopsis_text: str = "") -> str:
-    """Assemble the Stage 0 VLM prompt with an optional Cast Reference block.
+def build_prompt(synopsis_text: str = "", has_face_gallery: bool = False) -> str:
+    """Assemble the Stage 0 VLM prompt with an optional Cast Reference block and Face Gallery block.
 
     When ``synopsis_text`` is empty (no synopsis provided), the character
     rule is the conservative one: only label characters re-identified
@@ -103,6 +103,13 @@ def build_prompt(synopsis_text: str = "") -> str:
         body += _CHARACTERS_RULE_WITH_REFERENCE
     else:
         body += _CHARACTERS_RULE_NO_REFERENCE
+    if has_face_gallery:
+        body += (
+            "\n# Face Gallery (CRITICAL)\n"
+            "You have been provided with reference images for the main cast (listed as 'Reference Image for <Name>'). "
+            "You MUST use these exact faces and names to label the `characters` array. "
+            "Do NOT invent variations of these names.\n"
+        )
     body += _PROMPT_FOOTER
     return body
 
@@ -123,6 +130,7 @@ class ChunkedVisualIndexerStrategy(VisualIndexerStrategy, ABC):
         shot_snap_tolerance_s: float = DEFAULT_SHOT_SNAP_TOLERANCE_S,
         shot_detect_threshold: float = DEFAULT_SHOT_DETECT_THRESHOLD,
         synopsis_text: str = "",
+        characters_dir: Path | None = None,
     ):
         self.provider_label = provider_label
         self.model_name = model_name
@@ -131,11 +139,12 @@ class ChunkedVisualIndexerStrategy(VisualIndexerStrategy, ABC):
         self.shot_snap_tolerance_s = shot_snap_tolerance_s
         self.shot_detect_threshold = shot_detect_threshold
         self.synopsis_text = synopsis_text or ""
+        self.characters_dir = characters_dir
 
     @property
     def prompt(self) -> str:
-        """The fully-assembled VLM prompt (includes Cast Reference if present)."""
-        return build_prompt(self.synopsis_text)
+        """The fully-assembled VLM prompt (includes Cast Reference and Face Gallery instructions if present)."""
+        return build_prompt(self.synopsis_text, has_face_gallery=self.characters_dir is not None)
 
     def _get_video_duration(self, video_path: Path) -> float:
         return get_video_duration(video_path)

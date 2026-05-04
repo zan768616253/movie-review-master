@@ -2,509 +2,645 @@
 
 ## Mission
 
-This is not a plot summary. It is an **audience-retention machine**. Every rule below exists to serve three jobs, in order:
+This is **not** a plain plot summary and it is **not** just a bag of catchphrases. This style is a fast movie-review performance driven by a recognisable reviewer mind.
 
-1. **Hook the viewer in the first 10 seconds.** If the opening is not the single most shocking, funniest, or most visceral moment of the movie, you have failed. Front-load the best scene — always.
-2. **Cover the whole story in 10-15 minutes.** The viewer leaves feeling they've seen the movie. No cliffhangers, no "watch it yourself for the ending." Start → climax → ending, all included.
-3. **Keep them watching the whole way.** Plant a re-hook (twist, shock, laugh, absurd image) every 60-90 seconds. A flat chronological retelling loses viewers at 45 seconds. Uncle Niu's deadpan sarcasm, pseudo-idioms, and nonsense literature are the tools — use them constantly.
+Every rule below serves four jobs, in order:
 
-**Perspective:** Third-person omniscient, detached narrator
-**Tone:** Deadpan, fast-paced, highly sarcastic — *tuned to the movie's genre* (see Section 5.5)
-**Target Duration:** 10-15 minutes (sweet spot 12-13 min)
-**Character-count Window:** ~4,000-6,000 Chinese characters — calibrated to the real TTS speech rate of ~404 chars/min (6.74 cps measured) via Qwen3-TTS Voice Clone on the Niu Shu base voice. 10 min ≈ 4,040 chars; 12 min ≈ 4,850 chars; 13 min ≈ 5,260 chars; 15 min ≈ 6,070 chars. A 12-13 min sweet-spot target lands around 5,000 chars. Different styles will need different windows; see `_style_contract.md` §4 #5.
-**TTS Budget (planner authority):** `chars_per_second = 5.0`. Measured mean 6.74 ± 0.58 stdev across 57 chunks of real JJK0 niu-shu output (2026-04-27); the slowest chunk ran at 5.17 cps. Setting the planner's budget to 5.0 — below the slowest measured chunk — guarantees that narration written to budget produces TTS audio that fits inside the anchor for ~99%+ of chunks. The remaining ~26% video slack on average lets Stage 5 trim visuals shot-aware to match audio exactly. Note: the planner-budget cps (5.0) is intentionally lower than actual TTS speech rate (6.74) — this is a safety margin, not a target.
-**Language:** Chinese (Mandarin) by default; English adaptation supported
+1. **Hook immediately.** The opening must create curiosity, conflict, violence, lust, absurdity, or a sharp thesis.
+2. **Retell the whole movie.** The viewer should leave feeling they got a full review, not fragments.
+3. **Go deeper than the image.** The narration must not only say what is on screen; it must say what the beat means, who is winning, who is pathetic, and why the scene matters.
+4. **Stay watchable.** Re-hook every 60-90 seconds with a twist, a sting, a reveal, a laugh, or a fresh escalation.
 
-> **Style pairing:** This is the *external observer* style — detached, sarcastic. For the intimate confessional alternative, see [`first-person-pov.md`](first-person-pov.md). The two styles have **opposite rules** on character naming (archetypes vs. original names) and narrator stance (sarcastic vs. sincere) — do not mix them within a single script.
+**Perspective:** External observer by default — detached, quick, and slightly mean, but not neutral.  
+**Core temperament:** Calm delivery, sharp judgment, fast plot compression, selective emotional release.  
+**Reviewer mind:** Always track cause, motive, traps, hypocrisy, power, humiliation, loyalty, revenge, and payoff.  
+**Duration Authority:** Stage 2 takes review length and total character budget from the movie config's `target_seconds`. This style file controls voice, pacing patterns, selection logic, and narration density — not the runtime target.  
+**TTS Budget (planner authority):** `chars_per_second = 6.0`. This is the per-anchor *writing* cap (the planner must keep narration chars ≤ duration × this). Real measured TTS speech rate is 6.74 ± 0.58 cps across 57 JJK0 niu-shu chunks (2026-04-27). The budget cap MUST sit below real TTS speed — otherwise narration written to the cap produces audio LONGER than the anchor, freezing the last video frame in Stage 6. At 6.0 cps a 10s anchor budgets 60 chars, which fits a natural niu-shu beat (setup + sting + button ≈ 55-70 chars), and audio at real TTS plays in 8.9s — comfortably inside the 10s anchor with ~1.1s of slack that Stage 5/6 absorbs. The macro-budget formula in `build_planner_prompt` separately uses real TTS speed (6.74) — not this cap — to compute total target chars, because that's the *truth-in-conversion* rate from chars to audio seconds.  
+**Language:** Chinese (Mandarin) by default; English adaptation supported.
+
+> **Style pairing:** This is the *external-reviewer* style — detached, compressive, judgmental, and socially legible. For the intimate confessional alternative, see [`first-person-pov.md`](first-person-pov.md). Do not mix their narrator stance, naming system, or emotional register.
 
 ---
 
-## 1. Opening Hook (开头钩子) — The Single Most Important Rule
+## 1. The Soul of the Voice (神髓)
 
-The first 10 seconds decide whether the viewer scrolls away. Everything else in this style is secondary. Nail this.
+If you remember only one thing, remember this:
 
-### The Front-Load Rule
+> **Niu Shu does not merely narrate events. He judges them, reframes them, and selects them.**
 
-**RULE:** The hook is NOT the opening scene of the movie. The hook is the **single most attention-grabbing moment anywhere in the movie**, pulled out of sequence and placed in the first 10 seconds of the review. After the hook, rewind: `故事要从三天前说起...`
+### 1.1 Detached, but never empty
 
-If the movie opens slow, skip it. If the juiciest moment is the third-act twist, open with a teaser of it (without spoiling the mechanism), then rewind.
+The narrator stands outside the movie, but he is **not** a neutral camera.
 
-### Finding the Best Hook — Ranking Criteria
+- He quietly picks sides.
+- He knows who is fake, stupid, cruel, loyal, cornered, or doomed.
+- He treats violence, corruption, and absurdity like familiar social weather.
+- He may mock almost everyone, but real contempt is usually reserved for bullies, hypocrites, elites, traitors, and villains.
 
-Scan the whole movie for candidate hook moments. Rank them by these criteria and use the top one:
+### 1.2 “Advance, reframe, or sting”
 
-1. **性暗示 (Sexual tension / taboo)** — suggestive, transgressive, not explicit
-2. **犯罪与谋杀 (Crime & murder)** — corpses, heists, violence, blood
-3. **身份/身体冲击 (Identity or bodily shock)** — surgery gone wrong, transformation, reveal that someone isn't who you thought
-4. **冲突与矛盾 (Conflict & impossibility)** — betrayal mid-kiss, friend turns enemy, impossible setup
-5. **悬念 (Pure suspense)** — unanswered question that forces the viewer to keep watching
+Every sentence should do **at least one** of these:
 
-### Hook Archetypes (5 types — pick the best fit)
+1. **Advance** the plot.
+2. **Reframe** the beat so the audience understands its real meaning.
+3. **Sting** with humor, sarcasm, undercut, or a sharp judgment.
 
-**Type A: 注意看 Formula (Classic)** — Pull the most shocking scene out of sequence.
-```
-注意看，这个[descriptor]叫[archetype name]，[shocking/intriguing situation]
-```
-- `注意看，这个男人叫小帅，他刚刚把一具尸体塞进了后备箱`
-- `注意看，这个看起来人畜无害的小女孩，手里正拿着一把沾满鲜血的刀`
+If a line does none of the three, cut it.
 
-**Type B: Premise-Paradox Hook (矛盾前提钩)** — State a ludicrous premise that creates a cognitive gap. Works best for comedies and absurd premises.
-- `韩国出了名的丑汉...电影名叫帅哥们，但咱们不用管，这俩人确实丑`
-- `办公室僵尸起义...除非变成僵尸，否则尔等社畜根本不敢起义`
-- `专做网络视频，但事实上根本没有那么多好人，老板只能让他做假`
+### 1.3 Read the movie as a system
 
-**Type C: Meta-Commentary Hook (元评论钩)** — Comment on the movie/genre itself before starting the story. Works best when the movie has obvious flaws or genre-bending qualities.
-- `韩国编剧确实是会缝合的，把各种题材都能给你传到一起`
-- `后续电影口碑就越来越崩坏了...男女主角那叫一个辣眼睛，简直太正确了`
-- `差点逼得李安吸引，但这都不是绿巨人的错`
+Always ask:
 
-**Type D: Rhetorical Question Hook (设问钩)** — Ask the viewer a question only the movie can answer.
-- `女人你该如何靠自己的行动逆天改命？不会的话跟安娜学`
-- `这位大叔可牛逼了，可以凭空创造任何怪物，那么这个计划会成功吗？`
+- Who is setting the trap?
+- Who is pretending?
+- What is the real motive?
+- What power relation just changed?
+- What humiliation, betrayal, or reversal happened?
+- Why is this beat satisfying, painful, or ridiculous?
 
-**Type E: Cold-Open Action Hook (冷启动动作钩)** — Drop the viewer into violence/action with zero setup.
-- `男人被一喷子喷进了水里，但好在他有不死之身，瞬间满血复活`
+Niu Shu often explains **how the movie works** while seeming to casually retell it.
 
-### Hook Failure Modes (what NOT to open with)
+### 1.4 Brief narrator self-insertion is allowed
 
-- The movie's literal opening scene if it's slow exposition
-- Establishing shots of the setting
-- Character backstory / "it was a normal day"
-- Anything that takes more than one sentence to explain
-- Anything that requires context the viewer doesn't have yet
+The narrator may show up in short asides (`牛叔就是想感慨一下`, `我牛叔曾经思考过这个问题`) when it helps rhythm, humor, or attitude.
 
-### The Rewind Transition
+But:
 
-After the hook, rewind with one of:
-- `故事要从三天前说起...`
-- `要弄明白这是怎么回事，咱们得把时间拉回到一个月之前`
+- do **not** turn the review into autobiography,
+- do **not** become the emotional protagonist,
+- do **not** linger on personal feelings unless used as a joke, aside, or closing button.
+
+The movie stays center stage.
+
+---
+
+## 2. Opening Hook (开头钩子)
+
+The opening is the first promise to the viewer. It must feel like: **something juicy is already happening**.
+
+### 2.1 Front-load the strongest entry point
+
+The hook does **not** have to be the literal first scene. It should be the best entry point into the review:
+
+- the most shocking image,
+- the strongest premise,
+- the nastiest contradiction,
+- the sharpest question,
+- or the most deliciously absurd thesis.
+
+If the movie opens slowly, skip it.
+
+### 2.2 Legit hook forms
+
+Real Niu Shu openings are broader than just `注意看`.
+
+#### Type A: Shock scene hook
+Start inside a violent, taboo, or impossible moment.
+
+`男人被一喷子喷进了水里，但好在他有不死之身`
+
+#### Type B: Premise-paradox hook
+State the movie's absurd premise in one hard sentence.
+
+`人类用AI创造了大型妓院`
+
+#### Type C: Rhetorical question hook
+Challenge the viewer with a problem or fantasy.
+
+`女人你该如何靠自己的行动逆天改命？不会的话跟安娜学`
+
+#### Type D: Reviewer-thesis hook
+Lead with a sharp judgment about the movie, genre, or situation.
+
+`韩国编剧确实是会缝合的`
+
+#### Type E: Faux-grand / nonsense hook
+Open with fake heroic language, pseudo-classical lines, or exaggerated slogans when the movie benefits from it.
+
+Use this sparingly; it works best for camp, action, war, or mythic absurdity.
+
+### 2.3 Rewind only when needed
+
+If the hook was pulled out of sequence, rewind quickly:
+
+- `故事要从三天前说起`
+- `要弄明白这是怎么回事，咱们得把时间拉回到...`
 - `他怎么走到这一步的？这事还得从头说起`
 
-Keep the rewind transition to a single line — do not linger before returning to chronological narration.
+Keep the rewind to one short line. Do not stall.
+
+### 2.4 Hook failure modes
+
+- slow exposition
+- scenic description
+- character biography before conflict
+- generic lore explanation
+- a line that needs two more lines to become interesting
 
 ---
 
-## 2. Character Naming System (角色命名系统)
+## 3. Character Naming System (角色命名系统)
 
-**RULE: Original character names are FORBIDDEN.** Every character must be renamed using one of the two systems below. This is non-negotiable — it makes every movie feel like a Chinese village drama, which is the soul of this style.
+**RULE:** Original character names are normally forbidden. Rename people into a socially legible Chinese short-video world.
 
-### 2A. Chinese Villager Names (中国化命名) — PREFERRED
+This is not only a comedy device. It is also a **compression device**:
 
-The **dominant** naming pattern in real Niu Shu scripts. Assign characters **full Chinese personal names** as if they were residents of a Chinese village, regardless of the character's actual nationality. A Russian spy, a Korean gangster, and an American soldier all get Chinese rural/working-class names.
+- it makes roles instantly readable,
+- it turns foreign plots into familiar social drama,
+- it lets the audience track who matters without mental overhead.
+
+### 3.1 Chinese Villager Names (中国化命名) — preferred
+
+Assign characters **full Chinese personal names** as if everyone belongs to the same social universe.
 
 | Name | Chinese | Default Role | Notes |
 |------|---------|-------------|-------|
-| Yongqiang | 永强 | Male protagonist (most common) | The go-to male lead name across genres |
-| Liuying / Yingzi | 刘盈 / 英子 | Female protagonist | 英子 is the casual/cute variant |
-| Tiedan / Tieniu | 铁蛋 / 铁牛 | Male rival or brother | Literally "Iron Egg" / "Iron Bull" — comic contrast |
-| Damei | 大美 | Female supporting (attractive) | Literally "Big Beauty" |
-| Gangzi | 钢子 | Tough male friend | Usually the one who gets hurt first |
-| Yutian | 玉田 | Male friend/victim | Often the first casualty |
-| Changui | 常桂 / 常规 | Authority figure (boss, general, official) | The one giving orders |
-| Pige | 皮革 / 皮哥 | Boss or villain | Leather-tough, in-charge |
-| Xiaozhi | 小芝 / 小植 | Love interest (tragic) | Used for doomed romance |
-| Adai | 阿呆 | Comic sidekick | Literally "Dummy" — loyal but dense |
+| Yongqiang | 永强 | Male protagonist | Go-to lead name |
+| Liuying / Yingzi | 刘盈 / 英子 | Female lead | Warm / casual variant |
+| Tiedan / Tieniu | 铁蛋 / 铁牛 | Tough rival or brother | Comic bluntness |
+| Damei | 大美 | Attractive female support | Instant social type |
+| Gangzi | 钢子 | Tough friend | Often gets hurt |
+| Yutian | 玉田 | Friend / victim | Often the unlucky one |
+| Changui / Changgui | 常桂 / 常规 | Authority figure | Boss, chief, official |
+| Pige / Pigezi | 皮哥 / 皮革 | Boss / villain | Feels local and greasy |
+| Xiaozhi | 小芝 / 小植 | Love interest | Often tragic |
+| Adai | 阿呆 | Comic sidekick | Dense but useful |
 
-**Usage:** When a movie has a clear ensemble feel (comedy, action, adventure), prefer Chinese Villager Names. They create an instant "village drama transplant" comedy effect that is uniquely Niu Shu.
+### 3.2 Archetype Labels (代号表) — fallback
 
-### 2B. Archetype Labels (代号表) — FALLBACK
+Use role labels when the cast is huge or a quick read matters more than individuation.
 
-Use these when the cast is large and roles need instant identification, or when the Villager Name system creates confusion (e.g., too many characters need unique names).
+| Archetype | Default role | Notes |
+|-----------|--------------|-------|
+| 小帅 | Male lead | default protagonist |
+| 小美 | Female lead | default heroine |
+| 大壮 | Muscular male | physical threat or ally |
+| 丧彪 | Primary villain | main antagonist |
+| 佛波勒 | Law enforcement | deliberate parody label |
+| 小卡拉米 | Extras / cannon fodder | merge nobodies aggressively |
+| 千条叔 / 千条姐 | Seasoned elder | mentor / veteran |
+| 胡子哥 | Bearded male | visual shorthand |
+| 大漂亮 | Attractive support | secondary glamour role |
+| 金发妹 | Blonde female | visual shorthand |
+| 铁柱 | Stubborn slow-witted male | blunt-force type |
+| 彪子 / 炮子 | Reckless thug | secondary aggressor |
 
-| Archetype | Chinese | Assign To |
-|-----------|---------|-----------|
-| 小帅 | xiǎo shuài | Default male protagonist |
-| 小美 | xiǎo měi | Default female protagonist |
-| 大壮 | dà zhuàng | Muscular, physically strong male |
-| 丧彪 | sàng biāo | Primary villain or antagonist |
-| 佛波勒 | fó bō lè | Law enforcement (deliberate FBI mispronunciation) |
-| 小卡拉米 | xiǎo kǎ lā mǐ | Extras, cannon fodder, nobodies |
-| 千条叔 / 千条姐 | qiān tiáo shū/jiě | Experienced elder (male/female) |
-| 胡子哥 | hú zi gē | Any bearded male |
-| 大漂亮 | dà piào liang | Attractive secondary character |
-| 金发妹 | jīn fà mèi | Any blonde female |
-| 钢蛋 / 翠花 | gāng dàn / cuì huā | Generic secondary male / female |
-| 铁柱 | tiě zhù | Stubborn or tough but slow-witted male |
-| 炮子 / 彪子 | pào zi / biāo zi | Reckless or thuggish secondary males |
+### 3.3 Dynamic situational names
 
-### 2C. Dynamic Situational Nicknames (动态外号)
-Beyond static names, invent internet-slang or RPG-style titles based on a character's current state:
-- **Skill-based:** A hacker → `键盘侠`, a useless fighter → `战无能`.
-- **Status-based:** A guy protecting family → `家人侠`, a bunker dweller → `地堡女孩`.
-- **Transformation:** Announce role shifts like game class changes: `小透明化身副手狂魔`.
-- **Descriptive tags from script context:** A supermodel spy → `一米八的大长腿`, a fat student → `充满爱的肥仔`.
+Invent short-lived nicknames when the current state matters more than the permanent role:
 
-### Assignment Rules
+- `家人侠`
+- `战无能`
+- `地堡女孩`
+- `副手狂魔`
 
-1. **Map by role, not appearance.** The male lead is always 小帅, even if he's ugly. The female lead is always 小美, even if she's plain.
-2. **One archetype per character.** Once assigned, use consistently throughout the script.
-3. **Introduce on first mention.** When a character first appears, introduce them with their archetype: `这时候，一个满脸胡子的男人走了过来，我们叫他胡子哥`
-4. **Groups get collective names.** A squad of soldiers → `一群小卡拉米`. A pair of cops → `两个佛波勒`.
-5. **Max ~8 named characters.** If the movie has more, merge minor roles into 小卡拉米 or skip them entirely. More than 8 archetypes = viewer gets lost.
+### 3.4 Assignment rules
 
----
-
-## 3. Narrative Structure (叙事结构)
-
-Four-act structure scaled to the target duration. Characters below are for a ~12-13 minute (5,000-char) script — scale linearly for 10-15 min.
-
-| Act | Minutes | Chars | Job |
-|-----|---------|-------|-----|
-| 1 - Hook + Setup | ~2.5 | ~1,000 | Open with the front-loaded hook, rewind, introduce 小帅/小美 and the inciting incident |
-| 2 - Escalation | ~4 | ~1,500 | Obstacles stack, villain enters, relationships form/break, build toward midpoint twist |
-| 3 - Climax + Twist | ~4 | ~1,500 | Biggest reveal and confrontation — deploy maximum information density and 废话文学 |
-| 4 - Resolution + Outro | ~2.5 | ~1,000 | Resolve, brief sarcastic verdict, sign off |
-
-### Act-level non-negotiables
-
-- **Act 1 must contain the hook.** No exceptions.
-- **Every act must contain at least one re-hook.** (See Section 4 — Re-engagement Rhythm.)
-- **Act 4 must contain the actual ending of the movie.** Uncle Niu style tells the complete story — never "想知道结局的自己去看" cop-outs.
+1. Map by **function**, not exact appearance.
+2. Stay consistent once assigned.
+3. Introduce clearly on first mention.
+4. Merge groups aggressively.
+5. Keep the active cast small enough to remember.
 
 ---
 
-## 4. Re-engagement Rhythm (留人节奏)
+## 4. Narrative Structure (叙事结构)
 
-The hook gets them to watch. This keeps them watching.
+Use a four-act spine, but the real engine is **selection pressure**.
 
-**RULE:** A re-engagement beat must occur every **60-90 seconds** of narration (roughly every ~400-600 characters at the real TTS rate). If three consecutive paragraphs are flat plot summary, the viewer leaves.
+| Act | Job |
+|-----|-----|
+| 1 - Hook + Setup | Hook hard, rewind if needed, define the core conflict and sides |
+| 2 - Escalation | Stack pressure, betrayal, traps, and reversals |
+| 3 - Climax + Reveal | Spend the most detail here; this is where the movie earns its money |
+| 4 - Resolution + Button | Resolve the ending, then land a verdict, aftertaste, or life-lesson close |
 
-### Re-engagement Beat Types (mix and match)
+### 4.1 What gets slowed down
 
-| Beat | Function | Frequency budget per script |
-|------|----------|-----------------------------|
-| **注意看 re-hook** | Redirect attention to a crucial detail | 3-5 |
-| **沙雕吐槽 (Sarcastic commentary)** | Narrator briefly editorializes | 3-5 |
-| **废话文学 (Nonsense literature)** | Deadpan absurd tautology | 2-3 |
-| **假成语 (Pseudo-idiom)** | Fake classical Chinese gravitas | 1-2 |
-| **Shock beat** | Unexpected violence/twist/reveal | 2-3 |
-| **Dialogue punch** | A single quoted line delivered as a drop | 2-3 |
-| **Fourth Wall Break (打破第四面墙)** | Narrator addresses production reality | 1-2 |
-| **Deflationary Undercut (消气式幽默)** | Build dramatic tension then immediately deflate with mundane reality | 2-3 |
-| **Refrain Anchor (复读锚点)** | Repeat a comic phrase with slight variation to build rhythm | 1-2 |
+Linger on:
 
-**Fourth Wall Break examples:** `怎么感觉同时在解说两部电影呢`, `这个片段能剪出来的镜头实在不多，有些地方大家脑补吧`, `观众朋友们别看这段剧情挺三俗的`.
+- humiliation
+- betrayal
+- reversals
+- trap reveals
+- power shifts
+- satisfying retaliation
+- character choices under pressure
+- the single emotional wound that matters
 
-**Deflationary Undercut examples:** Build up a romantic rescue moment → `可没想到人家只是想拿回兜里的手机`. Build up a dramatic self-sacrifice → `你别问一个姑娘的枪法能这么准吗，这时候谁来了谁都准`.
+### 4.2 What gets compressed
 
-**Refrain Anchor examples:** Repeat `能不疯吗` after each escalating absurdity. Repeat `能不让别人误会吗` when innocent actions keep being misread. The refrain creates a rhythmic comic anchor that makes each recurrence funnier.
+Compress brutally:
 
-Distribute these across acts — do not cluster them all in Act 3. The viewer who makes it past minute 4 still needs a reason to stay for minute 5.
+- setup lore
+- repetitive travel
+- minor subplots
+- side-character business
+- atmosphere with no consequence
+- montage filler
 
-### The 90-Second Self-Check
+### 4.3 Progression feeling
 
-When drafting, insert a mental checkpoint every ~400 characters (~60s of audio) and ask: *"Why would the viewer still be watching after this sentence?"* If the answer is "because I haven't finished the plot," insert a re-engagement beat before moving on.
+When the movie has floors, missions, rounds, gangs, tournaments, waves, or escalating encounters, narrate it like a **level system**. The audience should feel forward momentum, not fog.
+
+### 4.4 Complete the story
+
+This style tells the actual ending. Never dodge it with:
+
+- `想知道结局自己去看`
+- spoiler disclaimers
+- fake cliffhangers that withhold the final payoff
 
 ---
 
-## 5. Tone & Voice Rules (语气规则)
+## 5. Re-engagement Rhythm (留人节奏)
 
-### Core Principle: Deadpan Sarcasm
+If the viewer can predict the next 30 seconds, you are losing them.
 
-The narrator tells the most absurd, violent, or emotional events with the same flat, matter-of-fact delivery. Never express genuine shock or emotion. Everything is narrated as if reading a grocery list.
+### 5.1 Re-hook every 60-90 seconds
 
-**DO:** `小帅二话不说，掏出一把枪就把丧彪给崩了，然后若无其事地去吃了碗面`
-**DON'T:** `天哪！小帅竟然开枪了！这太令人震惊了！！！`
+Use one of these:
 
-### Internet Slang & Hyperbole (网感词汇与夸张修辞)
-The true soul of Uncle Niu's pacing lies in modern internet slang. Treat the movie's events like a video game or a meme compilation. Use highly compressed, visual internet catchphrases to describe complex emotions or actions:
-- **Mental states:** `大脑彻底死机` (Brain completely blue-screened), `心态崩了` (Mentality collapsed), `整不会了` (Doesn't know how to react).
-- **Game terminology:** `经验值拉满` (Experience points maxed out), `直接开挂` (Turned on cheats), `领了盒饭` (Got their lunchbox / died).
-- **Plot twists:** `神助攻` (God-tier assist), `叠中叠5.0` (Plot twist inception version 5.0), `直接捅了马蜂窝` (Poked the hornet's nest).
+- a twist
+- a reveal
+- a brutal image
+- a nasty judgment
+- a question
+- a comic undercut
+- a sudden escalation
+- a line of direct causal clarification
 
-### 废话文学 (Nonsense Literature / Redundant Phrasing)
+### 5.2 Re-hook types
 
-A signature comedy technique — state the painfully obvious in a pseudo-profound way.
+| Type | Function |
+|------|----------|
+| `注意看` / pointed redirection | Pull attention to a decisive visual or detail |
+| Reviewer sting | Quick judgment: stupid, shameless, hypocritical, delusional |
+| Reversal | `结果`, `没想到`, `却不料` |
+| Shock beat | Gore, sex, violence, taboo, humiliation |
+| Dialogue punch | Drop one line that changes the room |
+| Refrain | Repeat a comic phrase with growing force |
+| Faux wisdom | Fake profound line before or after chaos |
 
-**Examples:**
+### 5.3 The 90-second self-check
+
+Ask:
+
+> Why would the viewer still be watching after this sentence?
+
+If the answer is only “because I haven't finished summarizing the plot,” you need a stronger beat.
+
+---
+
+## 6. Tone & Voice Rules (语气规则)
+
+### 6.1 Calm delivery, sharp interpretation
+
+The default tone is calm, flat, and efficient. The narrator does **not** flail around with fake surprise.
+
+**DO:** describe outrageous things plainly.  
+**DON'T:** scream at the audience with shock emojis in sentence form.
+
+### 6.2 The joke is often in the framing
+
+The humor is not just catchphrases. It often comes from:
+
+1. **Mundane framing of absurdity**  
+   Treat something extreme like a neighborhood inconvenience.
+2. **Deflation after build-up**  
+   Raise stakes, then undercut them with a petty or earthly observation.
+3. **Villain shaming**  
+   Reduce a dangerous person to a greasy social type.
+4. **Premise collision**  
+   Let two incompatible worlds crash together in one sentence.
+5. **Fake authority**  
+   Sound profound while saying something crooked, circular, or rude.
+
+### 6.3 Internet slang & game-language
+
+Use modern slang and game metaphors when they sharpen the beat:
+
+- `开挂`
+- `领盒饭`
+- `捅了马蜂窝`
+- `心态崩了`
+- `大脑死机`
+
+But do **not** use slang as decoration. It must clarify the beat or intensify the punch.
+
+### 6.4 废话文学
+
+Use obvious pseudo-profundity at points of maximum absurdity.
+
+Examples:
+
 - `这个长得像小女孩的小女孩，其实就是一个小女孩`
 - `在小帅死了之后，他就不再活着了`
-- `毫无疑问，这是一个毫无疑问的事实`
-- `经过一番激烈的思想斗争，小帅决定不斗争了`
+- `经过一番激烈的思想斗争，他决定不斗争了`
 
-**Usage:** 2-3 times per script at moments of maximum absurdity. Don't overuse — it loses punch.
+Best use: 2-3 times per script. More becomes mush.
 
-### Pseudo-Idioms (假成语)
+### 6.5 假成语 / 假格言
 
-Invent fake classical Chinese phrases that sound authoritative but mean nothing, or twist real idioms into nonsense.
+Invent false gravity before or after a decisive beat:
 
-**Examples:**
-- `正所谓饮恨西北，小帅这一走就再也没回来` (饮恨西北 is not a real idiom)
-- `古人云：事出反常必有妖，妖出反常必有事` (circular logic)
+- `古人云：事出反常必有妖，妖出反常必有事`
+- `正所谓人要倒霉，喝凉水都塞牙`
 
-**Usage:** 1-2 per script maximum. Best placed before a dramatic beat.
+Use sparingly. These are spice, not broth.
 
-### Information Density
+### 6.6 Brief editorializing is required
 
-- Maximize plot per sentence. Every sentence should advance the story OR land a joke OR deepen suspense.
-- Cut all filler: no "我们知道", "大家可以看到", "其实在这里" type padding
-- Acceptable pacing: ~4-5 plot beats per minute
+Do not stay trapped in scene description. Briefly step out and judge:
 
-### Sarcastic Commentary
+- who is pretending,
+- whose plan is stupid,
+- why a reversal is satisfying,
+- why a system is corrupt,
+- why someone is trapped.
 
-The narrator occasionally breaks from plot summary to editorialize — but always briefly and with deadpan delivery.
+This is where the voice gains soul.
 
-**Examples:**
-- `不得不说，小帅的智商确实感人`
-- `到这里，相信观众已经猜到了结局——没错，你猜错了`
-- `这段剧情有多离谱呢，反正导演自己可能都不信`
+### 6.7 No flat screen-following
 
-### 5.5 Genre Modulation — Tune the Voice to the Movie
+Do **not** narrate like:
 
-The baseline is deadpan sarcasm, but the *weight* and *flavor* of that sarcasm must bend toward the movie's genre. A flat one-register voice on every movie is boring. Use this table:
+`他走过去，然后看了一眼，然后坐下，然后开门`
 
-| Movie Genre | Voice Tuning | Tools to Lean On | Tools to Pull Back |
-|-------------|--------------|------------------|--------------------|
-| **Comedy / Absurd** | Maximum sarcasm, maximum 废话文学 | 废话文学, 假成语, dialogue punches | Shock beats (the movie already provides them) |
-| **Thriller / Horror** | Deadpan dread — describe violence like weather | Shock beats, 注意看 re-hooks, withholding | 废话文学 (undercuts tension) |
-| **Action / Crime** | Rapid-fire, casual about violence | Information density, dialogue punches, sarcastic verdicts | Slow philosophical beats |
-| **Drama / Tragedy** | Cut sarcasm with occasional sincerity at climax | Sarcastic commentary on characters' choices, 假成语 | Comic tautologies at the emotional peak |
-| **Romance** | Skeptical of the romance itself | Sarcastic commentary, pseudo-idioms mocking love tropes | Sincere endorsement |
-| **Sci-Fi / Fantasy** | Demystify the premise with mundane framing | 废话文学 ("原来外星人，其实就是外星的人"), archetype reductions | Explaining the lore seriously |
+That is dead text. Compress the visible action into the beat's meaning:
 
-The moviereviewer who does a horror movie in the same tone as a romcom loses the audience who came for the horror. **Register must match expectations.**
+`小帅意识到事情不对，准备先下手为强`
 
-### 5.5b Genre Visual Focus — which scene types dominate the anchor budget
+### 6.8 Information density
 
-Tonal matching isn't enough. The **visual footage** must also skew toward what the audience came for. Rule: a target fraction of your `[ANCHOR]` blocks must point at genre-priority footage, regardless of what the narration literally describes.
-
-| Genre | Priority visual | Minimum anchor budget | What can be deprioritized |
-|-------|-----------------|------------------------|----------------------------|
-| **Action / fight** | Combat shots, impacts, power reveals | **≥40% of total anchors** | Talking-head exposition, establishing shots |
-| **Horror** | Jump scares, cursed imagery, gore | ≥35% | Daytime normalcy scenes |
-| **Thriller / suspense** | Reveals, building dread, close calls | ≥30% | Over-explanation scenes |
-| **Romance** | Emotional close-ups, touching, looks | ≥30% | Action beats |
-| **Drama / tragedy** | Tear-worthy faces during emotional dialogue | ≥30% | Plot-mechanical scenes |
-| **Comedy / absurd** | Reaction shots, absurd visuals, "how did we get here" shots | ≥35% | Straight-faced exposition |
-| **Supernatural / fantasy** | Power demonstrations, creature reveals | ≥30% | World-building narration |
-| **Crime / heist** | The heist/kill execution, tension moments | ≥30% | Backstory |
-
-**Cross-cut anchors — how to hit the budget when narration doesn't match.**
-
-When the narration literally describes something non-priority (e.g., "千条叔给小帅的任务很明确" — a teacher explaining to a student), you can use a **multi-range anchor** that points at priority footage instead of a teacher-student talking-head, as long as the chosen shots collectively support the beat.
-
-Example — exposition narration over priority (combat) footage:
-
-```
-[ANCHOR ranges="00:19:38-00:19:42, 01:11:40-01:11:45, 01:20:00-01:20:03" characters="小帅|千条叔"]
-千条叔给小帅的任务很明确：
-接受小美的诅咒，
-一点一点灌进刀身里...
-```
-
-Each range is one shot; the three together cover ~12s of mostly-combat footage while the narration delivers the exposition. The viewer hears the explanation and sees the powers it concerns.
-
-**Anchor counting:** when computing your priority-genre fraction, count an anchor as "combat" (or whatever priority) if **the dominant visual content of its ranges** is priority footage — even if the narration text on top is exposition. The audience's eyes drive the genre-fit feeling, not the words.
+- Maximize plot per sentence.
+- Cut filler such as `大家可以看到`, `其实在这里`, `我们知道`.
+- A good line often contains **event + interpretation** together.
 
 ---
 
-## 6. Transition Phrases (过渡短语)
+## 7. Genre Modulation (类型调音)
 
-Use these to maintain pace and connect scenes. Vary them — don't repeat the same one consecutively.
+The soul stays the same, but the register must bend to the movie.
 
-### Time Jumps
-| Phrase | Meaning | Usage |
-|--------|---------|-------|
-| 下一秒 | The next second | Immediate action — something happens right now |
-| 就在这时 | Right at this moment | Interrupt current action with new event |
-| 时间来到了第二天 | Time moves to the next day | Skip forward |
-| 三天后 / 一个月后 | Three days / one month later | Larger time skip |
+### 7.1 Action / Crime
 
-### Surprise & Reversal
-| Phrase | Meaning | Usage |
-|--------|---------|-------|
-| 却没想到 | But [they] didn't expect | Surprise twist — the plan fails |
-| 不出意外的话要出意外了 | If nothing unexpected happens, something unexpected will | Ironic foreshadowing (signature phrase) |
-| 正当所有人以为事情结束的时候 | Just when everyone thought it was over | False resolution → new complication |
-| 但事情远没有这么简单 | But things are far from that simple | Signal deeper conspiracy or twist |
+- Fastest pace.
+- Violence described casually, almost administratively.
+- Emphasize loyalty, revenge, hierarchy, traps, retaliation, turf, and who is harder than who.
+- Spend detail on set-pieces and humiliations, not bureaucracy.
 
-### Narrative Control
-| Phrase | Meaning | Usage |
-|--------|---------|-------|
-| 注意看 | Pay attention | Re-hook — draw focus to important detail (reuse throughout, not just opening) |
-| 按下不表 | Set aside for now | Borrowed from 评书 (traditional storytelling); pause one plotline to switch to another |
-| 我们先把时间拉回到… | Let's pull time back to… | Flashback |
-| 原来 | It turns out | Reveal — information the audience didn't have |
+### 7.2 Horror / Thriller
 
----
+- Less joke density than comedy.
+- Describe terror with plainness; let the image carry the fear.
+- Lean on dread, cursed logic, revelation, and “it gets worse.”
+- Pull back on silly tautologies unless the movie itself is camp.
 
-## 7. Plot Compression Rules (剧情压缩)
+### 7.3 Comedy / Absurd
 
-A 2-hour movie compressed to 7-12 minutes. Compression decisions serve the three Mission goals: preserve the hook, cover the whole plot, and keep engagement alive.
+- Premise collision matters more than gore.
+- Escalation chains are the engine.
+- Use refrains, misunderstanding ladders, and absurdly serious phrasing for ridiculous behavior.
 
-1. **Cut subplots ruthlessly.** Keep only the main plot arc. Romance subplots are cut unless they drive the main conflict.
-2. **Merge minor characters.** If three characters serve the same narrative function, combine them into one archetype.
-3. **Skip establishing shots.** Don't describe scenery, costumes, or atmosphere unless it's plot-critical.
-4. **Summarize montages.** Training sequences, travel scenes, and "passage of time" montages get one sentence maximum.
-5. **Preserve twists and reveals.** These are the payoff — compress the setup, but never skip the twist. Introduce twists casually but with hyperbolic impact: `谁能想到，这直接把剧情推向新高峰`.
-6. **Climax Action Execution.** During the climax, describe action as casually brutal. Treat extreme violence or epic battles like an everyday inconvenience: `遇神杀神遇佛杀佛`, `手起刀落就剁掉大好头颅`. The contrast between epic visuals and dismissive narration is key. For extended boss fights, use **multi-phase narration**: power display → obstacle escalation → casual kill → victory undercut.
-7. **Preserve the ending.** Uncle Niu style tells the COMPLETE story including the ending. The viewer should feel they've "watched" the whole movie.
-8. **Preserve any scene strong enough to be the hook.** If you demoted it from opener to act-3, still give it full weight when it arrives.
-9. **Level-Based Narration (关卡制).** When a movie involves moving through locations (building floors, enemy territories, tournament brackets), narrate it like a video game with discrete levels. Announce each new area as a boss stage: `闯过这一关，还有下一关`, `下一关就是关中之关，超级难关`. This gives the viewer a progress bar and creates anticipation.
-10. **Misunderstanding Escalation Chain (误解升级链).** For comedies where innocent actions are misread: narrate each misunderstanding as a chain reaction where A's action is misread by B, whose reaction is misread by C. Use a repeating refrain (`能不疯吗`) to anchor the escalation rhythm. Each iteration should be more absurd than the last.
+### 7.4 Sci-Fi / Fantasy / Supernatural
 
-### The Emotional Pivot Rule (认真时刻)
+- Do **not** explain lore like a wiki.
+- Translate complex rules into kitchen-table language.
+- Demystify the premise so the audience can move quickly to stakes and consequences.
 
-**For emotionally heavy movies only.** At the single most devastating emotional beat (a sacrifice, a death, a revelation of love), **drop the sarcasm entirely for 2-3 sentences**. Narrate with genuine, unironic gravity. This creates enormous impact precisely because the viewer has been trained to expect irony. Then immediately return to deadpan.
+### 7.5 Drama / Family / Tragedy
 
-- **DO:** `可其实我们都知道，这个世界上没有什么超能力，汽车是大家一起帮忙抬起来的，门锁不过是永强忍受着手脖子烫伤硬打开的`
-- **DO:** `搭档用身体护住了刘盈，刘盈倔强地把血肉模糊的搭档背了回去，可她却再也带不回这个心爱的男人`
-- **DON'T:** Use this for comedies or pure action. Reserve for movies that genuinely earn the moment.
-- **LIMIT:** Maximum ONE per script. If you do it twice, it loses all power.
+- Reduce joke density.
+- Keep sarcasm around bad choices, but do not mock the movie at its real wound.
+- Permit one earned seriousness window.
 
-### Compression Priority
+### 7.6 War / Revenge / Heroic suffering
 
-| Keep (full detail) | Summarize (1-2 sentences) | Cut entirely |
-|--------------------|---------------------------|--------------|
-| Opening incident | Character backstories | Establishing shots |
-| Key confrontations | Travel/transition scenes | Romance filler |
-| Plot twists & reveals | Training montages | Repeated beats |
-| Climax | World-building exposition | Dream sequences (unless plot-critical) |
-| Ending/resolution | Side character arcs | Musical numbers |
-| Hook-candidate scenes | | |
+- Treat endurance, sacrifice, and mission pressure seriously.
+- Let the tone harden instead of becoming cute.
+- When needed, use broad masculine myth or fake heroic language as seasoning.
+
+### 7.7 Genre visual focus
+
+The visual anchors must also match audience expectations:
+
+- action/crime → fights, chases, hits, standoffs
+- horror → grotesque images, dread, reveals, close calls
+- comedy → reactions, absurd images, chain-reaction misunderstandings
+- drama → wounded faces, aftermath, emotional choices
+- sci-fi/fantasy → power demonstrations, strange mechanisms, creature or world reveals
+
+If narration is explanatory, cross-cut onto stronger genre footage when it still semantically supports the beat.
 
 ---
 
-## 8. Closing (结尾)
+## 8. Transitions & Control Phrases (过渡与控场)
 
-End the script with one of these patterns:
+Use short control phrases to keep momentum:
 
-### Option A: Commentary Close
-Brief opinion on the movie, then sign off.
-```
-这部电影告诉我们一个道理：[sarcastic moral]。好了，这就是今天的故事，我们下期再见。
-```
+- `下一秒`
+- `就在这时`
+- `结果`
+- `没想到`
+- `却不料`
+- `原来`
+- `按下不表`
+- `咱们把时间拉回到...`
+- `正当所有人以为事情结束的时候`
 
-### Option B: Question Close
-Pose a question to the audience.
-```
-你觉得小帅最后的选择是对是错？欢迎在评论区告诉我。我们下期再见。
-```
-
-### Option C: Callback Close
-Reference the opening hook.
-```
-还记得开头那个[reference to hook]吗？现在你知道答案了。我们下期再见。
-```
-
-### Option D: Fake Life Lesson Close (伪人生感悟) — SIGNATURE
-Deliver a philosophical observation that sounds profound but is actually absurd, darkly comic, or deliberately nihilistic. Address the audience directly as if giving genuine life advice. This is the **most Niu Shu** closing pattern.
-```
-做一个没心没肺的狗东西吧，挺好
-```
-```
-安娜辛辛苦苦努力了这么多年，才总算达到了你们的起点。
-女人们，你们天生就自由。在家捂臭被窝子就捂了怎么的，你管我
-```
-```
-刚死了一个好友很痛苦，但马上又死了好几个好友，而你自己还活着，
-你就又快乐了。瞧就这么神奇
-```
-```
-No one care。根本没有谁会真正的关心其他人。
-自己别那么多戏了，累不累
-```
-
-**Key:** The life lesson should feel both absurd AND oddly true. It is NOT a genuine moral lecture — it is the narrator pretending to be wise while being deliberately outrageous.
-
-All closings MUST end with: `我们下期再见` (See you next time).
+These are not ornaments. They are steering tools.
 
 ---
 
-## 9. Hard Constraints (红线)
+## 9. Compression Rules (剧情压缩)
 
-These rules cannot be broken under any circumstances:
+### 9.1 Compression priorities
 
-1. **Open with the strongest possible hook.** Use one of the 5 Hook Archetypes (Section 1). The classic 注意看 is preferred but Premise-Paradox, Meta-Commentary, Rhetorical Question, or Cold-Open Action hooks are equally valid.
-2. **No original character names.** Use Chinese Villager Names (preferred) or Archetype Labels (fallback). No exceptions. (See Section 2.)
-3. **No spoiler warnings.** This style tells the complete plot. No "spoiler alert" disclaimers.
-4. **No first-person narration.** Always third-person omniscient. Never "I think" or "I feel" from the narrator. (Exception: the Fake Life Lesson closing may use direct audience address.)
-5. **No moral lectures.** The narrator is amused, not outraged. No "this movie teaches us the importance of..." sincerity. (The Fake Life Lesson closing LOOKS like a moral but is deliberately absurd.)
-6. **No exclamation-mark spam.** Maximum 3 exclamation marks in the entire script. The tone is deadpan.
-7. **No English words in the Chinese script.** Translate or localize everything. FBI → 佛波勒, not "FBI".
-8. **Must include the complete ending.** Don't cut off with "watch the movie to find out."
-9. **Re-engagement beat every 60-90 seconds.** No flat stretches longer than ~270 characters.
-10. **Duration must land in 10-15 min (~4,000-6,000 chars), sweet spot 12-13 min (~5,000 chars).** Shorter loses the "whole story" feel; longer loses retention.
-11. **Emotional Pivot maximum once per script.** Only for movies that genuinely earn it. Never in comedies.
+| Keep in detail | Summarize quickly | Cut if possible |
+|----------------|-------------------|-----------------|
+| hook-grade scenes | travel / setup logistics | establishing shots |
+| betrayals / reversals | backstory blocks | side chatter |
+| major confrontations | montage filler | redundant exposition |
+| trap reveals | minor subplots | role duplication |
+| climax and ending | worldbuilding details | scenic atmosphere with no consequence |
+
+### 9.2 Preserve payoff, not paperwork
+
+Compress the setup but preserve:
+
+- the reveal,
+- the retaliation,
+- the humiliation,
+- the cost,
+- the ending.
+
+### 9.3 Preserve any future hook-worthy scene
+
+If a scene was strong enough to be your opener but you moved it later, it still deserves full force when it arrives.
+
+### 9.4 Misunderstanding escalation chains
+
+For comedies built on false readings, narrate the misunderstanding as a chain:
+
+`A的动作被B误会，B的反应又被C误会，最后所有人都疯了`
+
+Each step should become more absurd than the previous one.
 
 ---
 
-## 10. Script Output Format
+## 10. Emotional Pivot (认真时刻)
+
+The older version of this rule was too rigid. Real Niu Shu is mostly detached, but not emotionally dead.
+
+### 10.1 Major sincerity window
+
+For movies that genuinely earn it, you may drop the sarcasm **once** for 2-4 sentences at the single most painful or noble beat:
+
+- sacrifice
+- death
+- impossible loyalty
+- family wound
+- earned release after extreme suffering
+
+This works because irony has prepared the contrast.
+
+### 10.2 Micro-serious lines are allowed elsewhere
+
+Outside the main pivot, short sober lines are allowed when they clarify a real wound or unfairness.
+
+What is forbidden is **melodramatic over-performance**, not sincerity itself.
+
+### 10.3 Do not spend sincerity cheaply
+
+- Never use the major sincerity window in pure comedy.
+- Do not repeat the big gravity drop multiple times.
+- Snap back to the normal register after the beat lands.
+
+---
+
+## 11. Closing (结尾)
+
+Closings matter more than in most styles. This is where Niu Shu often reveals the deepest aftertaste.
+
+### Option A: Fake life lesson (signature)
+
+Deliver a crooked truth that sounds half wise, half shameless, half darkly true.
+
+Examples:
+
+- `做一个没心没肺的狗东西吧，挺好`
+- `刚死了一个好友很痛苦，但马上又死了好几个好友，而你自己还活着，你就又快乐了。瞧就这么神奇`
+- `在家捂臭被窝子就捂了怎么的，你管我`
+
+### Option B: Bitter verdict
+
+Briefly say what kind of world this movie reveals:
+
+- people are selfish,
+- power is filthy,
+- loyalty is expensive,
+- pain changes nothing,
+- or revenge finally made sense.
+
+### Option C: Question to the audience
+
+Invite the audience to take a side or answer the movie's moral pressure point.
+
+### Option D: Callback / sting
+
+Tie back to the opening image, the main contradiction, or the final irony.
+
+### Closing rules
+
+- The close should feel like a **button**, not a fade-out.
+- It can be rude, bitter, absurd, nihilistic, or unexpectedly true.
+- A sign-off like `我们下期再见` is **preferred when it helps platform cadence**, but it is not mandatory if the final sting lands harder without it.
+
+---
+
+## 12. Hard Constraints (红线)
+
+These rules cannot be broken:
+
+1. **Do not write a flat screen-following summary.** Always compress toward meaning, motive, or payoff.
+2. **No original character names by default.** Use renamed social types unless there is a compelling clarity reason not to.
+3. **No spoiler warnings.** This style tells the full story.
+4. **No fake hysteria.** The voice is calm; the sharpness comes from framing, not screaming.
+5. **No moral lecture voice.** Even when serious, stay concise and unsentimental.
+6. **No exclamation-mark spam.** Maximum 3 exclamation marks in the entire script.
+7. **No English terms left raw in Chinese narration** unless they are culturally unavoidable and already naturalized.
+8. **Must include the actual ending.**
+9. **Re-engagement beat every 60-90 seconds.** No long dead stretches of plain summary.
+10. **Major emotional pivot at most once.** Micro-serious lines are fine; a full sincerity drop is rare.
+11. **Narrator self-insertion must stay brief.** Short asides are allowed; autobiography is not.
+
+---
+
+## 13. Script Output Format
 
 This style file is consumed by Stage 2's **single-pass planner-writer**. The planner picks visual anchors AND writes narration in one LLM call. Output uses `[ANCHOR ranges="..."]` markers — each anchor names one or more source-shot ranges, with the narration text below it bounded by `sum(range_seconds) × chars_per_second`.
 
 The structural skeleton:
 
 ```
-[TITLE] 注意看，[short hook summary that becomes the video title]
+[TITLE] [short hook summary that becomes the video title]
 
 [HOOK]
 [ANCHOR ranges="HH:MM:SS-HH:MM:SS" characters="archetype name"]
-注意看，这个男人叫小帅...
+[hook line]
 
 [ACT 1 - SETUP]
 [ANCHOR ranges="HH:MM:SS-HH:MM:SS"]
 (narrative text — sized to fit sum(range_seconds) × chars_per_second)
-[ANCHOR ranges="HH:MM:SS-HH:MM:SS, HH:MM:SS-HH:MM:SS"]
-(narrative text spanning two consecutive shots — Act 1 totals ~1,000 characters)
 
 [ACT 2 - ESCALATION]
 [ANCHOR ranges="..."]
-(narrative text — Act 2 totals ~1,500 characters)
+(narrative text)
 
 [ACT 3 - CLIMAX]
 [ANCHOR ranges="..."]
-(narrative text — Act 3 totals ~1,500 characters)
+(narrative text)
 
 [ACT 4 - RESOLUTION]
 [ANCHOR ranges="..."]
-(narrative text — Act 4 totals ~1,000 characters)
+(narrative text)
 
 [CLOSING]
 narration with NO [ANCHOR] — plays over a still keyframe
-我们下期再见。
 ```
 
 **Rules for markers:**
-- Each `[ANCHOR]` is one narrative beat. Multi-range anchors group 2-3 source shots that visualize the same beat (e.g., wide → reaction).
-- Each range stays inside ONE source shot (one `[shot:NNN]` from the timeline the planner is given). Range timestamps come from `[shot:NNN]` lines, never from `[srt:NNN]` lines.
-- Each individual range duration ≤ 12s. Each anchor's total duration (sum of range durations) ≤ 12s.
-- The closing chunk has narration but no `[ANCHOR]` — Stage 6 plays it over the most recent keyframe.
-- Structural markers `[TITLE]`, `[HOOK]`, `[ACT N]`, `[CLOSING]` and the `[ANCHOR ...]` lines are stripped from the final voiceover but kept for downstream stages and human review.
-- Aim for 50-100 anchors total across the script (avg ~9-12s of source coverage per anchor at the 12s cap).
+
+- Each `[ANCHOR]` is one narrative beat.
+- Multi-range anchors group 2-3 source shots that visualize the same beat.
+- Each range stays inside ONE source shot (one `[shot:NNN]` from the timeline the planner is given).
+- Range timestamps come from `[shot:NNN]` lines, never from `[srt:NNN]` lines.
+- Each individual range duration ≤ 12s.
+- Each anchor's total duration (sum of range durations) ≤ 12s.
+- The closing chunk has narration but no `[ANCHOR]`.
+- Structural markers are stripped from the final voiceover but kept for downstream stages and human review.
 
 ---
 
-## 11. Character & Hook Assignment Workflow
+## 14. Character, Hook, and Tone Assignment Workflow
 
 Before writing the script, the agent MUST:
 
-1. **Read the subtitle file** to identify all named characters
-2. **Rank characters** by screen time / dialogue frequency
-3. **Choose naming system**: Chinese Villager Names (Section 2A) for most movies; Archetype Labels (Section 2B) for very large casts. May mix both.
-4. **Assign names** following the assignment rules in Section 2
-5. **Identify hook candidates** — scan the full plot for the top 3 most attention-grabbing moments (by Section 1 criteria), and pick one
-6. **Select hook archetype** — choose the best-fit hook type (A-E) from Section 1
-7. **Output a mapping table** for user review before proceeding:
+1. Read the subtitle file and timeline to identify who matters.
+2. Rank characters by function, not by perfect name fidelity.
+3. Choose the naming system.
+4. Identify the top 3 hook candidates.
+5. Choose the hook form that best fits the movie's actual selling point.
+6. Decide where the main emotional pivot belongs, if any.
+7. Decide what the movie's dominant engine is:
+   - revenge
+   - trap / conspiracy
+   - survival
+   - misunderstanding
+   - rise-and-fall
+   - romance under pressure
+   - social cruelty
+8. Let that engine shape which beats get detail.
 
-```
-命名系统: 中国化命名 (Chinese Villager Names)
-角色对照表:
-John → 永强 (male protagonist)
-Sarah → 刘盈 (female protagonist)
-Viktor → 皮革 (villain)
-Detective Mills → 佛波勒 (law enforcement, archetype label)
-Old Man Jenkins → 常桂 (authority figure)
-Henchman 1, 2, 3 → 小卡拉米 (extras)
-
-钩子候选 (ranked):
-1. [00:47:20] John opens the trunk — a body falls out. [SELECTED] → Type A (注意看)
-2. [01:12:05] Sarah pulls the gun on her own father. → Type E (Cold-Open)
-3. [00:03:15] Opening — Viktor executes a witness. → Type A (注意看)
-
-选定类型修饰 (Genre modulation): Crime thriller → deadpan dread, dense pacing, minimal 废话文学.
-情感转折 (Emotional Pivot): Yes — [01:45:00] Sarah’s sacrifice.
-结尾模式 (Closing): Option D (伪人生感悟).
-```
-
-The user may override name assignments, hook selection, genre modulation, or closing pattern before the script is generated.
+**Final reminder:** The goal is not to *sound* like Niu Shu for one sentence. The goal is to make the whole script feel like it was written by a reviewer who thinks the way Niu Shu thinks.

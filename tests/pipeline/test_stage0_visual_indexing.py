@@ -354,6 +354,11 @@ def test_stage0_parser_accepts_workers_flag():
     assert args.workers == 3
 
 
+def test_stage0_parser_accepts_characters_dir_flag():
+    args = build_parser().parse_args(["--video", "movie.mp4", "--characters-dir", "chars"])
+    assert args.characters_dir == Path("chars")
+
+
 def test_stage0_parser_accepts_strategy_flag():
     args = build_parser().parse_args(["--video", "movie.mp4", "--strategy", "openrouter"])
     assert args.strategy == "openrouter"
@@ -412,11 +417,18 @@ class TestBuildPrompt:
         # gets contradictory instructions.
         assert "NEVER guess from general knowledge" not in prompt
 
+    def test_has_face_gallery_includes_face_gallery_instructions(self):
+        prompt = build_prompt(has_face_gallery=True)
+        assert "# Face Gallery (CRITICAL)" in prompt
+        assert "Reference Image for <Name>" in prompt
+        assert "Do NOT invent variations" in prompt
 
-def test_gemini_strategy_uses_synopsis_when_provided(tmp_path):
-    strategy = GeminiStrategy(api_key="fake", synopsis_text="Yuta: protagonist")
+
+def test_gemini_strategy_uses_synopsis_and_face_gallery_when_provided(tmp_path):
+    strategy = GeminiStrategy(api_key="fake", synopsis_text="Yuta: protagonist", characters_dir=tmp_path)
     assert "Cast Reference" in strategy.prompt
     assert "Yuta: protagonist" in strategy.prompt
+    assert "# Face Gallery" in strategy.prompt
 
 
 def test_openrouter_strategy_uses_synopsis_when_provided():
@@ -448,3 +460,28 @@ def test_index_chunk_deletes_uploaded_file_when_json_parse_fails(mock_genai, tmp
         strategy._index_chunk(tmp_path / "chunk.mp4")
 
     mock_client.files.delete.assert_called_once()
+
+
+@patch("app.pipeline.stage0_indexers.gemini.genai")
+def test_index_chunk_uploads_face_gallery_and_cleans_up_all_files(mock_genai, tmp_path):
+    mock_client = _build_fake_gemini_client(json.dumps([]))
+    mock_genai.Client.return_value = mock_client
+
+    chars_dir = tmp_path / "characters"
+    chars_dir.mkdir()
+    (chars_dir / "Kit.jpg").touch()
+    (chars_dir / "Chatchai.png").touch()
+
+    strategy = GeminiStrategy(api_key="fake", characters_dir=chars_dir)
+    strategy._index_chunk(tmp_path / "chunk.mp4")
+
+    # Uploads: Kit.jpg, Chatchai.png, chunk.mp4
+    assert mock_client.files.upload.call_count == 3
+    # Contents length: Kit (2) + Chatchai (2) + video (1) + prompt (1) = 6
+    contents = mock_client.models.generate_content.call_args.kwargs["contents"]
+    assert len(contents) == 6
+    assert "Reference Image for Chatchai:" in contents[0]
+    assert "Reference Image for Kit:" in contents[2]
+
+    # Deletions: all 3 files
+    assert mock_client.files.delete.call_count == 3

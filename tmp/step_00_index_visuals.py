@@ -48,6 +48,14 @@ def run() -> int:
     else:
         print(f"synopsis      : (none — no Cast Reference will be passed to the VLM)")
 
+    # Auto-attach Face Gallery if a characters directory exists next to the video.
+    chars_dir = paths.video.parent / "characters"
+    if chars_dir.exists() and chars_dir.is_dir():
+        print(f"face gallery  : {chars_dir}")
+        args += ["--characters-dir", str(chars_dir)]
+    else:
+        print(f"face gallery  : (none)")
+
     return stage0_main(args)
 
 

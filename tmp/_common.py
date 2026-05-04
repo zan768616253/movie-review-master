@@ -11,8 +11,12 @@ from __future__ import annotations
 
 import sys
 import tomllib
+
 from dataclasses import dataclass
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TMP_ROOT = REPO_ROOT / "tmp"
