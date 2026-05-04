@@ -222,7 +222,7 @@ def main(
     model_factory: Callable[[str, str], Any] = build_model,
     transcribe_file_fn: Callable[[Path, Path, Any, str | None], int] = transcribe_file,
     analyze_fn: Callable[[Path, Path], dict[str, Any]] = analyze,
-    probe_duration_fn: Callable[[Path], float | None] = probe_media_duration,
+    probe_duration_fn: Callable[[Path], float] = probe_media_duration,
     run_cmd: Callable[..., Any] = subprocess.run,
 ) -> int:
     parser = build_parser()

@@ -28,6 +28,13 @@ def default_manifest_path(output_path: Path) -> Path:
     return output_path.parent / DEFAULT_MANIFEST_NAME
 
 
+def _ffmpeg_path_arg(path: Path) -> str:
+    path_str = str(path)
+    if path.drive:
+        return path_str
+    return path_str.replace("\\", "/")
+
+
 def build_ffmpeg_command(
     review_video: Path,
     voiceover: Path,
@@ -41,9 +48,9 @@ def build_ffmpeg_command(
         "-loglevel",
         "error",
         "-i",
-        str(review_video),
+        _ffmpeg_path_arg(review_video),
         "-i",
-        str(voiceover),
+        _ffmpeg_path_arg(voiceover),
         "-map",
         "0:v:0",
         "-map",
@@ -59,7 +66,7 @@ def build_ffmpeg_command(
         "-movflags",
         "+faststart",
         "-shortest",
-        str(output_path),
+        _ffmpeg_path_arg(output_path),
     ]
 
 

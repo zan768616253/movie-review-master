@@ -24,7 +24,7 @@ def test_stage0_gemini_integration(tmp_path):
     """
     if not FIXTURE_VIDEO.exists():
         pytest.skip(f"Fixture video {FIXTURE_VIDEO} not found.")
-
+        
     output_path = tmp_path / "gemini_segments.json"
 
     args = [
