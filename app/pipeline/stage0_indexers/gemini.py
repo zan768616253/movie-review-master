@@ -18,17 +18,15 @@ from .shared import (
     ChunkedVisualIndexerStrategy,
     DEFAULT_SHOT_DETECT_THRESHOLD,
     DEFAULT_SHOT_SNAP_TOLERANCE_S,
-    DEFAULT_TIMESTAMP_FONT_PATH as SHARED_DEFAULT_TIMESTAMP_FONT_PATH,
     build_timestamp_drawtext_filter as _build_timestamp_drawtext_filter,
 )
 
 DEFAULT_MODEL = "gemini-3-flash-preview"
 DEFAULT_CHUNK_MINUTES = 7
-DEFAULT_TIMESTAMP_FONT_PATH = SHARED_DEFAULT_TIMESTAMP_FONT_PATH
 
 
 def build_timestamp_drawtext_filter() -> str:
-    return _build_timestamp_drawtext_filter(DEFAULT_TIMESTAMP_FONT_PATH)
+    return _build_timestamp_drawtext_filter()
 
 
 _SEGMENT_ITEM_SCHEMA = types.Schema(

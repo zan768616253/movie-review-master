@@ -160,6 +160,10 @@ Strategy implementations driven by `stage0_index_visuals.py`:
 
 Transcribe one `.mp3` file or a directory tree of `.mp3` files into `.txt`. Used when preparing voice-clone references. Entry point: `transcribe`. Test-covered.
 
+### `app/tools/build_story_prompt.py`
+
+Build a copy-paste prompt for external LLMs to draft a full movie-retelling script from a style markdown file, Stage 0 `visual_segments.json`, and Stage 1 `subtitles.json`. The tool converts the structured inputs into a single chronological plain-text timeline so the external model can infer the whole movie without watching it. Entry point: `build-story-prompt`. Test-covered.
+
 ### `app/tools/voice_analysis.py`
 
 One-off analysis helper for TTS experiments. Computes pacing, pauses, pitch, and energy stats from a reference audio plus transcript. Not a pipeline stage.
@@ -313,6 +317,7 @@ Configured in `pyproject.toml`:
 - `align-subtitles = app.pipeline.stage4_align_subtitles:main`
 - `finalize-video = app.pipeline.stage7_finalize_video:main`
 - `transcribe = app.tools.transcribe_audio:main`
+- `build-story-prompt = app.tools.build_story_prompt:main`
 - `prepare-voice-reference = app.tools.prepare_voice_reference:main`
 
 New entry points (`select-shots`, `assemble-rough-cut`, `write-narration`, `generate-audio`, `fit-visuals`, `render-video`) will be added as those modules land.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -16,17 +17,36 @@ from .base import (
 
 DEFAULT_SHOT_SNAP_TOLERANCE_S = 1.5
 DEFAULT_SHOT_DETECT_THRESHOLD = 0.3
-DEFAULT_TIMESTAMP_FONT_PATH = Path("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf")
+TIMESTAMP_FONT_PATH_ENV = "STAGE0_TIMESTAMP_FONT_PATH"
+
+
+def _resolve_timestamp_font_path() -> Path:
+    raw_font_path = os.getenv(TIMESTAMP_FONT_PATH_ENV)
+    if not raw_font_path:
+        raise RuntimeError(f"{TIMESTAMP_FONT_PATH_ENV} is not set in the environment")
+
+    font_path = Path(raw_font_path).expanduser()
+    if not font_path.exists():
+        raise FileNotFoundError(f"Configured {TIMESTAMP_FONT_PATH_ENV} does not exist: {font_path}")
+    if not font_path.is_file():
+        raise FileNotFoundError(f"Configured {TIMESTAMP_FONT_PATH_ENV} is not a file: {font_path}")
+    return font_path
+
+
+def _escape_drawtext_fontfile_path(font_path: Path) -> str:
+    return font_path.as_posix().replace(":", r"\\:")
 
 
 def build_timestamp_drawtext_filter(font_path: Path | None = None) -> str:
-    active_font_path = font_path if font_path is not None else DEFAULT_TIMESTAMP_FONT_PATH
-    font_prefix = ""
-    if active_font_path.exists():
-        font_prefix = f"fontfile={active_font_path}:"
+    active_font_path = font_path if font_path is not None else _resolve_timestamp_font_path()
+    if not active_font_path.exists():
+        raise FileNotFoundError(f"Timestamp font file does not exist: {active_font_path}")
+    if not active_font_path.is_file():
+        raise FileNotFoundError(f"Timestamp font path is not a file: {active_font_path}")
+
     return (
         "drawtext="
-        f"{font_prefix}"
+        f"fontfile={_escape_drawtext_fontfile_path(active_font_path)}:"
         r"text='%{pts\:hms}':"
         "x=12:y=12:"
         "fontsize=28:fontcolor=white:"
