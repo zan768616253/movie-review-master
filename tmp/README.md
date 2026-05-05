@@ -22,6 +22,11 @@ tmp/
     _template.toml                # copy this when adding a new movie
     backup/                       # archived per-movie configs for reference
   _common.py                      # config loader, paths, helpers
+  tools/
+    build_story_prompt.py         # harness for app/tools/build_story_prompt.py
+    prepare_voice_reference.py    # harness for app/tools/prepare_voice_reference.py
+    transcribe_audio.py           # harness for app/tools/transcribe_audio.py
+    voice_analysis.py             # harness for app/tools/voice_analysis.py
   step_00_index_visuals.py        # ← open & press ▶ to run stage 0
   step_01_parse_subtitles.py
   README.md                       # this file
@@ -50,6 +55,19 @@ To switch movies: overwrite `tmp/configs/current_movie.toml` with the movie
 you want to run. If you want to keep the old one around, store a named copy
 under `tmp/configs/backup/`.
 
+Tool harnesses work the same way. Open a file in `tmp/tools/` and run it, or
+invoke it from the terminal. Example:
+
+```bash
+conda run -n py312_machine_learning --no-capture-output \
+  python tmp/tools/build_story_prompt.py
+```
+
+All `tmp/tools/*.py` wrappers read `tmp/configs/current_movie.toml` through
+`tmp/_common.py`. They derive as much as possible from the active movie + style
+config and only need extra keys in `current_movie.toml` when a tool has inputs
+that cannot be inferred automatically.
+
 ---
 
 ## Debugging tips
@@ -77,3 +95,23 @@ under `tmp/configs/backup/`.
   block, and uses the face gallery to keep character names consistent across
   chunks.
 5. Run.
+
+---
+
+## Tool Config
+
+Optional tool-specific settings live in `tmp/configs/current_movie.toml` under
+`[tools.<tool_name>]`.
+
+- `build_story_prompt` uses the current movie/style/stage outputs automatically,
+  including `movies/<...>/synopsis.md` from `tmp/_common.py` as default plot/cast
+  grounding. Override `[tools.build_story_prompt].out` only if you want a
+  non-default output path.
+- `prepare_voice_reference` requires `[tools.prepare_voice_reference].source_audio`
+  because the source clip cannot be inferred from the movie config alone.
+  `transcript`, `start`, and `end` are optional.
+- `transcribe_audio` defaults to the active style's
+  `styles/voice-assets/<style>/reference/` folder. Override `input_path` or
+  `language` if needed.
+- `voice_analysis` defaults to the active style's `clone_reference.*` files.
+  Override `audio`, `transcript`, or `out` only when needed.

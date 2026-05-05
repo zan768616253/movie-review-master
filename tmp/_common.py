@@ -22,11 +22,13 @@ import tomllib
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
 from dotenv import load_dotenv
 
-load_dotenv()
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(REPO_ROOT / ".env")
+
 TMP_ROOT = REPO_ROOT / "tmp"
 WORK_ROOT = TMP_ROOT / "work"
 DEFAULT_CONFIG = "configs/current_movie.toml"
@@ -88,6 +90,58 @@ class Paths:
     final_video: Path
     final_video_manifest: Path
 
+    # Tool outputs / derived asset paths
+    tools_dir: Path
+    story_prompt: Path
+    voice_reference_dir: Path
+    voice_reference_audio: Path
+    voice_reference_text: Path
+    voice_reference_analysis: Path
+
+
+def resolve_repo_path(path_value: str | Path) -> Path:
+    path = Path(path_value).expanduser()
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    return path.resolve()
+
+
+def resolve_optional_repo_path(path_value: str | Path | None) -> Path | None:
+    if path_value is None:
+        return None
+    return resolve_repo_path(path_value)
+
+
+def get_tool_config(config: dict[str, Any], tool_name: str) -> dict[str, Any]:
+    tools = config.get("tools", {})
+    if not isinstance(tools, dict):
+        raise ValueError("[tools] must be a table in the harness config")
+
+    tool_config = tools.get(tool_name, {})
+    if tool_config is None:
+        return {}
+    if not isinstance(tool_config, dict):
+        raise ValueError(f"[tools.{tool_name}] must be a table in the harness config")
+    return tool_config
+
+
+def get_tool_value(config: dict[str, Any], tool_name: str, key: str, default: Any = None) -> Any:
+    tool_config = get_tool_config(config, tool_name)
+    return tool_config.get(key, default)
+
+
+def get_optional_tool_path(config: dict[str, Any], tool_name: str, key: str) -> Path | None:
+    return resolve_optional_repo_path(get_tool_value(config, tool_name, key))
+
+
+def get_required_tool_path(config: dict[str, Any], tool_name: str, key: str) -> Path:
+    raw_value = get_tool_value(config, tool_name, key)
+    if not raw_value:
+        raise ValueError(
+            f"tmp/configs/current_movie.toml is missing [tools.{tool_name}].{key}"
+        )
+    return resolve_repo_path(raw_value)
+
 
 def load_config(config_path: str | Path) -> dict:
     """Read a TOML config file and return its contents as a dict."""
@@ -103,12 +157,13 @@ def build_paths(config: dict) -> Paths:
     common = config["common"]
 
     movie_slug = common["movie_slug"]
-    movie_dir = (REPO_ROOT / common["movie_dir"]).resolve()
-    style = (REPO_ROOT / common["style_path"]).resolve()
+    movie_dir = resolve_repo_path(common["movie_dir"])
+    style = resolve_repo_path(common["style_path"])
     video = movie_dir / common["video_file"]
     subtitle_srt = movie_dir / common["subtitle_file"]
 
     work_dir = WORK_ROOT / movie_slug
+    tools_dir = work_dir / "tools"
     stage0_dir = work_dir / "stage0"
     stage1_dir = work_dir / "stage1"
     stage2_dir = work_dir / "stage2"
@@ -125,6 +180,7 @@ def build_paths(config: dict) -> Paths:
     #   voiceover_<style-stem>_voiceclone.{mp3,manifest.json}
     tag = style.stem
     voiceover_basename = f"voiceover_{tag}_voiceclone"
+    voice_reference_dir = style.parent / "voice-assets" / style.stem / "reference"
 
     return Paths(
         movie_dir=movie_dir,
@@ -157,11 +213,18 @@ def build_paths(config: dict) -> Paths:
         review_video=stage8_dir / "review.mp4",
         final_video=stage9_dir / "final_video.mp4",
         final_video_manifest=stage9_dir / "delivery_manifest.json",
+        tools_dir=tools_dir,
+        story_prompt=tools_dir / "story_prompt.txt",
+        voice_reference_dir=voice_reference_dir,
+        voice_reference_audio=voice_reference_dir / "clone_reference.mp3",
+        voice_reference_text=voice_reference_dir / "clone_reference.txt",
+        voice_reference_analysis=voice_reference_dir / "clone_reference.analysis.json",
     )
 
 
 def ensure_stage_dirs(paths: Paths) -> None:
     for d in (
+        paths.tools_dir,
         paths.stage0_dir,
         paths.stage1_dir,
         paths.stage2_dir,

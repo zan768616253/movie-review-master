@@ -13,6 +13,28 @@ genre         = "action"
 # Target final-review length in seconds.
 target_seconds = 720.0
 
+# Optional tool harness settings used by tmp/tools/*.py.
+# Most tool paths are derived automatically from [common]. Uncomment only the
+# overrides you actually need.
+
+[tools.build_story_prompt]
+out = "tmp/work/sha_po_lang_2/tools/story_prompt.txt"
+
+# [tools.prepare_voice_reference]
+# source_audio = "movies/杀破狼2/reference_clip.wav"
+# transcript = "movies/杀破狼2/reference_clip.txt"
+# start = "00:00:00"
+# end = "00:01:30"
+
+# [tools.transcribe_audio]
+# input_path = "styles/voice-assets/niu-shu/reference"
+# language = "zh"
+
+# [tools.voice_analysis]
+# audio = "styles/voice-assets/niu-shu/reference/clone_reference.mp3"
+# transcript = "styles/voice-assets/niu-shu/reference/clone_reference.txt"
+# out = "styles/voice-assets/niu-shu/reference/clone_reference.analysis.json"
+
 
 
 # # Pipeline config for "Jujutsu Kaisen 0".

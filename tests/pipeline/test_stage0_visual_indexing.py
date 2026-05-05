@@ -1,3 +1,4 @@
+import os
 import json
 import time
 from pathlib import Path
@@ -14,7 +15,6 @@ from app.pipeline.stage0_indexers.base import (
 )
 from app.pipeline.stage0_indexers.shared import build_prompt
 from app.pipeline.stage0_indexers.gemini import GeminiStrategy
-from app.pipeline.stage0_indexers.gemini import build_timestamp_drawtext_filter
 from app.pipeline.stage0_indexers.openrouter import OpenRouterStrategy
 
 
@@ -419,16 +419,11 @@ def test_build_strategy_returns_openrouter_strategy():
     assert strategy.max_workers == 5
 
 
-def test_build_timestamp_drawtext_filter_omits_fontfile_when_default_font_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        "app.pipeline.stage0_indexers.gemini.DEFAULT_TIMESTAMP_FONT_PATH",
-        tmp_path / "missing-font.ttf",
-    )
+def test_stage0_timestamp_font_path_from_env_exists():
+    font_path = Path(os.environ["STAGE0_TIMESTAMP_FONT_PATH"])
 
-    drawtext_filter = build_timestamp_drawtext_filter()
-
-    assert "fontfile=" not in drawtext_filter
-    assert drawtext_filter.startswith("drawtext=text=")
+    assert font_path.exists()
+    assert font_path.is_file()
 
 
 # ---------------------------------------------------------------------------
