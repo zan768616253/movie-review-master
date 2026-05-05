@@ -37,24 +37,19 @@ def run() -> int:
         "--video", str(paths.video),
         "--output", str(paths.visual_segments),
         "--tmp-dir", str(paths.stage0_dir / "tmp"),
-        "--workers", "5",
     ]
-    # Auto-attach the movie's synopsis as a Cast Reference when available.
-    # This lets the VLM apply consistent character names across chunks
-    # without risking franchise-knowledge over-attribution.
-    if paths.synopsis.exists():
-        print(f"synopsis      : {paths.synopsis}")
-        args += ["--synopsis", str(paths.synopsis)]
-    else:
-        print(f"synopsis      : (none — no Cast Reference will be passed to the VLM)")
+    if not paths.synopsis.is_file():
+        return fail(f"synopsis not found: {paths.synopsis}")
+    print(f"synopsis      : {paths.synopsis}")
+    args += ["--synopsis", str(paths.synopsis)]
 
-    # Auto-attach Face Gallery if a characters directory exists next to the video.
     chars_dir = paths.video.parent / "characters"
-    if chars_dir.exists() and chars_dir.is_dir():
-        print(f"face gallery  : {chars_dir}")
-        args += ["--characters-dir", str(chars_dir)]
-    else:
-        print(f"face gallery  : (none)")
+    if not chars_dir.is_dir():
+        return fail(f"face gallery directory not found: {chars_dir}")
+    if not any(chars_dir.iterdir()):
+        return fail(f"face gallery directory is empty: {chars_dir}")
+    print(f"face gallery  : {chars_dir}")
+    args += ["--characters-dir", str(chars_dir)]
 
     return stage0_main(args)
 

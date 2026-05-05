@@ -128,6 +128,8 @@ Purpose:
 
 Carried over from the previous architecture without changes. Output: `visual_segments.json`.
 
+The Stage 0 launcher now requires a `synopsis.md` cast reference and a non-empty `characters/` face-gallery directory next to the movie file; it fails fast if either is missing.
+
 ### Stage 1: Subtitle Intake
 
 Purpose:

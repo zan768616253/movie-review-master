@@ -205,7 +205,7 @@ Every segment in the written file has already passed `validate_visual_segments()
 
 The full set of shot-cut timestamps is reconstructed by `build_shot_boundary_set(visual_segments)`: union of every segment's start/end (excluding the t=0 movie start) with every entry in any segment's `shot_boundaries_s` (subject to inner-cut collapse for segments where micro-cuts represent false granularity).
 
-**Optional Cast Reference:** `stage0_index_visuals.py` accepts `--synopsis PATH`. When supplied, the synopsis text is inlined into the VLM prompt as a Cast Reference block, and the VLM uses listed names instead of conservative per-chunk re-identification.
+**Required Cast Reference and Face Gallery:** `stage0_index_visuals.py` now requires both `--synopsis PATH` and `--characters-dir DIR`. The synopsis text is always inlined into the VLM prompt as a Cast Reference block, and the face-gallery directory must contain at least one reference image so the VLM can label characters consistently across chunks.
 
 ### Subtitle JSON Contract (Stage 1)
 

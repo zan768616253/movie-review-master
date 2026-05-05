@@ -13,11 +13,27 @@ from app.pipeline.common.script_contract import get_video_duration, validate_vis
 from app.pipeline.stage0_indexers import GeminiStrategy, OpenRouterStrategy, VisualIndexerStrategy
 
 
-def _positive_int(value: str) -> int:
-    parsed = int(value)
-    if parsed < 1:
-        raise argparse.ArgumentTypeError("must be >= 1")
-    return parsed
+DEFAULT_STAGE0_WORKERS = 5
+
+
+def _existing_file_path(value: str) -> Path:
+    path = Path(value).expanduser()
+    if not path.exists():
+        raise argparse.ArgumentTypeError(f"file not found: {path}")
+    if not path.is_file():
+        raise argparse.ArgumentTypeError(f"not a file: {path}")
+    return path
+
+
+def _non_empty_directory(value: str) -> Path:
+    path = Path(value).expanduser()
+    if not path.exists():
+        raise argparse.ArgumentTypeError(f"directory not found: {path}")
+    if not path.is_dir():
+        raise argparse.ArgumentTypeError(f"not a directory: {path}")
+    if not any(path.iterdir()):
+        raise argparse.ArgumentTypeError(f"directory is empty: {path}")
+    return path
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,36 +52,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Visual indexing backend to use",
     )
     parser.add_argument(
-        "--workers",
-        type=_positive_int,
-        default=5,
-        help="Parallel chunk workers for uncached provider requests",
-    )
-    parser.add_argument(
         "--synopsis",
-        type=Path,
-        default=None,
-        help=(
-            "Optional path to a markdown synopsis with cast list. When present, "
-            "the VLM is allowed to label characters using the cast as ground truth "
-            "(consistent names across chunks); without it, the VLM falls back to "
-            "the conservative per-chunk re-identification rule."
-        ),
+        type=_existing_file_path,
+        required=True,
+        help="Required path to a markdown synopsis with cast list",
     )
     parser.add_argument(
         "--characters-dir",
-        type=Path,
-        default=None,
-        help="Optional path to a directory containing character reference images (e.g., Kit.jpg).",
+        type=_non_empty_directory,
+        required=True,
+        help="Required non-empty directory containing character reference images (e.g., Kit.jpg).",
     )
     return parser
 
 
-def _build_strategy(name: str, max_workers: int, synopsis_text: str = "", characters_dir: Path | None = None) -> VisualIndexerStrategy:
+def _build_strategy(name: str, synopsis_text: str = "", characters_dir: Path | None = None) -> VisualIndexerStrategy:
     if name == "gemini":
-        return GeminiStrategy(max_workers=max_workers, synopsis_text=synopsis_text, characters_dir=characters_dir)
+        return GeminiStrategy(max_workers=DEFAULT_STAGE0_WORKERS, synopsis_text=synopsis_text, characters_dir=characters_dir)
     if name == "openrouter":
-        return OpenRouterStrategy(max_workers=max_workers, synopsis_text=synopsis_text)
+        return OpenRouterStrategy(max_workers=DEFAULT_STAGE0_WORKERS, synopsis_text=synopsis_text)
     raise ValueError(f"Unsupported strategy: {name}")
 
 
@@ -79,26 +84,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args.tmp_dir.mkdir(parents=True, exist_ok=True)
 
-    synopsis_text = ""
-    if args.synopsis is not None:
-        synopsis_path = args.synopsis.expanduser().resolve()
-        if not synopsis_path.exists():
-            print(f"Error: --synopsis file not found: {synopsis_path}")
-            return 1
+    try:
+        synopsis_path = args.synopsis.resolve()
         synopsis_text = synopsis_path.read_text(encoding="utf-8")
         print(f"Cast Reference attached from: {synopsis_path}")
 
-    characters_dir = None
-    if args.characters_dir is not None:
-        characters_dir = args.characters_dir.expanduser().resolve()
-        if not characters_dir.exists() or not characters_dir.is_dir():
-            print(f"Error: --characters-dir is not a valid directory: {characters_dir}")
-            return 1
+        characters_dir = args.characters_dir.resolve()
         print(f"Face Gallery attached from: {characters_dir}")
 
-    strategy = _build_strategy(args.strategy, args.workers, synopsis_text=synopsis_text, characters_dir=characters_dir)
-
-    try:
+        strategy = _build_strategy(args.strategy, synopsis_text=synopsis_text, characters_dir=characters_dir)
         raw_segments = strategy.index_video(video_path, args.tmp_dir)
 
         video_duration_s = get_video_duration(video_path)
