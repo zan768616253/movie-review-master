@@ -349,25 +349,74 @@ class TestOpenRouterStrategy:
         assert content[1]["video_url"]["url"].startswith("data:video/mp4;base64,")
 
 
-def test_stage0_parser_accepts_workers_flag():
-    args = build_parser().parse_args(["--video", "movie.mp4", "--workers", "3"])
-    assert args.workers == 3
+def test_stage0_parser_requires_synopsis_and_characters_dir():
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["--video", "movie.mp4"])
 
 
-def test_stage0_parser_accepts_characters_dir_flag():
-    args = build_parser().parse_args(["--video", "movie.mp4", "--characters-dir", "chars"])
-    assert args.characters_dir == Path("chars")
+def test_stage0_parser_accepts_required_synopsis_and_characters_dir(tmp_path):
+    synopsis = tmp_path / "synopsis.md"
+    synopsis.write_text("Yuta: protagonist", encoding="utf-8")
+
+    characters_dir = tmp_path / "characters"
+    characters_dir.mkdir()
+    (characters_dir / "Kit.jpg").write_bytes(b"fake-image")
+
+    args = build_parser().parse_args([
+        "--video",
+        "movie.mp4",
+        "--synopsis",
+        str(synopsis),
+        "--characters-dir",
+        str(characters_dir),
+    ])
+    assert args.synopsis == synopsis
+    assert args.characters_dir == characters_dir
 
 
-def test_stage0_parser_accepts_strategy_flag():
-    args = build_parser().parse_args(["--video", "movie.mp4", "--strategy", "openrouter"])
+def test_stage0_parser_rejects_empty_characters_dir(tmp_path):
+    synopsis = tmp_path / "synopsis.md"
+    synopsis.write_text("Yuta: protagonist", encoding="utf-8")
+
+    empty_characters_dir = tmp_path / "characters"
+    empty_characters_dir.mkdir()
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args([
+            "--video",
+            "movie.mp4",
+            "--synopsis",
+            str(synopsis),
+            "--characters-dir",
+            str(empty_characters_dir),
+        ])
+
+
+def test_stage0_parser_accepts_strategy_flag(tmp_path):
+    synopsis = tmp_path / "synopsis.md"
+    synopsis.write_text("Yuta: protagonist", encoding="utf-8")
+
+    characters_dir = tmp_path / "characters"
+    characters_dir.mkdir()
+    (characters_dir / "Kit.jpg").write_bytes(b"fake-image")
+
+    args = build_parser().parse_args([
+        "--video",
+        "movie.mp4",
+        "--strategy",
+        "openrouter",
+        "--synopsis",
+        str(synopsis),
+        "--characters-dir",
+        str(characters_dir),
+    ])
     assert args.strategy == "openrouter"
 
 
 def test_build_strategy_returns_openrouter_strategy():
-    strategy = _build_strategy("openrouter", max_workers=2)
+    strategy = _build_strategy("openrouter")
     assert isinstance(strategy, OpenRouterStrategy)
-    assert strategy.max_workers == 2
+    assert strategy.max_workers == 5
 
 
 def test_build_timestamp_drawtext_filter_omits_fontfile_when_default_font_missing(monkeypatch, tmp_path):
@@ -440,13 +489,6 @@ def test_strategy_without_synopsis_keeps_conservative_rule():
     strategy = GeminiStrategy(api_key="fake")
     assert "Cast Reference" not in strategy.prompt
     assert "NEVER guess from general knowledge" in strategy.prompt
-
-
-def test_stage0_parser_accepts_synopsis_flag():
-    args = build_parser().parse_args([
-        "--video", "movie.mp4", "--synopsis", "synopsis.md",
-    ])
-    assert args.synopsis == Path("synopsis.md")
 
 
 @patch("app.pipeline.stage0_indexers.gemini.genai")

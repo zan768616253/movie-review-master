@@ -70,10 +70,10 @@ under `tmp/configs/backup/`.
   fill it in.
 3. If you want to preserve the old movie config, save a named copy under
   `tmp/configs/backup/` first.
-4. **Optional but recommended:** drop `synopsis.md` into the movie folder
+4. Put `synopsis.md` in the movie folder
   (`movies/<some_folder>/synopsis.md`) with a plot summary and named cast
-  list. Stage 0 auto-attaches it as a Cast Reference block in the VLM
-  prompt so character names stay consistent across chunks. With no
-  synopsis, the VLM falls back to the conservative per-chunk
-  re-identification rule.
+  list, and create a non-empty `characters/` folder with reference images.
+  Stage 0 requires both inputs, attaches the synopsis as a Cast Reference
+  block, and uses the face gallery to keep character names consistent across
+  chunks.
 5. Run.
