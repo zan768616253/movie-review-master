@@ -57,6 +57,10 @@ def run() -> int:
         "--out", str(output_path),
     ]
 
+    genre = cfg["common"].get("genre")
+    if genre:
+        args.extend(["--genre", str(genre)])
+
     return build_story_prompt_main(args)
 
 
