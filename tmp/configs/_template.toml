@@ -35,3 +35,11 @@ target_seconds = 300.0
 # audio = "styles/voice-assets/niu-shu/reference/clone_reference.mp3"
 # transcript = "styles/voice-assets/niu-shu/reference/clone_reference.txt"
 # out = "styles/voice-assets/niu-shu/reference/clone_reference.analysis.json"
+
+# [tools.generate_script_audio]
+# script = "tmp/work/TODO_short_slug_no_spaces/tools/scripts.txt"
+# out_dir = "tmp/work/TODO_short_slug_no_spaces/tools"
+# style = "styles/niu-shu.md"
+# ref_audio = "styles/voice-assets/niu-shu/reference/clone_reference.mp3"
+# ref_text = "styles/voice-assets/niu-shu/reference/clone_reference.txt"
+# tag = "niu-shu-custom"
