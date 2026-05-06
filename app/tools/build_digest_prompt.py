@@ -23,52 +23,6 @@ from app.tools.build_story_prompt import (
 
 
 # ---------------------------------------------------------------------------
-# Noise filtering — remove production logos, fansub credits, watermarks
-# ---------------------------------------------------------------------------
-
-_SUBTITLE_NOISE_PATTERNS = [
-    re.compile(r"https?://", re.IGNORECASE),
-    re.compile(r"www\.", re.IGNORECASE),
-    re.compile(r"字幕制作"),
-    re.compile(r"影片压制"),
-    re.compile(r"招募"),
-    re.compile(r"==.*出品.*=="),
-    re.compile(r"CMCT", re.IGNORECASE),
-]
-
-_VISUAL_NOISE_KEYWORDS = [
-    "production company logo",
-]
-
-
-def filter_visual_segments(
-    segments: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    """Drop visual segments that are just production company logos."""
-    return [
-        s
-        for s in segments
-        if not any(
-            kw in str(s.get("summary", "")).lower()
-            for kw in _VISUAL_NOISE_KEYWORDS
-        )
-    ]
-
-
-def filter_subtitles(
-    subtitles: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    """Drop subtitle lines that are fansub credits or watermarks."""
-    out: list[dict[str, object]] = []
-    for sub in subtitles:
-        text = str(sub.get("text", ""))
-        if any(p.search(text) for p in _SUBTITLE_NOISE_PATTERNS):
-            continue
-        out.append(sub)
-    return out
-
-
-# ---------------------------------------------------------------------------
 # Prompt building
 # ---------------------------------------------------------------------------
 
@@ -232,9 +186,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         orig_vis = len(visual_segments)
         orig_sub = len(subtitles)
-
-        visual_segments = filter_visual_segments(visual_segments)
-        subtitles = filter_subtitles(subtitles)
 
         timeline_text = render_timeline(visual_segments, subtitles)
         if not timeline_text.strip():
