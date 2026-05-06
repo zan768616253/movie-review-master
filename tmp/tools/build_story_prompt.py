@@ -36,8 +36,8 @@ def run() -> int:
         return fail(f"synopsis not found: {paths.synopsis}")
     if not paths.visual_segments.is_file():
         return fail(f"visual segments not found: {paths.visual_segments}")
-    if not paths.subtitles_json.is_file():
-        return fail(f"subtitles json not found: {paths.subtitles_json}")
+    if not paths.subtitles_text.is_file():
+        return fail(f"subtitles txt not found: {paths.subtitles_text}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -45,14 +45,14 @@ def run() -> int:
     print(f"style           : {paths.style}")
     print(f"synopsis        : {paths.synopsis}")
     print(f"visual segments : {paths.visual_segments}")
-    print(f"subtitles json  : {paths.subtitles_json}")
+    print(f"subtitles txt   : {paths.subtitles_text}")
     print(f"output          : {output_path}")
 
     args = [
         "--style", str(paths.style),
         "--synopsis", str(paths.synopsis),
         "--visual-segments", str(paths.visual_segments),
-        "--subtitles-json", str(paths.subtitles_json),
+        "--subtitles-txt", str(paths.subtitles_text),
         "--movie-title", str(cfg["common"]["movie_title"]),
         "--out", str(output_path),
     ]

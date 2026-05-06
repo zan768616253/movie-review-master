@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import DEFAULT_CONFIG, banner, build_paths, ensure_stage_dirs, fail, load_config
 
+from app.pipeline.common.script_contract import seconds_to_timestamp
 from app.pipeline.stage1_parse_subtitles import parse_subtitles
 
 CONFIG = DEFAULT_CONFIG
@@ -33,10 +34,16 @@ def run() -> int:
     print(f"output : {paths.subtitles_text}")
 
     subtitles = parse_subtitles(paths.subtitle_srt)
-    lines = [
-        f"{s.speaker}: {s.text}" if s.speaker else s.text
-        for s in subtitles
-    ]
+    lines = []
+    for s in subtitles:
+        start_str = seconds_to_timestamp(s.start)
+        end_str = seconds_to_timestamp(s.end)
+        prefix = f"[{start_str} -> {end_str}]"
+        text = s.text.replace("\n", " / ")
+        if s.speaker:
+            lines.append(f"{prefix} {s.speaker}: {text}")
+        else:
+            lines.append(f"{prefix} {text}")
     paths.subtitles_text.write_text("\n".join(lines), encoding="utf-8")
     print(f"\nWrote {len(subtitles)} lines.")
     return 0

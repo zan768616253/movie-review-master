@@ -5,7 +5,7 @@ prompt from:
 
 - a style markdown file
 - Stage 0 `visual_segments.json`
-- Stage 1 `subtitles.json`
+- Stage 1 `subtitles.txt`
 
 The prompt is designed for manual paste into Gemini / DeepSeek / similar
 models so they can draft a full movie-retelling script in the chosen style.
@@ -50,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--style", type=Path, required=True, help="Style markdown file.")
     parser.add_argument("--visual-segments", type=Path, required=True, help="Stage 0 visual_segments.json.")
-    parser.add_argument("--subtitles-json", type=Path, required=True, help="Stage 1 subtitles.json.")
+    parser.add_argument("--subtitles-txt", type=Path, required=True, help="Stage 1 subtitles.txt.")
     parser.add_argument("--out", type=Path, required=True, help="Output path for the generated prompt text.")
     parser.add_argument("--movie-title", default="", help="Optional movie title for prompt framing.")
     parser.add_argument(
@@ -75,11 +75,32 @@ def _read_text(path: Path) -> str:
     return text
 
 
+import re
+
+_SUBTITLE_TXT_PATTERN = re.compile(
+    r"^\[(?P<start>\d{2}:\d{2}:\d{2}\.\d+) -> (?P<end>\d{2}:\d{2}:\d{2}\.\d+)\]\s*(?P<body>.*)$"
+)
+
 def load_subtitles(path: Path) -> list[dict[str, object]]:
-    payload = load_json(path)
-    if not isinstance(payload, list):
-        raise ValueError(f"Subtitle JSON must be a list: {path}")
-    return payload
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        return []
+        
+    subtitles = []
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        match = _SUBTITLE_TXT_PATTERN.match(line)
+        if not match:
+            raise ValueError(f"Invalid subtitle line format: {line}")
+            
+        subtitles.append({
+            "start": match.group("start"),
+            "end": match.group("end"),
+            "text": match.group("body"),
+        })
+    return subtitles
 
 
 def build_timeline_entries(
@@ -237,7 +258,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     style_path = args.style.expanduser().resolve()
     visual_segments_path = args.visual_segments.expanduser().resolve()
-    subtitles_json_path = args.subtitles_json.expanduser().resolve()
+    subtitles_txt_path = args.subtitles_txt.expanduser().resolve()
     out_path = args.out.expanduser().resolve()
     synopsis_path = args.synopsis.expanduser().resolve() if args.synopsis else None
 
@@ -246,15 +267,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise FileNotFoundError(f"Style file not found: {style_path}")
         if not visual_segments_path.exists():
             raise FileNotFoundError(f"Visual segments file not found: {visual_segments_path}")
-        if not subtitles_json_path.exists():
-            raise FileNotFoundError(f"Subtitles JSON file not found: {subtitles_json_path}")
+        if not subtitles_txt_path.exists():
+            raise FileNotFoundError(f"Subtitles TXT file not found: {subtitles_txt_path}")
         if synopsis_path is not None and not synopsis_path.exists():
             raise FileNotFoundError(f"Synopsis file not found: {synopsis_path}")
 
         style_text = _read_text(style_path)
         synopsis_text = _read_text(synopsis_path) if synopsis_path is not None else None
         visual_segments = load_visual_segments(visual_segments_path)
-        subtitles = load_subtitles(subtitles_json_path)
+        subtitles = load_subtitles(subtitles_txt_path)
         timeline_text = render_timeline(visual_segments, subtitles)
         if not timeline_text.strip():
             raise ValueError("The merged movie timeline is empty")
