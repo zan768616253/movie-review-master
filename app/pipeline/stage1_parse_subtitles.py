@@ -8,6 +8,8 @@ from dataclasses import dataclass, asdict
 from itertools import chain
 from pathlib import Path
 
+from app.pipeline.common.script_contract import seconds_to_timestamp
+
 
 _SUBTITLE_BREAK_PATTERN = re.compile(r"<br\s*/?>", re.IGNORECASE)
 _SUBTITLE_TAG_PATTERN = re.compile(r"\{[^}]*\}|<[^>]+>", re.IGNORECASE)
@@ -188,10 +190,17 @@ def main() -> int:
         return 1
 
     if args.format == "txt":
-        output_text = "\n".join(
-            f"{subtitle.speaker}: {subtitle.text}" if subtitle.speaker else subtitle.text
-            for subtitle in subtitles
-        )
+        lines = []
+        for subtitle in subtitles:
+            start_str = seconds_to_timestamp(subtitle.start)
+            end_str = seconds_to_timestamp(subtitle.end)
+            prefix = f"[{start_str} -> {end_str}]"
+            text = subtitle.text.replace("\n", " / ")
+            if subtitle.speaker:
+                lines.append(f"{prefix} {subtitle.speaker}: {text}")
+            else:
+                lines.append(f"{prefix} {text}")
+        output_text = "\n".join(lines)
     else:
         output_text = json.dumps([asdict(subtitle) for subtitle in subtitles], ensure_ascii=False, indent=2)
 

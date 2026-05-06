@@ -37,6 +37,13 @@ EXPECTED_SAMPLE_MOVIE_SRT_SCRIPTS = """本字幕由豌豆&风之圣殿字幕组�
 不可以
 你知道我有多想揍你一顿吗"""
 
+EXPECTED_SAMPLE_MOVIE_SRT_TXT = """[00:00:28.300 -> 00:00:36.270] 本字幕由豌豆&风之圣殿字幕组联合制作 / 仅供学习交流 禁止用于商业用途
+[00:00:41.440 -> 00:00:44.020] 好久不见了啊 乙骨
+[00:00:45.230 -> 00:00:46.900] 别过来
+[00:00:47.610 -> 00:00:50.950] 喂喂 别这么冷漠嘛
+[00:00:52.240 -> 00:00:53.240] 不可以
+[00:00:54.330 -> 00:00:57.250] 你知道我有多想揍你一顿吗"""
+
 EXPECTED_SAMPLE_MOVIE_SRT_TEXTS = [
     "本字幕由豌豆&风之圣殿字幕组联合制作\n仅供学习交流 禁止用于商业用途",
     "好久不见了啊 乙骨",
@@ -104,7 +111,7 @@ def test_main_writes_default_output(tmp_path: Path, monkeypatch, capsys):
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert expected_output_path.read_text(encoding="utf-8") == EXPECTED_SAMPLE_MOVIE_SRT_SCRIPTS
+    assert expected_output_path.read_text(encoding="utf-8") == EXPECTED_SAMPLE_MOVIE_SRT_TXT
     assert f"Generated subtitle script: {expected_output_path}" in captured.out
 
 
@@ -121,7 +128,7 @@ def test_main_writes_custom_output_path(tmp_path: Path, monkeypatch):
     exit_code = main()
 
     assert exit_code == 0
-    assert output_path.read_text(encoding="utf-8") == EXPECTED_SAMPLE_MOVIE_SRT_SCRIPTS
+    assert output_path.read_text(encoding="utf-8") == EXPECTED_SAMPLE_MOVIE_SRT_TXT
 
 
 def test_main_reports_missing_input_file(tmp_path: Path, monkeypatch, capsys):
