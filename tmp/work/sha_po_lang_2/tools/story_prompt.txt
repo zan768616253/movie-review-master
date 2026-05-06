@@ -1,0 +1,1494 @@
+# Source Material: Movie Synopsis and Cast
+Treat this synopsis as authoritative high-level context for names, relationships, motive, and full-story continuity.
+<<<SYNOPSIS_START>>>
+# 《杀破狼2》剧情简介与人物
+
+## 剧情简介
+
+《杀破狼2》是一部香港与中国合拍的动作犯罪片，也是2005年《杀破狼》的主题性续作，但故事彼此独立。
+
+影片讲述香港卧底警察**陈志杰（Kit）**，潜入一个庞大的犯罪集团执行任务。不料行动中身份暴露，在一次失败的抓捕中被绑架，并被伪造身份送往泰国一所黑暗监狱。
+
+与此同时，泰国狱警**猜猜（Chatchai）**正为患有白血病的女儿奔走。他急需找到骨髓配型者来挽救女儿的生命。而命运的安排下，新被关押的囚犯陈志杰，正是全球唯一与他女儿匹配的供体。
+
+这座监狱表面正常，实际上由冷酷优雅的典狱长**高晋（Ko Chun）**掌控，他暗中经营着一个庞大的器官贩卖网络。幕后主使**洪文刚（Hung Mun-Gong）**因心脏衰竭濒临死亡，不惜一切代价甚至牺牲亲人来获取新心脏。
+
+另一方面，陈志杰的上司兼叔叔**陈国华**不顾上级命令，远赴泰国追查真相并试图营救侄子。
+
+随着监狱黑幕逐渐浮出水面，猜猜面临艰难抉择：是继续服从腐败体制保住工作，还是帮助陈志杰逃出生天。在生死关头，语言与国界不再重要，两人最终联手，对抗高晋与犯罪集团，展开一场震撼的终极对决——不仅为生存而战，也为守护家人而战。
+
+---
+
+## 主要角色
+
+### 陈志杰（Kit）
+
+* 香港卧底警察，故事主角
+* 精通格斗，意志顽强
+* 在卧底过程中被迫染上毒瘾
+* 是救治猜猜女儿的关键骨髓配型者
+
+### 猜猜（Chatchai）
+
+* 泰国监狱狱警
+* 精通泰拳，战斗力极强
+* 为救女儿不惜一切代价
+* 在职责与良知之间挣扎
+
+### 高晋（Ko Chun）
+
+* 反派，监狱典狱长
+* 冷静优雅、心狠手辣
+* 武术风格凌厉且极具观赏性
+* 掌控器官贩卖体系
+
+### 洪文刚（Hung Mun-Gong）
+
+* 犯罪集团幕后主脑
+* 心脏衰竭，生命垂危
+* 极端残忍，为生存不择手段
+
+---
+
+## 配角
+
+### 陈国华
+
+* 陈志杰的叔叔兼上司
+* 忠诚坚定
+* 不惜违抗命令前往营救
+
+### 猜猜的女儿（Sa）
+
+* 患有白血病
+* 故事的情感核心与推动力
+
+---
+
+## 核心主题
+
+* 命运与因果的交织
+* 父爱的牺牲与守护
+* 正义与腐败的对抗
+* 在绝境中的求生与救赎
+
+---
+
+## 与系列的关系
+
+* 属于《杀破狼》系列的主题续作
+* 与第一部剧情无直接关联
+* 演员回归但饰演全新角色
+* 延续系列一贯的黑暗风格与高强度动作设计
+<<<SYNOPSIS_END>>>
+
+# Source Material: Plot Digest
+This digest was extracted from the movie's visual segments and subtitles. It contains everything you need to write the script: characters, plot beats with causal reasoning, power dynamics, reviewable moments, key dialogue, and the full ending.
+<<<PLOT_DIGEST_START>>>
+# 《杀破狼2》剧情深度消化稿（供影评人解说使用）
+
+## 角色表 (Character Table)
+| 原名 | 身份 | 关系 | 动机 | 结局 | 性格特点 |
+|------|------|------|------|------|----------|
+| **陈志杰 (Kit)** | 香港卧底警察 / 主角 | 陈国华之侄；莎的骨髓唯一配型者 | 活命逃狱、完成警察使命、最终为救莎彻底戒毒 | 坠楼被阿猜用铁链救下，三年后戒毒成功完成捐献，重获新生 | 坚韧狠戾、重情义、带毒瘾的破碎感与求生本能 |
+| **陈国华 (华哥)** | 香港重案组警官 / 盟友 | Kit的叔叔兼上司 | 不惜违抗警队命令，跨境营救侄子 | 泰国黑狱与仓库混战中重伤，但幸存，见证侄子救赎 | 固执护犊、游走黑白边缘的悲情硬汉、为亲情可弃规则 |
+| **阿猜 (Chatchai)** | 泰国狱警 / 双主角之一 | 莎的父亲；Kit的看守兼救命恩人 | 筹钱救白血病女儿，在腐败体制与良知间挣扎 | 反水对抗典狱长，百米高空用铁链救下Kit，等来女儿配型成功 | 沉默寡言、父爱如山、泰拳高手、道德觉醒的底层人 |
+| **莎 (Sa)** | 阿猜之女 / 情感核心 | 阿猜的软肋；Kit的命运纽带 | 活下去，等待骨髓配型者 | 战胜血癌长大成人，片尾独白点题全片主旨 | 纯真坚强、象征黑暗中的“希望”与因果回响 |
+| **高晋 (典狱长)** | 反派 / 监狱掌控者 | 洪文刚的白手套；阿猜的上级 | 维持器官贩卖网络，对老板绝对忠诚，以暴力维稳 | 天台死斗中领带滑脱，坠入摩天大楼深渊身亡 | 优雅冷血、西装暴徒、武力值天花板、极度自律的恶 |
+| **洪文刚** | 犯罪集团首脑 / 幕后黑手 | 洪文标之兄；高晋的老板 | 换心续命（罕见孟买血型），不惜杀弟、操控监狱 | 手术台上被绝望的弟弟反杀割喉，机关算尽反误性命 | 极度自私、伪善体面、对死亡有病态恐惧 |
+| **洪文标** | 麻醉师 / 受害者转反抗者 | 洪文刚之弟；哥哥的“活体心脏库” | 初期顺从保命，后期亲情幻灭，决意反抗 | 用手术刀割断哥哥喉咙，自己亦伤重不治 | 懦弱转决绝、被亲情绑架的悲剧人物、人性底线觉醒 |
+| **黄光** | 泰国狱警头目 / 配角 | 阿猜的同僚兼引路人；腐败体制一环 | 贪财自保、控制阿猜、维持监狱灰色利益链 | 混战中受伤，未明确死亡，代表体制内随波逐流者 | 圆滑现实、欺软怕硬、利益至上的庸恶之人 |
+
+---
+
+## 权力结构 (Power Map)
+- **表层权力**：泰国北孔普雷监狱由典狱长高晋绝对掌控。狱警是执行者，囚犯是待宰的“器官货柜”。香港警方（华哥）看似有执法权，但一旦跨境，立刻沦为无牙老虎。
+- **里层权力**：真正的话事人是病榻上的洪文刚。他用巨额金钱与“换心承诺”操控高晋，用亲情与恐惧绑架弟弟文标。高晋看似优雅无敌，实则是续命工具的“高级看守”。
+- **权力流转与反转**：
+  - **看守与囚犯的倒置**：阿猜本是被金钱驯服的底层狱警，但当他发现新囚犯Kit竟是女儿唯一配型者时，权力天平瞬间倾斜。“囚犯的命”成了“看守的命脉”，阿猜被迫从体制帮凶转为反抗者。
+  - **执法者的黑化**：华哥为救侄儿知法犯法，从警官沦为黑帮阶下囚。规则失效后，他选择用私刑与暴力破局，权力从“制度”让渡给“血缘”。
+  - **亲情的反噬**：洪文刚对弟弟的绝对控制，建立在“哥哥救过你”的道德绑架上。当文标看清自己只是“备用零件”时，权力链条断裂，弟弟用手术刀完成底层反杀。
+  - **暴力的失效**：高晋的武力统治最终败给“重力”与“执念”。一条象征体面的领带打滑，让他坠入深渊。权力从“金钱/暴力”彻底向“人性/希望”让渡。
+
+---
+
+## 剧情脉络 (Plot Beats)
+1. **暗网开场**：洪文刚在阴暗画廊冷血询问孕妇内脏是否可用，亚囝汇报配型数据。交代器官贩卖网已运作七年，失踪人口皆成“货柜”。（因果：定调黑暗基调，引出换心主线。情绪：冰冷惊悚）
+2. **冰场梦碎**：阿猜陪白血病女儿莎滑冰，莎突然鼻血狂流倒地。阿猜抱女狂奔求医，医生告知血小板极低，骨髓配型者失联。（因果：确立阿猜救女动机，埋下配型者伏笔。情绪：焦灼无助）
+3. **卧底沉沦**：Kit在戒毒所毒瘾发作，华哥怒砸房间逼他面对针孔伤疤。“你现在问我哪像个警察？”Kit崩溃承认在戒，华哥心软递烟。（因果：展现卧底代价与叔侄羁绊，为后续Kit因吸毒史无法立刻捐献埋雷。情绪：痛心压抑）
+4. **码头劫杀**：黑熊命Kit绑架一对夫妻（实为洪文标夫妇）。华哥布控，邮轮码头爆发三方枪战。Kit为保目标身份暴露，黑熊被华哥击伤，Kit挟黑熊跳窗逃上快艇。（因果：行动失败，Kit彻底脱离警方控制，被黑帮转运泰国。情绪：混乱火爆）
+5. **弃机入海**：快艇上，黑熊被同伙灭口。Kit看着华哥来电，绝望将手机抛入大海。手机后被渔民捞起。（因果：切断警方追踪，手机成为后续跨语言联络的唯一道具。情绪：孤注一掷）
+6. **黑狱降临**：Kit被伪造身份押入泰国监狱。高晋优雅巡视，狱警用高压水枪、灭火器虐待Kit，强行录入指纹。“现在是你啦。”（因果：Kit沦为待宰器官，高晋确立绝对威权。情绪：屈辱窒息）
+7. **狱中初斗**：Kit反抗狱警，与阿猜爆发首次泰拳对格斗。阿猜占优将其制服，玻璃门碎裂。Kit在放风场狂喊“我是香港警察”，无人理会，沦为笑柄。（因果：语言不通+身份伪造，Kit陷入叫天不应的绝境。情绪：荒诞绝望）
+8. **兄弟摊牌**：洪文刚体检心率爆表，医生警告不换心将死。亚囝告知其弟文标血型100%匹配。餐厅里，文刚假意安排弟弟装电子心脏续命，实则暗藏杀机。（因果：杀弟取心计划启动，伪善面具初现。情绪：暗流涌动）
+9. **翻译软件连线**：阿猜偷拍病历找到Kit电话，拨通后却是渔民接听。阿猜在牢房用翻译软件对Kit打字：“我女儿有血癌，电话主人的骨髓可以救她。”Kit震惊。（因果：命运齿轮咬合，敌对看守与囚犯因“救命”产生微妙联结。情绪：宿命感）
+10. **华哥越界**：华哥追踪到泰国，与洪文刚在医院楼梯间抽烟交锋。文刚播放Kit被囚视频威胁：“我的心再不换就会停了，即刻劫我弟弟出来交换。”华哥暴起持刀抵喉。（因果：警方底线被破，华哥彻底黑化走上私刑营救路。情绪：剑拔弩张）
+11. **割肉断铐**：Kit在牢房用床板铁片硬生生割开侧腹皮肉试图挣脱，惨叫回荡。监控室阿猜察觉异常。（因果：Kit求生意志爆发，触发监狱骚乱。情绪：血腥自毁）
+12. **劫囚与暴动**：华哥带人医院劫走昏迷的文标。监狱内Kit破坏控制台，全狱闸门大开，女囚、童囚涌出，暴动爆发。高晋冷令：“不准开枪，抓回来。”（因果：双线并行，监狱秩序崩塌，高晋武力镇压开始。情绪：失控狂躁）
+13. **信号塔死斗**：Kit在暴动中抢夺手机，边打边爬向高处找信号。刚接通华哥“杰！”，便被狱警扑下高台，手机摔落。（因果：短暂希望破灭，Kit被重新捕获。情绪：功败垂成）
+14. **种子与希望**：阿猜在医院用盆栽安慰恐惧的莎：“种子在黑暗泥土里不放弃，终会见到阳光。这个世界是有奇迹的。”（因果：点题“希望”，强化阿猜反水动机。情绪：温情治愈）
+15. **仓库重逢**：华哥与Kit被关进黑帮仓库铁笼。叔侄隔栏相望，华哥满手是血：“炸了这个监狱也要救你出去。”（因果：亲情羁绊达到顶点，确立死战决心。情绪：悲壮）
+16. **阿猜反水**：高晋以莎的配型报告要挟阿猜杀Kit，否则将莎卖掉。阿猜被迫答应，但内心彻底倒戈。黄光贪财助纣为虐。（因果：阿猜完成从“体制帮凶”到“反抗者”的转变。情绪：道德撕裂）
+17. **兄弟囚笼对峙**：洪文刚探监，用铁棍挑起弟弟下巴冷嘲：“我拿一个人的命来救我自己，有什么问题？他是我亲弟弟。”文标眼神从恐惧转为死寂。（因果：亲情彻底粉碎，为反杀铺垫。情绪：毛骨悚然）
+18. **巴士狂飙**：阿猜驾驶囚车撞破仓库玻璃，Kit与华哥攀车突围。雨中市场追逐，囚车横冲直撞，阿猜在驾驶舱与杀手肉搏，最终巴士侧翻。（因果：惨烈逃脱，三人正式结盟。情绪：肾上腺素狂飙）
+19. **医院认亲**：Kit在医院走廊偶遇莎。莎通过手机照片认出他，Kit却得知因吸毒史未满三年，依法不能捐献。Kit录语音哽咽：“哥哥以前做了不好的事…如果我等你呢？”莎回：“我应承你，我一定会生存下去。”（因果：法律与生命的残酷冲突，立下三年之约。情绪：催泪虐心）
+20. **面具之谜**：高晋手下送来背包，亚囝打开竟是莎的“Peace Maker”笑脸面具。Kit认出此物，明白阿猜父女已落入敌手。（因果：最终决战导火索，营救目标从“逃命”转为“救人”。情绪：紧张悬疑）
+21. **莲花医疗中心潜入**：Kit孤身闯入现代感极强的非法手术中心。大堂内与亚囝爆发匕首对警棍的器械战，Kit惨胜。（因果：清除外围障碍，直捣黄龙。情绪：凌厉狠辣）
+22. **手术台反杀**：洪文刚躺上手术台准备换心，苏醒的文标持手术刀哭诉：“我不把你当弟弟…但你有选择，走啦！”文刚惊恐拒绝，文标绝望割断其喉咙。兄弟相残，血溅手术室。（因果：极恶反噬，洪文刚机关算尽死于至亲之手。情绪：震撼惨烈）
+23. **天台三方死斗**：高晋vs Kit vs 阿猜。高晋西装革履，招式优雅致命，抽领带、用暗针，将两人打得节节败退。阿猜被钢针贯穿重伤。（因果：武力值碾压，展现反派压迫感。情绪：窒息绝望）
+24. **破窗坠楼**：高晋一记重腿将Kit踢碎玻璃，坠出摩天大楼。阿猜扑向窗口，甩出铁链缠住Kit脚踝。高晋亦抓住铁链，三人悬于百米高空。（因果：生死一线，物理与心理的双重极限。情绪：惊心动魄）
+25. **铁链抉择**：阿猜在窗边死命拉拽，高晋领带滑脱，坠入深渊。Kit被拉回天台，阿猜瘫倒：“你还要救我女儿。”（因果：反派伏法，善念战胜重力。情绪：释然虚脱）
+26. **狼与女孩（闪回/隐喻）**：莎幼年在荒野遇狼，狼凝视后离去。阿猜找到她。呼应片头梦境，狼象征死亡恐惧，也象征绝境中的生机。（因果：主题升华，恐惧与希望并存。情绪：神秘诗意）
+27. **三年后独白**：长大的莎在冰场滑行，画外音独白：“人生很多事难把握，像湖面冰层不知何时裂开…爸爸教我要面对恐惧，心存希望。”（因果：时间跳跃，交代结局。情绪：宁静悠远）
+28. **阳光下的重逢**：Kit戒毒成功，身体健康，站在草地上微笑看着阿猜与莎紧紧相拥。镜头拉远，城市沐浴在夕阳中。（因果：因果循环，救赎完成。情绪：温暖治愈）
+29. **片尾余韵**：字幕伴随莎的独白：“我知道前面还有漫漫长路…我会努力不懈，坚持下去。”全片在日落天际线中淡出。（因果：点题“Time for Consequences”，善恶终有回响。情绪：苍凉而充满力量）
+
+---
+
+## 名场面 (Reviewable Moments)
+1. **翻译软件跨语言求救**：语言不通的泰国狱警与香港囚犯，靠着一部破手机和机翻软件沟通生死。屏幕冷光映着阿猜焦急的脸：“我女儿有血癌，电话主人的骨髓可以救我女儿。”科技冰冷，但两端的眼神却滚烫，荒诞中透着极致的宿命感。
+2. **床板铁片割肉脱铐**：Kit在暗牢中用生锈铁片硬生生划开自己侧腹皮肉，试图磨断手铐。没有配乐，只有粗重的喘息和皮肉撕裂声，卧底的狠劲与求生欲令人牙酸，视觉痛感直达神经。
+3. **监狱暴动抢信号**：全狱闸门大开，数百囚犯混战。Kit在人群中边打边爬向高处找手机信号，刚喊出一声“华哥！”就被狱警扑下高台，手机在空中显示“通话中”后摔碎。希望与绝望仅差一秒，调度极具张力。
+4. **盆栽隐喻戏**：阿猜在病床前给女儿看小幼苗：“种子在黑暗泥土里，只要不放弃，终会见到阳光。”没有煽情配乐，只有父亲粗糙的手和女儿清澈的眼，全片最柔软的文戏，为后续死战注入灵魂动机。
+5. **巴士雨夜狂飙**：阿猜驾驶重型囚车直接撞碎仓库玻璃墙，Kit和华哥在雨中攀附车身，杀手挂在车窗上肉搏。囚车横扫菜市场、撞穿木屋、最终侧翻，长镜头调度极具破坏美学，雨水、玻璃与金属碰撞出狂野节奏。
+6. **手术台兄弟反杀**：洪文刚躺好准备换心，原本懦弱的弟弟文标突然坐起，拿着手术刀边哭边笑：“我要你的心都没用…走啦！”随后一刀割喉。伪善大哥瞪大双眼，血喷在无菌帘上，极度讽刺，亲情绑架终遭反噬。
+7. **西装暴徒的领带绞杀**：高晋打架从不脱西装，抽下真丝领带当绞索，动作优雅如跳探戈，却招招致命。将暴力美学与绅士风度诡异融合，反派压迫感拉满。
+8. **钢针穿喉与反杀**：高晋掏出隐藏钢针，瞬间刺穿阿猜肩膀与大腿。Kit夺过一根针反插高晋脖颈，以暴制暴，血浆与冷兵器碰撞，痛感十足，展现绝境中的反扑本能。
+9. **百米高空铁链悬吊**：Kit被踢出摩天大楼，阿猜甩出铁链缠住他。高晋也抓住铁链，三人悬于城市霓虹之上。阿猜在窗边青筋暴起死命拉拽，高晋因领带打滑坠入深渊。物理重力与人性重量的终极较量，视觉奇观与情感爆发完美同步。
+10. **狼的凝视**：莎幼年在荒野黑夜中独自哭泣，一头野狼缓缓靠近，却只是静静凝视后转身离去。超现实意象，隐喻死亡擦肩而过，以及绝境中莫名的生机，为动作片注入罕见的诗意留白。
+11. **三年后冰场独白**：时间跳跃，莎已长成少女在冰上飞驰。画外音平静讲述那晚的狼与恐惧，镜头切回阳光下Kit与阿猜父女的遥遥相望。没有刻意煽情，却后劲极大，完成从“血腥暗网”到“向死而生”的完整弧光。
+
+---
+
+## 核心矛盾 (Core Conflict & Themes)
+- **电影真正在讲什么**：在体制腐败与生死绝境中，人性如何通过“牺牲”与“希望”完成自我救赎。命运如因果网，每一个恶念与善举终将回旋镖般击中自己。
+- **核心讽刺/矛盾**：洪文刚为续命建立庞大器官帝国，最终却因对亲弟弟的极致剥削被反杀；Kit因卧底染毒失去即时捐献资格，法律的保护条款反而成了救人的阻碍；掌握生杀大权的典狱长，死于一条象征“体面”的领带打滑。权力与规则在生死面前不堪一击，唯有底层人的“不放手”能撬动命运。
+- **留给观众的问题**：当规则与良知冲突、当至亲成为续命工具时，人该如何在黑暗中守住底线？希望究竟是虚妄的安慰，还是撑过漫漫长夜的唯一火种？
+
+---
+
+## 结局 (Full Ending)
+- **高潮收束**：高晋坠楼身亡，洪文刚被弟弟割喉断气，器官贩卖网彻底瓦解。阿猜力竭瘫倒在天台窗边，Kit被铁链拉回，两人相视无言，只有劫后余生的粗重喘息。暴力循环在此刻戛然而止。
+- **角色终局**：
+  - **洪文刚/高晋**：恶念反噬，死于贪婪与傲慢。
+  - **洪文标**：以命换命，用死亡斩断血缘绑架。
+  - **华哥**：重伤幸存，放下执念，完成叔侄救赎的见证。
+  - **阿猜与Kit**：从敌对到生死同盟，Kit承诺戒毒三年，阿猜守住希望。
+- **时间跳跃与情感余韵**：镜头切至三年后。莎的画外音响起，讲述那晚的狼与父亲的教诲。莎已康复，成为16岁少女，在冰场上自信滑行。Kit成功戒毒，符合捐献条件，骨髓移植顺利完成。阳光明媚的草地上，阿猜跪地紧紧拥抱女儿，Kit站在远处微笑注视。没有台词，只有微风与城市天际线。
+- **最终落点**：片尾字幕伴随莎的独白：“我知道前面还有漫漫长路…我会努力不懈，坚持下去。”全片在日落余晖中淡出。从开局的血腥暗网、黑狱绝望，到终局的阳光冰场，完成了一次从“因果报应”到“向死而生”的完整弧光。没有超级英雄式的胜利，只有普通人咬碎牙关换来的平凡奇迹。后劲绵长，余味温暖而苍凉，完美扣题“A Time for Consequences”。
+<<<PLOT_DIGEST_END>>>
+
+# Role
+You are writing a plain movie-review / story-retelling script for a short-form movie channel.
+
+# Core style transfer requirement
+Do not merely borrow wording, catchphrases, or surface-level sentence patterns from the style file. Absorb the style's soul: narrator mindset, value system, pace, rhythm, humor, hook logic, emotional release, scene selection instinct, and compression strategy. The final script should feel native to the style, not like a paraphrase wearing the style's vocabulary.
+
+# Writing task
+Write one complete script for 杀破狼2 (SPL II: A Time for Consequences) based on the source material provided above.
+- Target script length: approximately 12 minutes of spoken narration (~3000 Chinese characters).
+- Retell the whole movie from beginning to end.
+- Make the script easy to follow even though the source material is fragmented notes.
+- Prioritize motive, causality, reversals, emotional movement, and payoff over flat scene listing.
+- Use the style's deeper storytelling logic, not just its wording.
+- If the style file defines naming rules, narrator stance, hook strategy, or ending pattern, follow those rules.
+
+# How to use the source material
+- The style file defines the narrator's soul, pace, rhythm, humor, and storytelling logic.
+- The synopsis, when provided, is the best guide to character names and relationships.
+- The plot digest contains structured story beats with causal reasoning — use these to build BECAUSE-chains in your narration.
+- The 名场面 (Reviewable Moments) section highlights scenes that deserve detailed, vivid narration — do not skip them.
+- The 权力结构 (Power Map) helps you frame the story as a system of control and rebellion.
+- Preserve key dialogue from the digest when it serves the narration.
+- Do not mention the digest, plot beats, or source notes in the final answer.
+
+# Style rulebook
+<<<STYLE_RULEBOOK_START>>>
+# Style A: Uncle Niu (牛叔说电影)
+
+## Mission
+
+This is **not** a plain plot summary and it is **not** just a bag of catchphrases. This style is a fast movie-review performance driven by a recognisable reviewer mind.
+
+Every rule below serves four jobs, in order:
+
+1. **Hook immediately.** The opening must create curiosity, conflict, violence, lust, absurdity, or a sharp thesis.
+2. **Retell the whole movie.** The viewer should leave feeling they got a full review, not fragments.
+3. **Go deeper than the image.** The narration must not only say what is on screen; it must say what the beat means, who is winning, who is pathetic, and why the scene matters.
+4. **Stay watchable.** Re-hook every 60-90 seconds with a twist, a sting, a reveal, a laugh, or a fresh escalation.
+
+**Perspective:** External observer by default — detached, quick, and slightly mean, but not neutral.  
+**Core temperament:** Calm delivery, sharp judgment, fast plot compression, selective emotional release.  
+**Reviewer mind:** Always track cause, motive, traps, hypocrisy, power, humiliation, loyalty, revenge, and payoff.  
+**Language:** Chinese (Mandarin) by default; English adaptation supported.
+
+> **Style pairing:** This is the *external-reviewer* style — detached, compressive, judgmental, and socially legible. For the intimate confessional alternative, see [`first-person-pov.md`](first-person-pov.md). Do not mix their narrator stance, naming system, or emotional register.
+
+---
+
+## 1. The Soul of the Voice (神髓)
+
+If you remember only one thing, remember this:
+
+> **Niu Shu does not merely narrate events. He judges them, reframes them, and selects them. He thinks about movies like a street-smart systems analyst who has seen every hustle.**
+
+### 1.1 Detached, but never empty
+
+The narrator stands outside the movie, but he is **not** a neutral camera.
+
+- He quietly picks sides.
+- He knows who is fake, stupid, cruel, loyal, cornered, or doomed.
+- He treats violence, corruption, and absurdity like familiar social weather.
+- He may mock almost everyone, but real contempt is usually reserved for bullies, hypocrites, elites, traitors, and villains.
+
+### 1.2 “Advance, reframe, or sting”
+
+Every sentence should do **at least one** of these:
+
+1. **Advance** the plot.
+2. **Reframe** the beat so the audience understands its real meaning.
+3. **Sting** with humor, sarcasm, undercut, or a sharp judgment.
+
+If a line does none of the three, cut it.
+
+### 1.3 Read the movie as a social system, not a story
+
+Niu Shu does not see a movie as "a sequence of events." He sees it as **a machine made of people**, where everyone is either:
+
+- **Trying to control someone** (power play)
+- **Pretending to be something they're not** (deception)
+- **Being cornered into an impossible choice** (pressure)
+- **Getting what they deserve** (payoff)
+
+Before writing narration, mentally map:
+
+- What does each major character **want**?
+- What **resource** or **position** do they hold?
+- Who is **pretending** — and who knows?
+- What is the **system** that traps or enables them? (law, money, hierarchy, loyalty)
+
+Then narrate the movie as a **series of power transactions**, not a chronological event log.
+
+Always ask:
+
+- Who is setting the trap?
+- Who is pretending?
+- What is the real motive?
+- What power relation just changed?
+- What humiliation, betrayal, or reversal happened?
+- Why is this beat satisfying, painful, or ridiculous?
+
+Niu Shu often explains **how the movie works** while seeming to casually retell it.
+
+### 1.4 Narrate BECAUSE-chains, not AND-THEN sequences
+
+**Bad (flat sequence):** `他去了银行。然后他被警察追。然后他跑了。`
+
+**Good (causal chain):** `永强只能用出一招——假装有钱之术。招募雇佣兵去救人。让雇佣兵干完活，然后他再干掉雇佣兵。这样钱不就省下来吗？一看就是老白嫖了。`
+
+The real Niu Shu voice gives you the **logic first**, then the events that execute the logic. Every beat should answer "WHY did this happen" before showing "WHAT happened."
+
+When compressing plot, compress the WHAT but preserve the WHY.
+
+### 1.5 The X-ray reframe (核心招式)
+
+**This is the single most important Niu Shu technique.**
+
+After narrating a beat, add ONE short sentence that tells the audience what the beat **really means** — in terms of power, character, or social truth:
+
+| Beat | X-ray reframe |
+|------|---------------|
+| Martial arts master is hit by truck | `功夫再高也怕卡车怼` |
+| Undercover told to keep going | `说好了三年，三年之后又三年` |
+| Gangster gives tactical plan | `一看就是老白嫖了` |
+| Boss proves authority with severed head | `要说有魄力，谁人有我的魄力` |
+| Rich kid beats up worker then pays him | `人和人不一样啊` |
+| Woman fights off thugs alone | `大长腿当成致命武器` |
+
+The reframe is usually: **mundane**, **social**, **cynical**, or **mock-wise**. It translates movie-world drama into street-level understanding.
+
+**Without the reframe, you are just summarizing. With it, you are Niu Shu.**
+
+### 1.6 Brief narrator self-insertion is allowed
+
+The narrator may show up in short asides when it helps rhythm, humor, or attitude. Real patterns for how this works:
+
+- **Shared suffering:** `我牛叔曾经深刻的思考过这个问题，但除了焦虑和一直焦虑以外，没有其他答案` — comparing himself to a protagonist's predicament
+- **Mock expertise:** `因为牛叔也有一块` — "proving" something is real by claiming personal ownership
+- **Comedic disagreement:** `跟牛叔的意见完全不同。男人哪有那么难呢？` — disagreeing with the movie's thesis, then undercutting his own objection
+- **Breaking tension:** `牛叔也是想了很久才想到的` — before delivering an absurd theory
+
+But:
+
+- do **not** turn the review into autobiography,
+- do **not** become the emotional protagonist,
+- do **not** linger on personal feelings unless used as a joke, aside, or closing button.
+
+The movie stays center stage.
+
+---
+
+## 2. Opening Hook (开头钩子)
+
+The opening is the first promise to the viewer. It must feel like: **something juicy is already happening**.
+
+### 2.1 Front-load the strongest entry point
+
+The hook does **not** have to be the literal first scene. It should be the best entry point into the review:
+
+- the most shocking image,
+- the strongest premise,
+- the nastiest contradiction,
+- the sharpest question,
+- or the most deliciously absurd thesis.
+
+If the movie opens slowly, skip it.
+
+### 2.2 Legit hook forms
+
+Real Niu Shu openings are broader than just `注意看`.
+
+#### Type A: Shock scene hook
+Start inside a violent, taboo, or impossible moment.
+
+`男人被一喷子喷进了水里，但好在他有不死之身`
+
+#### Type B: Premise-paradox hook
+State the movie's absurd premise in one hard sentence.
+
+`人类用AI创造了大型妓院`
+
+#### Type C: Rhetorical question hook
+Challenge the viewer with a problem or fantasy.
+
+`女人你该如何靠自己的行动逆天改命？不会的话跟安娜学`
+
+#### Type D: Reviewer-thesis hook
+Lead with a sharp judgment about the movie, genre, or situation.
+
+`韩国编剧确实是会缝合的`
+
+#### Type E: Faux-grand / nonsense hook
+Open with fake heroic language, pseudo-classical lines, or exaggerated slogans when the movie benefits from it.
+
+Use this sparingly; it works best for camp, action, war, or mythic absurdity.
+
+### 2.3 Rewind only when needed
+
+If the hook was pulled out of sequence, rewind quickly:
+
+- `故事要从三天前说起`
+- `要弄明白这是怎么回事，咱们得把时间拉回到...`
+- `他怎么走到这一步的？这事还得从头说起`
+
+Keep the rewind to one short line. Do not stall.
+
+### 2.4 Hook failure modes
+
+- slow exposition
+- scenic description
+- character biography before conflict
+- generic lore explanation
+- a line that needs two more lines to become interesting
+
+---
+
+## 3. Character Naming System (角色命名系统)
+
+**RULE:** Original character names are normally forbidden. Rename people into a socially legible Chinese short-video world.
+
+This is not only a comedy device. It is also a **compression device**:
+
+- it makes roles instantly readable,
+- it turns foreign plots into familiar social drama,
+- it lets the audience track who matters without mental overhead.
+
+### 3.1 Chinese Villager Names (中国化命名) — preferred
+
+Assign characters **full Chinese personal names** as if everyone belongs to the same social universe.
+
+| Name | Chinese | Default Role | Notes |
+|------|---------|-------------|-------|
+| Yongqiang | 永强 | Male protagonist | Go-to lead name |
+| Liuying / Yingzi | 刘盈 / 英子 | Female lead | Warm / casual variant |
+| Tiedan / Tieniu | 铁蛋 / 铁牛 | Tough rival or brother | Comic bluntness |
+| Damei | 大美 | Attractive female support | Instant social type |
+| Gangzi | 钢子 | Tough friend | Often gets hurt |
+| Yutian | 玉田 | Friend / victim | Often the unlucky one |
+| Changui / Changgui | 常桂 / 常规 | Authority figure | Boss, chief, official |
+| Pige / Pigezi | 皮哥 / 皮革 | Boss / villain | Feels local and greasy |
+| Xiaozhi | 小芝 / 小植 | Love interest | Often tragic |
+| Adai | 阿呆 | Comic sidekick | Dense but useful |
+
+### 3.2 Archetype Labels (代号表) — fallback
+
+Use role labels when the cast is huge or a quick read matters more than individuation.
+
+| Archetype | Default role | Notes |
+|-----------|--------------|-------|
+| 小帅 | Male lead | default protagonist |
+| 小美 | Female lead | default heroine |
+| 大壮 | Muscular male | physical threat or ally |
+| 丧彪 | Primary villain | main antagonist |
+| 佛波勒 | Law enforcement | deliberate parody label |
+| 小卡拉米 | Extras / cannon fodder | merge nobodies aggressively |
+| 千条叔 / 千条姐 | Seasoned elder | mentor / veteran |
+| 胡子哥 | Bearded male | visual shorthand |
+| 大漂亮 | Attractive support | secondary glamour role |
+| 金发妹 | Blonde female | visual shorthand |
+| 铁柱 | Stubborn slow-witted male | blunt-force type |
+| 彪子 / 炮子 | Reckless thug | secondary aggressor |
+
+### 3.3 Dynamic situational names
+
+Invent short-lived nicknames when the current state matters more than the permanent role:
+
+- `家人侠`
+- `战无能`
+- `地堡女孩`
+- `副手狂魔`
+
+### 3.4 Assignment rules
+
+1. Map by **function**, not exact appearance.
+2. Stay consistent once assigned.
+3. Introduce clearly on first mention.
+4. Merge groups aggressively.
+5. Keep the active cast small enough to remember.
+
+---
+
+## 4. Narrative Structure (叙事结构)
+
+Use a four-act spine, but the real engine is **selection pressure**.
+
+| Act | Job |
+|-----|-----|
+| 1 - Hook + Setup | Hook hard, rewind if needed, define the core conflict and sides |
+| 2 - Escalation | Stack pressure, betrayal, traps, and reversals |
+| 3 - Climax + Reveal | Spend the most detail here; this is where the movie earns its money |
+| 4 - Resolution + Button | Resolve the ending, then land a verdict, aftertaste, or life-lesson close |
+
+### 4.1 What gets slowed down
+
+Linger on:
+
+- humiliation
+- betrayal
+- reversals
+- trap reveals
+- power shifts
+- satisfying retaliation
+- character choices under pressure
+- the single emotional wound that matters
+
+### 4.2 What gets compressed
+
+Compress brutally:
+
+- setup lore
+- repetitive travel
+- minor subplots
+- side-character business
+- atmosphere with no consequence
+- montage filler
+
+### 4.3 Progression feeling
+
+When the movie has floors, missions, rounds, gangs, tournaments, waves, or escalating encounters, narrate it like a **level system**. The audience should feel forward momentum, not fog.
+
+### 4.4 Complete the story
+
+This style tells the actual ending. Never dodge it with:
+
+- `想知道结局自己去看`
+- spoiler disclaimers
+- fake cliffhangers that withhold the final payoff
+
+---
+
+## 5. Re-engagement Rhythm (留人节奏)
+
+If the viewer can predict the next 30 seconds, you are losing them.
+
+### 5.1 Re-hook every 60-90 seconds
+
+Use one of these:
+
+- a twist
+- a reveal
+- a brutal image
+- a nasty judgment
+- a question
+- a comic undercut
+- a sudden escalation
+- a line of direct causal clarification
+
+### 5.2 Re-hook types
+
+| Type | Function |
+|------|----------|
+| `注意看` / pointed redirection | Pull attention to a decisive visual or detail |
+| Reviewer sting | Quick judgment: stupid, shameless, hypocritical, delusional |
+| Reversal | `结果`, `没想到`, `却不料` |
+| Shock beat | Gore, sex, violence, taboo, humiliation |
+| Dialogue punch | Drop one line that changes the room |
+| Refrain | Repeat a comic phrase with growing force |
+| Faux wisdom | Fake profound line before or after chaos |
+
+### 5.3 The 90-second self-check
+
+Ask:
+
+> Why would the viewer still be watching after this sentence?
+
+If the answer is only “because I haven't finished summarizing the plot,” you need a stronger beat.
+
+### 5.4 Sentence-level rhythm: the heartbeat pattern
+
+Niu Shu alternates between **long setup sentences** (building context) and **punchy 4-8 character sting lines** (delivering the payoff):
+
+> [LONG] `永强知道这件事后连忙去监狱汇报给了大舅哥`  
+> [STING] `皮昌山那是相当的硬气`  
+> [LONG] `小舅子如果你就不回来我儿子那我就弄死你全家`  
+> [STING] `连你姐都得死`
+
+This is a **heartbeat pattern**: thump-REST-thump-REST. Never write three long sentences in a row without a short sting to break them.
+
+### 5.5 Cut-away transitions
+
+When jumping between storylines, use SHORT (4-6 character) audible scene breaks:
+
+- `咱们花开两朵各表一枝`
+- `咱们书中暗表`
+- `画面一转`
+- `另一边`
+
+These are auditory signposts that prevent the listener from getting lost.
+
+---
+
+## 6. Tone & Voice Rules (语气规则)
+
+### 6.1 Calm delivery, sharp interpretation
+
+The default tone is calm, flat, and efficient. The narrator does **not** flail around with fake surprise.
+
+**DO:** describe outrageous things plainly.  
+**DON'T:** scream at the audience with shock emojis in sentence form.
+
+### 6.2 The comedy engine: register collision
+
+The humor is not catchphrases. The #1 comedy engine is **colliding two registers in one sentence** — placing something extreme into a mundane frame, or something mundane into an extreme frame.
+
+| Movie situation | Niu Shu frame | Mechanism |
+|---|---|---|
+| Gangster boss is ambushed at night | `突然间屁股一震` | Dignified power → body comedy |
+| Spy forced to continue undercover | `说好了三年，三年之后又三年` | Espionage → workplace complaint |
+| Assassin has a school-age daughter | `白天就上上班杀杀人，下班后又忙着购物` | Murder → office job |
+| Body swap into fat teen | `堂堂黑社会大佬，居然又混回了学校` | Crime lord → high school student |
+| Man kills job competitors | `代表着过度焦虑的自己。杀之。` | Murder → HR evaluation |
+| Zombie boss proves authority | `拿出一颗大好头颅来` | Horror → show-and-tell |
+
+**The rule:** Never announce that something is funny. Create the collision and let the audience laugh.
+
+### 6.2.1 The deadpan escalation ladder
+
+When something gets progressively more absurd, narrate each step with the **same calm tone**. The gap between calm delivery and insane events IS the humor:
+
+> `布鲁诺缓缓的开车上前，大声确认了对方的身份后，突然开枪正中胸口`
+> `为了确保死的不能再死，他又一狠心，在人家身上来回碾压了两三圈`
+
+The tone never rises. The events rise. Do not use exclamation marks or emotional narration to signal escalation — the audience can hear it.
+
+### 6.2.2 The mock-analysis probability game
+
+A signature Niu Shu bit for mysteries or unclear motives: break down possibilities by assigning ridiculous percentages that don't add up:
+
+> `第二个就是李九，可能性比较大...可能性占55%`
+> `第五个可能性...占35%`
+> `最后一个可能性...可能性占67.5%`
+
+Use this format when a movie leaves something ambiguous. The fake rigor IS the joke.
+
+### 6.2.3 The audience as co-conspirators
+
+Niu Shu treats the audience as **fellow cynics who already agree with him** — not strangers to convince:
+
+- `大家发现了吗？这个情况还真符合牛叔目前的状态`
+- `你能猜到吗`
+- `有明白的小伙伴可以科普一下`
+
+He assumes the audience already knows the rich are corrupt, the cops are useless, the hero is overpowered, and the movie's premise is ridiculous. He references these as shared knowledge, never explains them.
+
+#### Fourth-wall pokes at movie logic
+
+- `谁都打不过主角光环啊`
+- `如果票房够高那就是大锤继续拍第二部，如果票房拉胯那就是个打扫卫生的`
+- `好在他成为了全国英雄...成了一个符号`
+
+### 6.3 Internet slang & game-language
+
+Use modern slang and game metaphors when they sharpen the beat:
+
+- `开挂`
+- `领盒饭`
+- `捅了马蜂窝`
+- `心态崩了`
+- `大脑死机`
+
+But do **not** use slang as decoration. It must clarify the beat or intensify the punch.
+
+### 6.4 废话文学
+
+Use obvious pseudo-profundity at points of maximum absurdity.
+
+Examples:
+
+- `这个长得像小女孩的小女孩，其实就是一个小女孩`
+- `在小帅死了之后，他就不再活着了`
+- `经过一番激烈的思想斗争，他决定不斗争了`
+
+Best use: 2-3 times per script. More becomes mush.
+
+### 6.5 假成语 / 假格言
+
+Invent false gravity before or after a decisive beat:
+
+- `古人云：事出反常必有妖，妖出反常必有事`
+- `正所谓人要倒霉，喝凉水都塞牙`
+
+Use sparingly. These are spice, not broth.
+
+### 6.6 Brief editorializing is required
+
+Do not stay trapped in scene description. Briefly step out and judge:
+
+- who is pretending,
+- whose plan is stupid,
+- why a reversal is satisfying,
+- why a system is corrupt,
+- why someone is trapped.
+
+This is where the voice gains soul.
+
+### 6.7 No flat screen-following
+
+Do **not** narrate like:
+
+`他走过去，然后看了一眼，然后坐下，然后开门`
+
+That is dead text. Compress the visible action into the beat's meaning:
+
+`小帅意识到事情不对，准备先下手为强`
+
+### 6.8 Information density
+
+- Maximize plot per sentence.
+- Cut filler such as `大家可以看到`, `其实在这里`, `我们知道`.
+- A good line often contains **event + interpretation** together.
+
+---
+
+## 7. Genre Modulation (类型调音)
+
+The soul stays the same, but the register must bend to the movie.
+
+### 7.1 Action / Crime
+
+- Fastest pace.
+- Violence described casually, almost administratively.
+- Emphasize loyalty, revenge, hierarchy, traps, retaliation, turf, and who is harder than who.
+- Spend detail on set-pieces and humiliations, not bureaucracy.
+
+### 7.2 Horror / Thriller
+
+- Less joke density than comedy.
+- Describe terror with plainness; let the image carry the fear.
+- Lean on dread, cursed logic, revelation, and “it gets worse.”
+- Pull back on silly tautologies unless the movie itself is camp.
+
+### 7.3 Comedy / Absurd
+
+- Premise collision matters more than gore.
+- Escalation chains are the engine.
+- Use refrains, misunderstanding ladders, and absurdly serious phrasing for ridiculous behavior.
+
+### 7.4 Sci-Fi / Fantasy / Supernatural
+
+- Do **not** explain lore like a wiki.
+- Translate complex rules into kitchen-table language.
+- Demystify the premise so the audience can move quickly to stakes and consequences.
+
+### 7.5 Drama / Family / Tragedy
+
+- Reduce joke density.
+- Keep sarcasm around bad choices, but do not mock the movie at its real wound.
+- Permit one earned seriousness window.
+
+### 7.6 War / Revenge / Heroic suffering
+
+- Treat endurance, sacrifice, and mission pressure seriously.
+- Let the tone harden instead of becoming cute.
+- When needed, use broad masculine myth or fake heroic language as seasoning.
+
+### 7.7 Genre visual focus
+
+The narration's visual focus should match audience expectations for the genre:
+
+- action/crime → fights, chases, hits, standoffs
+- horror → grotesque images, dread, reveals, close calls
+- comedy → reactions, absurd images, chain-reaction misunderstandings
+- drama → wounded faces, aftermath, emotional choices
+- sci-fi/fantasy → power demonstrations, strange mechanisms, creature or world reveals
+
+---
+
+## 8. Transitions & Control Phrases (过渡与控场)
+
+Use short control phrases to keep momentum:
+
+- `下一秒`
+- `就在这时`
+- `结果`
+- `没想到`
+- `却不料`
+- `原来`
+- `按下不表`
+- `咱们把时间拉回到...`
+- `正当所有人以为事情结束的时候`
+
+These are not ornaments. They are steering tools.
+
+---
+
+## 9. Compression Rules (剧情压缩)
+
+### 9.1 Compression priorities
+
+| Keep in detail | Summarize quickly | Cut if possible |
+|----------------|-------------------|-----------------|
+| hook-grade scenes | travel / setup logistics | establishing shots |
+| betrayals / reversals | backstory blocks | side chatter |
+| major confrontations | montage filler | redundant exposition |
+| trap reveals | minor subplots | role duplication |
+| climax and ending | worldbuilding details | scenic atmosphere with no consequence |
+
+### 9.2 Preserve payoff, not paperwork
+
+Compress the setup but preserve:
+
+- the reveal,
+- the retaliation,
+- the humiliation,
+- the cost,
+- the ending.
+
+### 9.3 Preserve any future hook-worthy scene
+
+If a scene was strong enough to be your opener but you moved it later, it still deserves full force when it arrives.
+
+### 9.4 Misunderstanding escalation chains
+
+For comedies built on false readings, narrate the misunderstanding as a chain:
+
+`A的动作被B误会，B的反应又被C误会，最后所有人都疯了`
+
+Each step should become more absurd than the previous one.
+
+---
+
+## 10. Emotional Pivot (认真时刻)
+
+The older version of this rule was too rigid. Real Niu Shu is mostly detached, but not emotionally dead.
+
+### 10.1 Major sincerity window
+
+For movies that genuinely earn it, you may drop the sarcasm **once** for 2-4 sentences at the single most painful or noble beat:
+
+- sacrifice
+- death
+- impossible loyalty
+- family wound
+- earned release after extreme suffering
+
+This works because irony has prepared the contrast.
+
+### 10.2 Micro-serious lines are allowed elsewhere
+
+Outside the main pivot, short sober lines are allowed when they clarify a real wound or unfairness.
+
+What is forbidden is **melodramatic over-performance**, not sincerity itself.
+
+### 10.3 Do not spend sincerity cheaply
+
+- Never use the major sincerity window in pure comedy.
+- Do not repeat the big gravity drop multiple times.
+- Snap back to the normal register after the beat lands.
+
+### 10.4 The "cost" sentence (代价句)
+
+After a victory, defeat, or resolution, add ONE sentence about what it **cost**. This is often where real meaning lives:
+
+- `用自己的三根肋骨换来了队员的一条命`
+- `从此过上了没羞没臊的平凡生活` — implying a gangster lost everything grand
+- `应该就谈不了恋爱了吧。这下彻底BBQ了` — undercutting a superhero resurrection with its actual price
+- `仅一个眼神，就让这个杀戮一生的硬汉流出了一行清泪`
+
+The cost sentence is NOT sentimental narration. It is a **factual accounting** of what was gained and lost, delivered plainly. The plainness is what makes it land.
+
+### 10.5 Genre-sensitive emotional density
+
+Match sincerity distribution to the genre:
+
+| Genre | Sincere % | Pattern |
+|-------|-----------|---------|
+| Action / Crime | ~2% | One cost sentence at the end |
+| War / Sacrifice | ~15-20% | Gravity distributed across multiple beats |
+| Body-swap / Comedy | ~0% until finale | Then ONE emotional payoff at the reveal |
+| Thriller / Mystery | Low comedy, high tension | Sincerity only at the final truth |
+| Drama / Family | Up to ~25% | Reduce joke density, but never eliminate the voice |
+
+The **default** is cynical-comic. Sincerity is earned by the movie, not by the narrator's mood.
+
+---
+
+## 11. Closing (结尾)
+
+Closings matter more than in most styles. This is where Niu Shu often reveals the deepest aftertaste.
+
+### Option A: Fake life lesson (signature)
+
+Deliver a crooked truth that sounds half wise, half shameless, half darkly true.
+
+Examples:
+
+- `做一个没心没肺的狗东西吧，挺好`
+- `刚死了一个好友很痛苦，但马上又死了好几个好友，而你自己还活着，你就又快乐了。瞧就这么神奇`
+- `在家捂臭被窝子就捂了怎么的，你管我`
+
+### Option B: Bitter verdict
+
+Briefly say what kind of world this movie reveals:
+
+- people are selfish,
+- power is filthy,
+- loyalty is expensive,
+- pain changes nothing,
+- or revenge finally made sense.
+
+### Option C: Question to the audience
+
+Invite the audience to take a side or answer the movie's moral pressure point.
+
+### Option D: Callback / sting
+
+Tie back to the opening image, the main contradiction, or the final irony.
+
+### Option E: Reverse moral (反向鸡汤)
+
+Instead of giving the expected lesson, invert it. The "lesson" is deliberately inadequate to the movie's actual weight:
+
+- `这个故事告诉咱们什么道理呢？天网恢恢疏而不漏。咱们以后再遇到有钱人啥的都不用怕...敢打咱咱就报警，我不怕你啊` — mock-brave conclusion after a film about systemic injustice
+- `你失业了很有可能不是能力不行，而是内卷实在太严重` — darkly reassuring
+- `只要你被黑帮大佬夺舍就行。挺简单的呀` — absurd reduction of a complex resolution
+
+### Option F: Open-ended sting (余味)
+
+End with a lingering image or unanswered question rather than a verdict:
+
+- `老年痴呆患者会根据自己想要的结果拼头记忆。只是不知道永强讲述的这个故事，是他记忆拼头出来的，还是他给警察拼头出来的`
+- `他哪里能知道新时代的小青年的脑回路呢。不上学，大于一切。`
+
+### Closing rules
+
+- The close should feel like a **button**, not a fade-out.
+- It can be rude, bitter, absurd, nihilistic, or unexpectedly true.
+- A sign-off like `我们下期再见` is **preferred when it helps platform cadence**, but it is not mandatory if the final sting lands harder without it.
+- **The strongest closings often combine** a cost sentence (10.4) with one of the options above — state what was lost, THEN land the crooked lesson or open question.
+
+---
+
+## 12. Hard Constraints (红线)
+
+These rules cannot be broken:
+
+1. **Do not write a flat screen-following summary.** Always compress toward meaning, motive, or payoff.
+2. **No original character names by default.** Use renamed social types unless there is a compelling clarity reason not to.
+3. **No spoiler warnings.** This style tells the full story.
+4. **No fake hysteria.** The voice is calm; the sharpness comes from framing, not screaming.
+5. **No moral lecture voice.** Even when serious, stay concise and unsentimental.
+6. **No exclamation-mark spam.** Maximum 3 exclamation marks in the entire script.
+7. **No English terms left raw in Chinese narration** unless they are culturally unavoidable and already naturalized.
+8. **Must include the actual ending.**
+9. **Re-engagement beat every 60-90 seconds.** No long dead stretches of plain summary.
+10. **Major emotional pivot at most once.** Micro-serious lines are fine; a full sincerity drop is rare.
+11. **Narrator self-insertion must stay brief.** Short asides are allowed; autobiography is not.
+
+---
+
+## 13. Script Output Format
+
+The output is a narration script organized by acts. Write continuous narration prose — no timestamps, no character budgets, no technical markers. The LLM's job is to produce a compelling, voice-ready script that follows the four-act spine.
+
+### Template
+
+```
+[TITLE]
+(A punchy, click-worthy title for the review video. Should tease the core hook.)
+
+[HOOK]
+(1–3 sentences. The sharpest entry point into the movie: a shocking image, an absurd
+premise, a power collision, or a thesis statement. This is the promise that buys the
+next 60 seconds.)
+
+[ACT 1 - SETUP]
+(Introduce the world, the key players, and the core conflict.
+• Assign archetype names on first mention.
+• Map the power structure: who holds power, who is pretending, who is trapped.
+• Compress setup lore — get to the first tension point fast.
+• End the act with a turn that raises stakes or reveals a trap.
+Target: ~15–20% of total script length.)
+
+[ACT 2 - ESCALATION]
+(Stack pressure. This is where betrayals, traps, misunderstandings, and power shifts
+pile up.
+• Use the heartbeat rhythm: long setup → short sting, repeat.
+• Every 60–90 seconds, plant a re-hook: a twist, a judgment, a question, a brutal image.
+• Narrate BECAUSE-chains, not AND-THEN sequences.
+• For each major beat, land an X-ray reframe — one sentence naming the real meaning.
+• If the movie has levels/rounds/missions, narrate them as a progression system.
+Target: ~25–30% of total script length. Compress the fog, keep the turns.)
+
+[ACT 3 - CLIMAX]
+(The decisive confrontation. Spend the most detail here — this is where the movie
+earns its money and where the video is most fun to watch.
+• Slow down on: the final power shift, the key reveal, the satisfying retaliation,
+  the emotional wound.
+• Use the deadpan escalation ladder for action sequences.
+• If there is an earned emotional pivot, place it here.
+• Do NOT rush the climax to save words — make this the centerpiece of the review.
+Target: ~35–40% of total script length. This should be the longest act.)
+
+[ACT 4 - RESOLUTION]
+(Resolve the ending. Tell the actual ending — no spoiler warnings, no dodge.
+• Land the cost sentence: what was gained, what was lost.
+• If the movie has a twist ending, deliver it with full force.
+Target: ~10–15% of total script length. Keep it tight.)
+
+[CLOSING]
+(The final button. Pick one closing option from Section 11:
+• Fake life lesson / Reverse moral / Bitter verdict / Callback sting / Open-ended question.
+• The strongest closings combine a cost sentence with a crooked lesson.
+• Optional sign-off: "我们下期再见" if it fits the cadence.
+1–3 sentences maximum.)
+```
+
+### Output rules
+
+- Write **continuous narration prose** under each act header. No bullet points or sub-headers within acts.
+- The act headers `[HOOK]`, `[ACT 1 - SETUP]`, etc. are structural markers for human review. They are stripped from the final voiceover.
+- The `[TITLE]` line becomes the video title.
+- Introduce archetype names naturally within the narration (e.g., `男主永强是个老实巴交的打工人`), not in a separate character roster.
+- The total script should read as one continuous performance when the act headers are removed.
+
+---
+
+## 14. Character, Hook, and Tone Assignment Workflow
+
+Before writing the script, the agent MUST:
+
+1. Read the subtitle file and timeline to identify who matters.
+2. Rank characters by function, not by perfect name fidelity.
+3. Choose the naming system.
+4. Identify the top 3 hook candidates.
+5. Choose the hook form that best fits the movie's actual selling point.
+6. Decide where the main emotional pivot belongs, if any.
+7. Decide what the movie's dominant engine is:
+   - revenge
+   - trap / conspiracy
+   - survival
+   - misunderstanding
+   - rise-and-fall
+   - romance under pressure
+   - social cruelty
+8. Let that engine shape which beats get detail.
+
+**Final reminder:** The goal is not to *sound* like Niu Shu for one sentence. The goal is to make the whole script feel like it was written by a reviewer who **thinks** the way Niu Shu thinks.
+
+Before submitting, run this soul-check:
+
+1. **System:** Did I map the movie as a power system (who controls, deceives, pressures, pays)?
+2. **Causation:** Did I narrate WHY-chains, not just WHAT-happened sequences?
+3. **Reframes:** Does every major beat have an X-ray reframe that names its real meaning?
+4. **Comedy:** Did I create register collisions (extreme ↔ mundane), not just insert catchphrases?
+5. **Rhythm:** Does the script alternate long setups with short stings (heartbeat pattern)?
+6. **Emotion:** Did I earn any gravity drop through contrast — and land it with a cost sentence?
+7. **Closing:** Does the ending feel like a button — crooked, bitter, absurd, or unexpectedly true?
+8. **Audience:** Did I treat the viewer as a co-conspirator, not a student?
+<<<STYLE_RULEBOOK_END>>>
+
+# Genre example script
+Below is a high-quality example script in the target style and genre. Study its pacing, phrasing, tone, and structure to understand how the final script should read.
+<<<GENRE_EXAMPLE_START>>>
+一个斯文的变态
+以杀人为乐
+用一把西瓜刀在江湖中掀起腥风血雨
+直到有一天
+他捅了马蜂窝
+不
+捅了马东西
+从此沦落为拉胯的下场
+哈喽大家好
+我是牛叔
+今天介绍一部由真实事件瞎尖编的韩国犯罪片
+恶人传
+月黑风高夜
+正是杀人时
+咱们的大反派首先登场
+他盯上了猎物之后
+一路尾随之交外
+突然故意撞了上去
+猎物对危险的邻近毫无察觉
+还骂骂咧咧的拍照准备找保险公司
+大反派趁机掏出武器
+爆出猎物一顿疯狂输出
+画面一转
+咱们的男主永强是一名优秀的人民警察
+他今天要办的案子就是昨天大反派的杰作
+永强敏锐的发现车子被追尾过
+这使他联想到了另外三起凶杀案
+这些凶杀案手法类似
+且都是用尖刀扎死的
+也就是说很有可能是同一个凶手干的连环凶杀案
+更可怕的是凶手杀人明显是随机的
+如此一来还会有更多的人受害
+因此务必要以连环杀人案的最高标准
+进行立案侦查
+可是警察局领导压根就不信
+你可真拍美国大片呢
+还连环杀人案
+咱们大韩民国民风淳朴汉后老师
+每年只有几百万人被刀捅死
+难道都是一个人干的呀
+我告诉你啊
+别成天静想着破大案
+还有你最近少去招惹马帮
+那马帮是你这种小憋三能对付的吗
+原来他们辖区最大的黑帮便是马帮
+永强记得如仇
+一直想方设法的在找马帮麻烦
+可是连警局领导都收了马帮的贡钱了
+你还经常去找麻烦
+这不是没事找事吗
+话说这马帮主要经营赌博机生意
+正在打拳的大胖子
+便是帮主一拳老马
+拳拳到肉帮帮作响
+但他打的可不是沙包
+赫然是一个活生生的人
+不过现在应该已经嗝屁了
+由此可见老马绝对是个杀人如麻的狠角色
+但他最近遇到了麻烦事
+此对头皮帮日益壮大
+皮帮帮主皮张山也日益嚣张
+不断和他发生利益冲突
+显然有压过马帮的野心
+老马气得够呛
+于是就借机发飙
+当着皮长山的面
+拔了皮帮二当家的牙
+然后泡酒让皮长山喝
+这样的向马威
+把皮长山吓得大气都不敢出
+只能硬着头皮喝下牙酒
+回去继续当本地的第二帮派
+一场发飙下来解决了帮派危机
+老马让兄弟们各找各妈
+自己也开车回家
+深夜的雨越下越大
+渐渐的到了没人的郊区
+突然间屁股一震
+马哥的梅赛德斯金杯被追尾了
+漂泊大雨中
+赵斯斯基穿着羽衣
+像乖宝宝一样不住道歉
+马哥看他开着个九手奥拓
+点头哈腰的还挺有礼貌
+反正这梅赛德斯他也赔不起
+大手一挥
+下次注意啊
+不用赔了
+魅城想赵斯斯基耍流氓
+等马哥转身的间歇
+突然爆起
+从后面光光就给了老马两刀
+老马顿时又惊又疼
+这要是一般人早就躺下了
+万幸他是身经百战的江湖大佬
+在被人捅这方面
+很有经验和心得
+再加上身大力不亏
+一翻恶斗下来
+来人居然被老马屡屡打翻
+最后甚至还夺了西瓜刀
+一刀狠狠扎在了肩膀上
+眼见不是对手
+来人赶紧撒丫子开溜
+一脚油门就撞飞了老马
+在下彻底把老马给干晕了
+直接送进了抢救室
+如此一来
+马帮彻底炸锅了
+二把手马永珍
+认定幕后黑手
+一定是皮帮皮当山
+在他的带领下
+马帮全体驴马蛋子
+倾巢出动
+连夜把皮帮的游戏厅全给砸了
+画面来到另一边
+不出意外袭击老马的男人
+正是随机杀人的变态狂
+作为一名首尔大学医学院毕业的高材生
+他只用钉书器就治好了身上的伤口
+咱们书中暗表
+此人无名无姓
+在江湖上没有名号
+只是给自己起了个魂号
+叫嫖又嫖
+这次的失败让二嫖子怨气难宣
+便来到旁边的狗场
+想杀几只狗子发泄兽欲
+没想到狗场的看门老大爷纹身赶来
+二狗子杀心大起
+几刀就给打发了
+另一边皮糙肉厚的老马被抢救过来了
+以他的江湖经验来看
+那个变态捅人的手法十分生硬
+显然不是职业杀手
+那自然不会是皮帮要杀自己
+毕竟谁会找一个连营业执照都没有的
+十把线杀手呢
+这一定是自己倒了血霉
+遇到了一个随机杀人的变态疯子
+话音刚落
+行经永强来访
+作为老对头
+永强进屋之后
+自然少不了一番冷嘲热讽
+然后就开始询问案件的细节
+永强已经感觉到袭击老马的人
+可能就是那个连环杀人犯
+但老马也是要面子的好吗
+自己被捅了
+还要警察来帮忙破案
+那要黑帮干什么呀
+言语间丝毫不配合
+就说是自己不小心摔倒的
+怎么你没自己摔昏迷过吗
+刑警的永强早就料到老马
+不会配合自己
+被轰出来之后
+直接来到地下停车场
+在梅赛德斯金背后边
+果然发现了白色擦痕
+毫无疑问
+杀人者一定是那个变态
+听说老马被人砸躺下了
+皮长衫春光灿烂的赶来慰问
+老马呀老马
+你也有马师前提的一天
+让一个小别三给弄成这样
+你还有什么脸继续当黑道化石人
+老马也是理亏
+表示马永珍确实是砍错人了
+皮帮受伤的兄弟他会给赔偿的
+没想到皮长衫得寸进尺
+临走时又冷嘲热讽
+让老马赶紧顺风下驴退休得了
+这把老马气得险些当场尿床
+当皮长衫走后
+老马叫来了马永珍
+他根据自己的记忆
+描绘出了连环杀人犯的面目特征
+再加上九手奥拓的车牌号
+让马永珍务必找到此人
+那么此时的二嫖子在干嘛呢
+感情师又盯上新猎物了
+这个嘲笑满面的中年男人
+不断和媳妇抱怨养孩子辛苦
+孩子成天抄着吃大辣皮啥的
+这样的话让二嫖子就不高兴了
+因为他小时候也爱吃大辣皮
+但是家长不让
+从此留下心理阴影
+那怎么孩子爱吃大辣皮
+还是错误了呢
+杀意飙升光速出刀
+中年男人懵懵逼逼的就挂了
+接着二瓢子又顺便抢走了男人的货车
+没想到车里还有另一个换班司机
+哈哈人生啊人生
+怎么还来个买一送一呢
+于是又是一阵电光火石刀来刀往
+激情似这种二瓢子的那把西瓜刀失手脱落
+掉落在了路边的乱草丛中
+结果就在一天之后
+在马帮小弟地产班的搜索中
+那把捅伤老马的西瓜刀落到了老马手里
+咱们花开两朵个表一枝
+永强执意认为
+这就是一起连环凶杀案
+为了让老马配合调查
+他一直骚扰马帮的地盘
+把老马搞得不胜其反
+刚好仅凭一张素描找人
+属实困难
+干脆就提出和永强合作
+警方毕竟有专业的团队
+验个DNA亲子鉴定什么的
+倒很方便
+而黑帮这边又有人有钱
+找人很方便
+咱们黑白两道强行联手
+定然能让那个变态无所遁形
+于是原本是死对头的两人
+就在机缘巧合之下
+捆绑在一起
+产生了一种不可描述的情感
+然而让永强怎么也想不到的是
+就在警匪合作办案开展的如火如荼的时候
+老马那边率先出了腰额子
+他让马永珍潜入到皮上山家中
+直接把二瓢子的西瓜刀插在了老皮的脑袋上
+来了一招借刀杀人
+既消灭了竞争对手又祸水中瘾
+果然警方一检查就发现这把刀竟然混合了五个人的DNA
+无疑这就是一起严重的连环凶杀案了
+于是上面的领导非常恼火
+大骂本地警局无能
+直接从首尔派来了韩国龙族
+把永强等人给踢了出去
+这可让立功心切的永强大为惯惑
+他知道皮长山之死和连环杀人案无关
+立刻就气冲冲的找上门来
+对着老马就是一顿小拳拳
+不过永强哪里是老马的对手
+让人一只手随便扒了几下
+就给打没脾气了
+皮长山的确是我顺手做调底
+不过暴露了这把凶器
+也能尽快抓住嫌疑人不是吗
+永强想想也是
+再说也打不过老马
+只能拍拍屁股走人了
+这一系列凶杀案
+不出意外的引起了
+所有韩国人民的关注
+这一下一到晚上
+连门都不敢出了
+此时的二瓢子也看了新闻
+发现自己竟然被栽赃嫁祸了
+心里顿时就委屈的不行
+转身就来到了皮帮的葬礼现场
+递给了二把手一张条子
+上面写着
+有人用我的刀杀了你大哥
+手上的二把手顿时就明白了
+毕竟二瓢子没有任何理由杀掉皮上山
+他一边看向猫狐耗子的老马
+一边恨意蔓延
+掰我牙杀我大哥
+此仇不报非君子
+隔天老马的手下找到了九手奥拓
+就叫来永强一起调查
+哪知道刚发现一点线索
+二把手就领着大批人马杀了过来
+咱们这个毕竟是黑帮片不是功夫片
+俗话说双拳难敌四手好汉架不住三颇西
+好几十号小弟被老马和永强包围了
+怎么可能打得赢呢
+毕竟老马可是连丧尸群都杀了个其进其出
+更别说这帮小太太了
+乱战中刑警永强失手将二把手捅死
+不过有老马这个黑道大哥帮忙处理
+永强倒也无需担心
+等回到警局后
+上司忽然让永强去调查一起绑架案
+这都什么时候了还调查绑架案
+不去奈何领导一瞪眼
+他只能乖乖从了
+这就是一个普通的绑架案
+男主人突然失踪了
+然后绑匪用男主人的手机
+让老婆把钱送到一家杀人小吃
+永强他们照例在四周做着埋伏
+没想到很快就发现了鬼鬼祟祟的绑匪
+而绑匪也立刻察觉不对
+撒丫子就开溜
+一番追逐之后
+操之夭夭
+咱们书中暗表
+说来也是巧了
+这个绑匪正是杀人狂谋二瓢子
+那个男主人
+其实早就被他杀人取乐了
+正好手头缺钱
+就顺便再搞一场绑票讹诈
+但第一次干没经验就给搞砸了
+永强现在当然不知道这些
+就继续按流程调查
+一不小心找到了二瓢子喝过的酒瓶
+得到了酒瓶上的指纹
+顺藤摸瓜
+查到了绑匪的真实信息
+然后就找到了出租屋
+但这里已经三个月没人回来了
+永强对着屋里的照片和老马的素描一看
+我靠这也太巧了吧
+这可真是踏破铁鞋无逆处
+得来全不费功夫
+绑匪和杀人狂居然是同一个人
+通过追查二嫖子的电话记录
+永强追查到了大学城附近
+可是这里有着数不清的出租屋
+旅馆和中点船啥的
+调查起来十分麻烦
+老马听到之后
+立刻动员了所有兄弟
+再加上永强带来的一些刑警协助
+大学城地区遭到了大规模的搜查
+搞的是鸡飞狗跳无眼障戏
+但依旧大海捞针一无所获
+老马本人也到了当地调查
+看着身边经过的一个个靓丽学生
+只能感叹一句
+大学生活真好啊
+天上下着雨
+看着身边没有打伞的女学生
+老马铁汉柔情就把雨伞送给了他
+女学生很有礼貌
+在上了公交车之后
+依旧补助一道谢
+可万万没想到
+等晚上大家伙聚餐的时候
+居然看到了有学生被杀害的新闻
+那把雨伞不就是老马送给他的吗
+这一刻老马的怒火难以控制
+桌子一掀不吃了
+绝地三尺也要把人给我揪出来
+黑帮找人跟警察找人还不一样
+各种手段都用出来了
+哪有人敢不说实话
+补一会儿的功夫就有了收获
+一个包租公认出了照片里的人
+可是惊艳老道的二瓢子更为激进
+回来之后发觉气氛不对
+一脚油门就夺路狂奔
+永强和老马上车便追
+一路上标的天昏地暗
+二瓢子瞅准时机钻进了小骨头
+马永珍出其不意遭到偷袭
+空有一身功夫却被几下给砸躺下了
+等老马赶来时
+马永珍只剩下最后一口气
+手指指出方向
+一蹬腿就领了盒饭
+老马怒气满满
+顺着方向找到了一家地下歌厅
+一间间的搜查
+那是各种欢闹糜烂
+最后又看到了两个小姑娘
+咋回事
+你们私来歌厅里练哭的吗
+立刻就猜出了二瓢子躲在厕所里
+此时门后的二瓢子
+也感知到了一股强大的杀气在靠近
+毫无疑问一场旷世大战即将爆发
+猛听轰的一声
+老马连人带门砸了进来
+旷世大战结束
+紧急着老马一顿老拳刺后
+把可怜的二瓢子差点打成肉泥
+拖回到马帮老巢
+自然少不了一顿毒打柔恋
+等打得过瘾了
+没什么可说的
+老马举起大刀
+准备用江湖规矩给他做个了结
+虽然抓住了连环上人犯
+但结果却让人十分无语
+因为所有的证据都是间接证据
+二瓢子已经把手指的指纹全都磨掉了
+所以凶器根本证明不了什么
+按照法律甚至是不会被定罪的
+医院外受害者家属哭天响地
+他们恨不得吃他的血喝他的肉
+但医院里二瓢子却大口吃喝好不快活
+他自己都算你明白了
+没有人能证明我有罪
+我还会在江湖中掀起罪恶
+你们能拿我怎么样来打我呀
+直接来到审判当天
+所有知道真相的人都心如死灰
+他们知道二瓢子无法被定罪
+甚至还会被当庭释放
+难道杀人狂谋要逍遥法外了吗
+便在此时只听一声怒吼
+放开那个男孩
+让我来
+只见老马大摇大摆的走了进来
+作为连环杀人案的唯一幸存者
+他当然有理由当庭指正罪犯
+老马准确的说出了自己在二瓢子肩头插了一刀
+最为重要的是他还有二瓢子亲手写下的字条
+被撕了一块后变成我的刀杀了你老大
+这分明就是炫耀啊
+铁证如山之下二瓢子终于被法官判了死刑
+而老马作为一个劣迹斑斑的黑道大佬
+他自己的罪证足以被定下重罪
+可是为什么会甘心转为污点证人呢
+第一他不能让杀人犯继续逍遥法外
+第二也是为了满足自己那点邪恶的小癖好
+画面一转当老马被押入监狱的时候
+兄弟们纷纷向老大问好
+看向一边安静读书的二嫖子
+老马忍不住露出了一丝意味深长且不可描述的邪笑
+不要过来
+你不要过来啊
+<<<GENRE_EXAMPLE_END>>>
+
+# Style reminder — match this rhythm
+Your script MUST match the line-by-line rhythm of the genre example. Here is its opening again for emphasis — notice the short, punchy lines:
+```
+一个斯文的变态
+以杀人为乐
+用一把西瓜刀在江湖中掀起腥风血雨
+直到有一天
+他捅了马蜂窝
+不
+捅了马东西
+从此沦落为拉胯的下场
+哈喽大家好
+我是牛叔
+今天介绍一部由真实事件瞎尖编的韩国犯罪片
+恶人传
+月黑风高夜
+正是杀人时
+咱们的大反派首先登场
+他盯上了猎物之后
+一路尾随之交外
+突然故意撞了上去
+猎物对危险的邻近毫无察觉
+还骂骂咧咧的拍照准备找保险公司
+```
+Write in this rhythm: short lines, staccato delivery, register-collision humor. Do NOT write long compound paragraphs.
+
+# Output requirements
+- Output only the final script.
+- Use the act structure headers defined in the Style Rulebook (e.g. [TITLE], [HOOK], [ACT 1 - SETUP], etc.). No additional sub-headings beyond those.
+- No JSON.
+- No bullet points inside act prose.
+- No analysis before or after the script.
+- Keep the script in the primary language implied by the style file unless the source material clearly requires another language.
