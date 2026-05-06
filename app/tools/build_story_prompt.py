@@ -58,6 +58,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Optional synopsis markdown for plot, cast, and continuity grounding.",
     )
+    parser.add_argument(
+        "--genre",
+        help="Optional genre name (e.g. Action, Comedy). If provided, will load example script from styles/genres/<style>/<genre>.txt.",
+    )
     return parser
 
 
@@ -195,22 +199,56 @@ def build_prompt(
     timeline_text: str,
     movie_title: str = "",
     synopsis_text: str | None = None,
+    genre_text: str | None = None,
 ) -> str:
     movie_label = movie_title.strip() or "Unknown movie"
-    sections = [
+    
+    # We build the prompt in sections.
+    # To combat context rot, we put the massive data block (timeline) first, 
+    # followed by the instructional and styling context. This ensures the model 
+    # pays maximum attention to the rules and output format right before generation.
+    sections = []
+
+    if synopsis_text is not None and synopsis_text.strip():
+        sections.append(
+            "# Source Material: Movie Synopsis and Cast\n"
+            "Treat this synopsis as authoritative high-level context for names, relationships, motive, and full-story continuity.\n"
+            "<<<SYNOPSIS_START>>>\n"
+            f"{synopsis_text.strip()}\n"
+            "<<<SYNOPSIS_END>>>"
+        )
+
+    sections.append(
+        "# Source Material: Chronological Movie Timeline\n"
+        "This timeline contains VISUAL segments (what happens on screen) and SUBTITLE segments (what characters say).\n"
+        "<<<MOVIE_TIMELINE_START>>>\n"
+        f"{timeline_text.strip()}\n"
+        "<<<MOVIE_TIMELINE_END>>>"
+    )
+
+    sections.append(
         "# Role\n"
-        "You are writing a plain movie-review / story-retelling script for a short-form movie channel.",
+        "You are writing a plain movie-review / story-retelling script for a short-form movie channel."
+    )
+
+    sections.append(
         "# Core style transfer requirement\n"
         "Do not merely borrow wording, catchphrases, or surface-level sentence patterns from the style file. "
         "Absorb the style's soul: narrator mindset, value system, pace, rhythm, humor, hook logic, emotional release, "
-        "scene selection instinct, and compression strategy. The final script should feel native to the style, not like a paraphrase wearing the style's vocabulary.",
+        "scene selection instinct, and compression strategy. The final script should feel native to the style, not like a paraphrase wearing the style's vocabulary."
+    )
+
+    sections.append(
         "# Writing task\n"
-        f"Write one complete script for {movie_label} based on the source material below.\n"
+        f"Write one complete script for {movie_label} based on the source material provided above.\n"
         "- Retell the whole movie from beginning to end.\n"
         "- Make the script easy to follow even though the source material is fragmented notes.\n"
         "- Prioritize motive, causality, reversals, emotional movement, and payoff over flat scene listing.\n"
         "- Use the style's deeper storytelling logic, not just its wording.\n"
-        "- If the style file defines naming rules, narrator stance, hook strategy, or ending pattern, follow those rules.",
+        "- If the style file defines naming rules, narrator stance, hook strategy, or ending pattern, follow those rules."
+    )
+
+    sections.append(
         "# How to use the source material\n"
         "- The style file defines the narrator's soul, pace, rhythm, humor, and storytelling logic.\n"
         "- The synopsis, when provided, is the best high-level guide to plot continuity, character identity, relationships, and motive.\n"
@@ -220,34 +258,34 @@ def build_prompt(
         "- Use both together so you can reconstruct the whole movie without watching it.\n"
         "- Use the synopsis to keep the overall story coherent, especially when the timeline notes are fragmented or locally ambiguous.\n"
         "- Prefer subtitles for exact spoken content and visual lines for action, staging, on-screen text, and non-verbal beats.\n"
-        "- Do not mention timestamps, visual segments, subtitles, JSON, or source notes in the final answer.",
+        "- Do not mention timestamps, visual segments, subtitles, JSON, or source notes in the final answer."
+    )
+
+    sections.append(
+        "# Style rulebook\n"
+        "<<<STYLE_RULEBOOK_START>>>\n"
+        f"{style_text.strip()}\n"
+        "<<<STYLE_RULEBOOK_END>>>"
+    )
+
+    if genre_text is not None and genre_text.strip():
+        sections.append(
+            "# Genre example script\n"
+            "Below is a high-quality example script in the target style and genre. "
+            "Study its pacing, phrasing, tone, and structure to understand how the final script should read.\n"
+            "<<<GENRE_EXAMPLE_START>>>\n"
+            f"{genre_text.strip()}\n"
+            "<<<GENRE_EXAMPLE_END>>>"
+        )
+
+    sections.append(
         "# Output requirements\n"
         "- Output only the final script.\n"
         "- No JSON.\n"
         "- No bullet points.\n"
         "- No section headings.\n"
         "- No analysis before or after the script.\n"
-        "- Keep the script in the primary language implied by the style file unless the source material clearly requires another language.",
-        "# Style rulebook\n"
-        "<<<STYLE_RULEBOOK_START>>>\n"
-        f"{style_text.strip()}\n"
-        "<<<STYLE_RULEBOOK_END>>>",
-    ]
-
-    if synopsis_text is not None and synopsis_text.strip():
-        sections.append(
-            "# Movie synopsis and cast grounding\n"
-            "Treat this synopsis as authoritative high-level context for names, relationships, motive, and full-story continuity.\n"
-            "<<<SYNOPSIS_START>>>\n"
-            f"{synopsis_text.strip()}\n"
-            "<<<SYNOPSIS_END>>>"
-        )
-
-    sections.append(
-        "# Chronological movie timeline\n"
-        "<<<MOVIE_TIMELINE_START>>>\n"
-        f"{timeline_text.strip()}\n"
-        "<<<MOVIE_TIMELINE_END>>>"
+        "- Keep the script in the primary language implied by the style file unless the source material clearly requires another language."
     )
 
     return "\n\n".join(sections).rstrip() + "\n"
@@ -280,11 +318,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not timeline_text.strip():
             raise ValueError("The merged movie timeline is empty")
 
+        genre_text = None
+        if args.genre:
+            style_name = style_path.stem
+            # Look in styles/genres/<style_name>/<genre>.txt (or fallback to style/genre/)
+            genre_file = style_path.parent / "genres" / style_name / f"{args.genre}.txt"
+            if not genre_file.exists():
+                genre_file = style_path.parent / "genre" / style_name / f"{args.genre}.txt"
+            
+            if genre_file.exists():
+                genre_text = _read_text(genre_file)
+            else:
+                print(f"Warning: Genre example not found at {genre_file}", file=sys.stderr)
+
         prompt_text = build_prompt(
             style_text=style_text,
             timeline_text=timeline_text,
             movie_title=args.movie_title,
             synopsis_text=synopsis_text,
+            genre_text=genre_text,
         )
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
