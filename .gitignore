@@ -135,6 +135,6 @@ movies/
 .codex
 .env
 
-tmp/work
+tmp/work/**/stage*
 
 NarratoAI/
