@@ -49,10 +49,16 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--style", type=Path, required=True, help="Style markdown file.")
-    parser.add_argument("--visual-segments", type=Path, required=True, help="Stage 0 visual_segments.json.")
-    parser.add_argument("--subtitles-txt", type=Path, required=True, help="Stage 1 subtitles.txt.")
+    parser.add_argument("--visual-segments", type=Path, default=None,
+                        help="Stage 0 visual_segments.json. Required unless --plot-digest is used.")
+    parser.add_argument("--subtitles-txt", type=Path, default=None,
+                        help="Stage 1 subtitles.txt. Required unless --plot-digest is used.")
+    parser.add_argument("--plot-digest", type=Path, default=None,
+                        help="Pass 1 plot digest file. When provided, uses digest mode (two-pass workflow).")
     parser.add_argument("--out", type=Path, required=True, help="Output path for the generated prompt text.")
     parser.add_argument("--movie-title", default="", help="Optional movie title for prompt framing.")
+    parser.add_argument("--target-minutes", type=float, default=None,
+                        help="Target script length in minutes of spoken narration.")
     parser.add_argument(
         "--synopsis",
         type=Path,
@@ -193,21 +199,36 @@ def render_timeline(
     return "\n".join(entry.render() for entry in build_timeline_entries(visual_segments, subtitles))
 
 
+def _extract_golden_paragraph(genre_text: str, max_lines: int = 20) -> str | None:
+    """Extract the first non-empty lines from the genre example as a style reminder."""
+    lines = [line for line in genre_text.strip().split("\n") if line.strip()]
+    if not lines:
+        return None
+    return "\n".join(lines[:max_lines])
+
+
 def build_prompt(
     *,
     style_text: str,
-    timeline_text: str,
+    timeline_text: str | None = None,
+    digest_text: str | None = None,
     movie_title: str = "",
     synopsis_text: str | None = None,
     genre_text: str | None = None,
+    target_minutes: float | None = None,
 ) -> str:
+    if timeline_text is None and digest_text is None:
+        raise ValueError("Either timeline_text or digest_text must be provided")
+
+    use_digest = digest_text is not None
     movie_label = movie_title.strip() or "Unknown movie"
-    
+
     # We build the prompt in sections.
-    # To combat context rot, we put the massive data block (timeline) first, 
-    # followed by the instructional and styling context. This ensures the model 
-    # pays maximum attention to the rules and output format right before generation.
-    sections = []
+    # To combat context rot, we put the massive data block (timeline or digest)
+    # first, followed by the instructional and styling context. This ensures
+    # the model pays maximum attention to the rules and output format right
+    # before generation.
+    sections: list[str] = []
 
     if synopsis_text is not None and synopsis_text.strip():
         sections.append(
@@ -218,13 +239,25 @@ def build_prompt(
             "<<<SYNOPSIS_END>>>"
         )
 
-    sections.append(
-        "# Source Material: Chronological Movie Timeline\n"
-        "This timeline contains VISUAL segments (what happens on screen) and SUBTITLE segments (what characters say).\n"
-        "<<<MOVIE_TIMELINE_START>>>\n"
-        f"{timeline_text.strip()}\n"
-        "<<<MOVIE_TIMELINE_END>>>"
-    )
+    if use_digest:
+        sections.append(
+            "# Source Material: Plot Digest\n"
+            "This digest was extracted from the movie's visual segments and subtitles. "
+            "It contains everything you need to write the script: characters, plot beats "
+            "with causal reasoning, power dynamics, reviewable moments, key dialogue, "
+            "and the full ending.\n"
+            "<<<PLOT_DIGEST_START>>>\n"
+            f"{digest_text.strip()}\n"
+            "<<<PLOT_DIGEST_END>>>"
+        )
+    else:
+        sections.append(
+            "# Source Material: Chronological Movie Timeline\n"
+            "This timeline contains VISUAL segments (what happens on screen) and SUBTITLE segments (what characters say).\n"
+            "<<<MOVIE_TIMELINE_START>>>\n"
+            f"{timeline_text.strip()}\n"
+            "<<<MOVIE_TIMELINE_END>>>"
+        )
 
     sections.append(
         "# Role\n"
@@ -238,28 +271,50 @@ def build_prompt(
         "scene selection instinct, and compression strategy. The final script should feel native to the style, not like a paraphrase wearing the style's vocabulary."
     )
 
-    sections.append(
-        "# Writing task\n"
-        f"Write one complete script for {movie_label} based on the source material provided above.\n"
-        "- Retell the whole movie from beginning to end.\n"
-        "- Make the script easy to follow even though the source material is fragmented notes.\n"
-        "- Prioritize motive, causality, reversals, emotional movement, and payoff over flat scene listing.\n"
-        "- Use the style's deeper storytelling logic, not just its wording.\n"
-        "- If the style file defines naming rules, narrator stance, hook strategy, or ending pattern, follow those rules."
-    )
+    # --- Writing task with optional length guidance ---
+    task_lines = [
+        "# Writing task",
+        f"Write one complete script for {movie_label} based on the source material provided above.",
+    ]
+    if target_minutes is not None:
+        task_lines.append(
+            f"- Target script length: approximately {target_minutes:.0f} minutes of spoken narration "
+            f"(~{int(target_minutes * 250)} Chinese characters)."
+        )
+    task_lines.extend([
+        "- Retell the whole movie from beginning to end.",
+        "- Make the script easy to follow even though the source material is fragmented notes.",
+        "- Prioritize motive, causality, reversals, emotional movement, and payoff over flat scene listing.",
+        "- Use the style's deeper storytelling logic, not just its wording.",
+        "- If the style file defines naming rules, narrator stance, hook strategy, or ending pattern, follow those rules.",
+    ])
+    sections.append("\n".join(task_lines))
 
-    sections.append(
-        "# How to use the source material\n"
-        "- The style file defines the narrator's soul, pace, rhythm, humor, and storytelling logic.\n"
-        "- The synopsis, when provided, is the best high-level guide to plot continuity, character identity, relationships, and motive.\n"
-        "- The movie timeline is already mixed in chronological order line by line.\n"
-        "- VISUAL lines tell you what is happening on screen.\n"
-        "- SUBTITLE lines tell you what characters literally say.\n"
-        "- Use both together so you can reconstruct the whole movie without watching it.\n"
-        "- Use the synopsis to keep the overall story coherent, especially when the timeline notes are fragmented or locally ambiguous.\n"
-        "- Prefer subtitles for exact spoken content and visual lines for action, staging, on-screen text, and non-verbal beats.\n"
-        "- Do not mention timestamps, visual segments, subtitles, JSON, or source notes in the final answer."
-    )
+    # --- Source material usage guidance (differs for digest vs timeline) ---
+    if use_digest:
+        sections.append(
+            "# How to use the source material\n"
+            "- The style file defines the narrator's soul, pace, rhythm, humor, and storytelling logic.\n"
+            "- The synopsis, when provided, is the best guide to character names and relationships.\n"
+            "- The plot digest contains structured story beats with causal reasoning — use these to build BECAUSE-chains in your narration.\n"
+            "- The 名场面 (Reviewable Moments) section highlights scenes that deserve detailed, vivid narration — do not skip them.\n"
+            "- The 权力结构 (Power Map) helps you frame the story as a system of control and rebellion.\n"
+            "- Preserve key dialogue from the digest when it serves the narration.\n"
+            "- Do not mention the digest, plot beats, or source notes in the final answer."
+        )
+    else:
+        sections.append(
+            "# How to use the source material\n"
+            "- The style file defines the narrator's soul, pace, rhythm, humor, and storytelling logic.\n"
+            "- The synopsis, when provided, is the best high-level guide to plot continuity, character identity, relationships, and motive.\n"
+            "- The movie timeline is already mixed in chronological order line by line.\n"
+            "- VISUAL lines tell you what is happening on screen.\n"
+            "- SUBTITLE lines tell you what characters literally say.\n"
+            "- Use both together so you can reconstruct the whole movie without watching it.\n"
+            "- Use the synopsis to keep the overall story coherent, especially when the timeline notes are fragmented or locally ambiguous.\n"
+            "- Prefer subtitles for exact spoken content and visual lines for action, staging, on-screen text, and non-verbal beats.\n"
+            "- Do not mention timestamps, visual segments, subtitles, JSON, or source notes in the final answer."
+        )
 
     sections.append(
         "# Style rulebook\n"
@@ -278,12 +333,30 @@ def build_prompt(
             "<<<GENRE_EXAMPLE_END>>>"
         )
 
+        # Golden paragraph: repeat the opening of the genre example right
+        # before the output gate as a final rhythm reminder.
+        golden = _extract_golden_paragraph(genre_text)
+        if golden:
+            sections.append(
+                "# Style reminder — match this rhythm\n"
+                "Your script MUST match the line-by-line rhythm of the genre example. "
+                "Here is its opening again for emphasis — notice the short, punchy lines:\n"
+                "```\n"
+                f"{golden}\n"
+                "```\n"
+                "Write in this rhythm: short lines, staccato delivery, register-collision humor. "
+                "Do NOT write long compound paragraphs."
+            )
+
+    # Fixed output requirements — the act-structure headers from the Style
+    # Rulebook are now explicitly required instead of being contradicted.
     sections.append(
         "# Output requirements\n"
         "- Output only the final script.\n"
+        "- Use the act structure headers defined in the Style Rulebook "
+        "(e.g. [TITLE], [HOOK], [ACT 1 - SETUP], etc.). No additional sub-headings beyond those.\n"
         "- No JSON.\n"
-        "- No bullet points.\n"
-        "- No section headings.\n"
+        "- No bullet points inside act prose.\n"
         "- No analysis before or after the script.\n"
         "- Keep the script in the primary language implied by the style file unless the source material clearly requires another language."
     )
@@ -295,29 +368,52 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     style_path = args.style.expanduser().resolve()
-    visual_segments_path = args.visual_segments.expanduser().resolve()
-    subtitles_txt_path = args.subtitles_txt.expanduser().resolve()
     out_path = args.out.expanduser().resolve()
     synopsis_path = args.synopsis.expanduser().resolve() if args.synopsis else None
+    digest_path = args.plot_digest.expanduser().resolve() if args.plot_digest else None
+
+    use_digest = digest_path is not None
 
     try:
         if not style_path.exists():
             raise FileNotFoundError(f"Style file not found: {style_path}")
-        if not visual_segments_path.exists():
-            raise FileNotFoundError(f"Visual segments file not found: {visual_segments_path}")
-        if not subtitles_txt_path.exists():
-            raise FileNotFoundError(f"Subtitles TXT file not found: {subtitles_txt_path}")
         if synopsis_path is not None and not synopsis_path.exists():
             raise FileNotFoundError(f"Synopsis file not found: {synopsis_path}")
 
         style_text = _read_text(style_path)
         synopsis_text = _read_text(synopsis_path) if synopsis_path is not None else None
-        visual_segments = load_visual_segments(visual_segments_path)
-        subtitles = load_subtitles(subtitles_txt_path)
-        timeline_text = render_timeline(visual_segments, subtitles)
-        if not timeline_text.strip():
-            raise ValueError("The merged movie timeline is empty")
 
+        # --- Digest mode (two-pass workflow) ---
+        digest_text: str | None = None
+        timeline_text: str | None = None
+        visual_segments: list[dict[str, object]] = []
+        subtitles: list[dict[str, object]] = []
+
+        if use_digest:
+            if not digest_path.exists():
+                raise FileNotFoundError(f"Plot digest not found: {digest_path}")
+            digest_text = _read_text(digest_path)
+        else:
+            # --- Timeline mode (original single-pass workflow) ---
+            if args.visual_segments is None or args.subtitles_txt is None:
+                raise ValueError(
+                    "--visual-segments and --subtitles-txt are required "
+                    "when --plot-digest is not provided"
+                )
+            visual_segments_path = args.visual_segments.expanduser().resolve()
+            subtitles_txt_path = args.subtitles_txt.expanduser().resolve()
+            if not visual_segments_path.exists():
+                raise FileNotFoundError(f"Visual segments file not found: {visual_segments_path}")
+            if not subtitles_txt_path.exists():
+                raise FileNotFoundError(f"Subtitles TXT file not found: {subtitles_txt_path}")
+
+            visual_segments = load_visual_segments(visual_segments_path)
+            subtitles = load_subtitles(subtitles_txt_path)
+            timeline_text = render_timeline(visual_segments, subtitles)
+            if not timeline_text.strip():
+                raise ValueError("The merged movie timeline is empty")
+
+        # --- Genre example ---
         genre_text = None
         if args.genre:
             style_name = style_path.stem
@@ -325,7 +421,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             genre_file = style_path.parent / "genres" / style_name / f"{args.genre}.txt"
             if not genre_file.exists():
                 genre_file = style_path.parent / "genre" / style_name / f"{args.genre}.txt"
-            
+
             if genre_file.exists():
                 genre_text = _read_text(genre_file)
             else:
@@ -334,9 +430,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         prompt_text = build_prompt(
             style_text=style_text,
             timeline_text=timeline_text,
+            digest_text=digest_text,
             movie_title=args.movie_title,
             synopsis_text=synopsis_text,
             genre_text=genre_text,
+            target_minutes=args.target_minutes,
         )
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -345,9 +443,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    print(f"Generated story prompt: {out_path}")
-    print(f"  visual segments: {len(visual_segments)}")
-    print(f"  subtitles      : {len(subtitles)}")
+    mode_label = "digest" if use_digest else "timeline"
+    print(f"Generated story prompt ({mode_label} mode): {out_path}")
+    if use_digest:
+        print(f"  plot digest    : {digest_path}")
+    else:
+        print(f"  visual segments: {len(visual_segments)}")
+        print(f"  subtitles      : {len(subtitles)}")
     return 0
 
 
