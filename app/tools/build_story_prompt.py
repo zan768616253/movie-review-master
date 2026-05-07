@@ -87,6 +87,39 @@ def _read_text(path: Path) -> str:
 
 import re
 
+_FRONTMATTER_RE = re.compile(r"\A---[ \t]*\n(.*?\n)---[ \t]*\n", re.DOTALL)
+
+
+def parse_style_frontmatter(style_text: str) -> tuple[dict[str, object], str]:
+    """Extract simple key-value frontmatter from a style markdown file.
+
+    Returns ``(metadata, content_without_frontmatter)``.  The metadata dict
+    maps string keys to string or numeric values.  If no frontmatter is
+    present the dict is empty and the full text is returned unchanged.
+    """
+    m = _FRONTMATTER_RE.match(style_text)
+    if not m:
+        return {}, style_text
+    meta: dict[str, object] = {}
+    for line in m.group(1).split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, sep, val = line.partition(":")
+        if not sep:
+            continue
+        key = key.strip()
+        val = val.strip()
+        # Attempt numeric conversion.
+        for convert in (int, float):
+            try:
+                val = convert(val)  # type: ignore[assignment]
+                break
+            except (ValueError, TypeError):
+                continue
+        meta[key] = val
+    return meta, style_text[m.end():]
+
 _SUBTITLE_TXT_PATTERN = re.compile(
     r"^\[(?P<start>\d{2}:\d{2}:\d{2}\.\d+) -> (?P<end>\d{2}:\d{2}:\d{2}\.\d+)\]\s*(?P<body>.*)$"
 )
@@ -216,6 +249,7 @@ def build_prompt(
     synopsis_text: str | None = None,
     genre_text: str | None = None,
     target_minutes: float | None = None,
+    chars_per_minute: int = 250,
 ) -> str:
     if timeline_text is None and digest_text is None:
         raise ValueError("Either timeline_text or digest_text must be provided")
@@ -279,7 +313,7 @@ def build_prompt(
     if target_minutes is not None:
         task_lines.append(
             f"- Target script length: approximately {target_minutes:.0f} minutes of spoken narration "
-            f"(~{int(target_minutes * 250)} Chinese characters)."
+            f"(~{int(target_minutes * chars_per_minute)} Chinese characters)."
         )
     task_lines.extend([
         "- Retell the whole movie from beginning to end.",
@@ -380,7 +414,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if synopsis_path is not None and not synopsis_path.exists():
             raise FileNotFoundError(f"Synopsis file not found: {synopsis_path}")
 
-        style_text = _read_text(style_path)
+        style_raw = _read_text(style_path)
+        style_meta, style_text = parse_style_frontmatter(style_raw)
+        chars_per_minute = int(style_meta.get("chars_per_minute", 250))
         synopsis_text = _read_text(synopsis_path) if synopsis_path is not None else None
 
         # --- Digest mode (two-pass workflow) ---
@@ -435,6 +471,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             synopsis_text=synopsis_text,
             genre_text=genre_text,
             target_minutes=args.target_minutes,
+            chars_per_minute=chars_per_minute,
         )
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
