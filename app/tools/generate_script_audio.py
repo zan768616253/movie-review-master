@@ -2,12 +2,9 @@
 
 Supports both:
 
-- anchored scripts that contain `[ANCHOR ranges="..."]` markers
 - plain sectioned scripts like `tmp/work/<movie>/tools/scripts.txt`
 
-When anchors are present, only anchored chunks plus the closing block become
-spoken audio. When anchors are absent, each structural block (`[HOOK]`,
-`[ACT ...]`, `[CLOSING]`) becomes one chunk.
+Each structural block (`[HOOK]`, `[ACT ...]`, `[CLOSING]`) becomes one chunk.
 """
 
 from __future__ import annotations
@@ -24,6 +21,11 @@ from typing import Optional, Sequence
 import numpy as np
 
 from app.pipeline.common.json_io import dump_json
+from app.pipeline.common.subtitle_utils import (
+    TimedChunk,
+    build_subtitle_cues,
+    render_srt,
+)
 
 
 BASE_MODEL_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
@@ -34,14 +36,6 @@ REFERENCE_AUDIO_FILENAME = "clone_reference.mp3"
 REFERENCE_TEXT_FILENAME = "clone_reference.txt"
 
 STRUCTURAL_MARKER_RE = re.compile(r"^\[(?P<label>TITLE|HOOK|CLOSING|ACT[^\]]*)\]$")
-ANCHOR_MARKER_RE = re.compile(r"^\[ANCHOR\b(?P<attrs>[^\]]*)\]$")
-ANCHOR_ATTR_RE = re.compile(r"(\w+)\s*=\s*(?:\"([^\"]*)\"|'([^']*)')")
-
-
-@dataclass(frozen=True)
-class AnchorMarker:
-    ranges: tuple[tuple[str, str], ...]
-    characters: tuple[str, ...] = ()
 
 
 @dataclass
@@ -50,22 +44,7 @@ class Chunk:
 
     index: int
     section: str
-    anchor: Optional[AnchorMarker]
     text: str
-
-    @property
-    def ranges(self) -> list[tuple[str, str]]:
-        return list(self.anchor.ranges) if self.anchor else []
-
-    @property
-    def characters(self) -> list[str]:
-        return list(self.anchor.characters) if self.anchor else []
-
-    @property
-    def first_range_start(self) -> Optional[str]:
-        if self.anchor and self.anchor.ranges:
-            return self.anchor.ranges[0][0]
-        return None
 
 
 @dataclass(frozen=True)
@@ -113,55 +92,15 @@ def parse_structural_marker(line: str) -> Optional[str]:
     return match.group("label").strip()
 
 
-def parse_anchor_marker(line: str) -> Optional[AnchorMarker]:
-    match = ANCHOR_MARKER_RE.match(line)
-    if match is None:
-        return None
-
-    attributes: dict[str, str] = {}
-    for attr_match in ANCHOR_ATTR_RE.finditer(match.group("attrs")):
-        key = attr_match.group(1)
-        value = attr_match.group(2) if attr_match.group(2) is not None else attr_match.group(3)
-        attributes[key] = value.strip()
-
-    raw_ranges = attributes.get("ranges", "")
-    ranges: list[tuple[str, str]] = []
-    for raw_range in re.split(r"[，,]", raw_ranges):
-        part = raw_range.strip()
-        if not part:
-            continue
-        if "-" not in part:
-            raise ValueError(f"Invalid anchor range: {part!r}")
-        start, end = (piece.strip() for piece in part.split("-", 1))
-        if not start or not end:
-            raise ValueError(f"Invalid anchor range: {part!r}")
-        ranges.append((start, end))
-
-    if not ranges:
-        raise ValueError(f"ANCHOR is missing ranges: {line}")
-
-    raw_characters = attributes.get("characters", "")
-    characters = tuple(
-        name.strip()
-        for name in re.split(r"[，,]", raw_characters)
-        if name.strip()
-    )
-    return AnchorMarker(ranges=tuple(ranges), characters=characters)
-
-
 def parse_script_chunks(script_text: str) -> list[Chunk]:
     """Split a script into spoken chunks.
 
-    If the script contains anchor markers, only anchored blocks plus the
-    closing block are spoken. Otherwise, each structural block after `[HOOK]`
-    becomes one chunk.
+    Each structural block after `[HOOK]` becomes one chunk.
     """
     lines = [raw.strip() for raw in script_text.splitlines()]
-    anchored_mode = any(parse_anchor_marker(line) is not None for line in lines if line)
 
     chunks: list[Chunk] = []
     current_section: Optional[str] = None
-    current_anchor: Optional[AnchorMarker] = None
     pending_lines: list[str] = []
     in_script = False
 
@@ -172,7 +111,6 @@ def parse_script_chunks(script_text: str) -> list[Chunk]:
                 Chunk(
                     index=len(chunks) + 1,
                     section=current_section or "SCRIPT",
-                    anchor=current_anchor,
                     text="\n".join(pending_lines),
                 )
             )
@@ -189,7 +127,6 @@ def parse_script_chunks(script_text: str) -> list[Chunk]:
         if marker == "HOOK":
             flush()
             current_section = marker
-            current_anchor = None
             in_script = True
             continue
 
@@ -199,18 +136,6 @@ def parse_script_chunks(script_text: str) -> list[Chunk]:
         if marker is not None:
             flush()
             current_section = marker
-            current_anchor = None
-            continue
-
-        anchor = parse_anchor_marker(line)
-        if anchor is not None:
-            flush()
-            current_anchor = anchor
-            continue
-
-        if anchored_mode:
-            if current_anchor is not None or current_section == "CLOSING":
-                pending_lines.append(line)
             continue
 
         pending_lines.append(line)
@@ -224,8 +149,7 @@ def validate_script_input(script_path: Path, script_text: str, chunks: list[Chun
         raise ValueError(f"Script is empty: {script_path}")
     if not chunks:
         raise ValueError(
-            f"No narration chunks found in {script_path}. Add [HOOK] and narration text, "
-            "or use [ANCHOR ...] blocks."
+            f"No narration chunks found in {script_path}. Add [HOOK] and narration text."
         )
 
 
@@ -301,7 +225,7 @@ def generate_chunks(
         wavs.append(wav)
         sample_rate = out_sr
         audio_s = len(wav) / out_sr
-        location = chunk.first_range_start or chunk.section
+        location = chunk.section
         print(
             f"[gen  {chunk.index:>3}/{total}] "
             f"{location:>16} "
@@ -376,8 +300,8 @@ def write_manifest(
         {
             "index": chunk.index,
             "section": chunk.section,
-            "ranges": [[start, end] for (start, end) in chunk.ranges],
-            "characters": chunk.characters,
+            "ranges": [],
+            "characters": [],
             "text": chunk.text,
             "audio_start_s": start_s,
             "audio_end_s": end_s,
@@ -387,17 +311,39 @@ def write_manifest(
     dump_json(out_path, payload)
 
 
+def write_subtitles(
+    chunks: list[Chunk],
+    audio_ranges: list[tuple[float, float]],
+    out_path: Path,
+) -> None:
+    timed_chunks = [
+        TimedChunk(
+            index=chunk.index,
+            text=chunk.text,
+            start_s=start_s,
+            end_s=end_s,
+        )
+        for chunk, (start_s, end_s) in zip(chunks, audio_ranges)
+    ]
+    cues = build_subtitle_cues(timed_chunks, max_chars_per_cue=22)
+    if not cues:
+        print("[warn] No subtitle cues generated", file=sys.stderr)
+        return
+
+    payload = render_srt(cues)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(payload, encoding="utf-8")
+
+
 def print_chunk_summary(script_path: Path, chunks: list[Chunk]) -> None:
     total_chars = sum(len(chunk.text) for chunk in chunks)
     print(f"Script: {script_path}")
     print(f"  {len(chunks)} chunks, {total_chars} total narration chars")
     for chunk in chunks[:5]:
-        ranges_summary = (
-            ", ".join(f"{s}-{e}" for s, e in chunk.ranges) if chunk.ranges else chunk.section
-        )
         preview = chunk.text[:40] + ("…" if len(chunk.text) > 40 else "")
         print(
-            f"  chunk {chunk.index}: [{ranges_summary}] "
+            f"  chunk {chunk.index}: [{chunk.section}] "
             f"{len(chunk.text)}ch :: {preview}"
         )
     if len(chunks) > 5:
@@ -410,17 +356,20 @@ def run_full_generation(
     voice_prompt: object,
     mp3_path: Path,
     manifest_path: Path,
+    subtitle_path: Path,
     *,
     run_cmd=subprocess.run,
 ) -> None:
     wavs, sample_rate = generate_chunks(model, chunks, voice_prompt)
     audio_ranges = concat_and_normalize(wavs, sample_rate, mp3_path, run_cmd=run_cmd)
     write_manifest(chunks, audio_ranges, manifest_path)
+    write_subtitles(chunks, audio_ranges, subtitle_path)
 
     total_audio_s = audio_ranges[-1][1] if audio_ranges else 0.0
     print(f"\n[done] {len(chunks)} chunks -> {total_audio_s:.1f}s audio ({total_audio_s / 60:.1f} min)")
     print(f"[done] {mp3_path}")
     print(f"[done] {manifest_path}")
+    print(f"[done] {subtitle_path}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -504,8 +453,9 @@ def main(
 
         output_dir.mkdir(parents=True, exist_ok=True)
         output_tag = resolve_output_tag(style_path, args.tag)
-        mp3_path = output_dir / f"voiceover_{output_tag}_voiceclone.mp3"
-        manifest_path = output_dir / f"voiceover_{output_tag}_voiceclone.manifest.json"
+        mp3_path = output_dir / f"voiceover_{output_tag}.mp3"
+        manifest_path = output_dir / f"voiceover_{output_tag}.manifest.json"
+        subtitle_path = output_dir / f"voiceover_{output_tag}.srt"
 
         try:
             import torch
@@ -531,6 +481,7 @@ def main(
             voice_prompt,
             mp3_path,
             manifest_path,
+            subtitle_path,
             run_cmd=run_cmd,
         )
         print(f"[done] wall time {(time.time() - total_t0) / 60:.1f} min")

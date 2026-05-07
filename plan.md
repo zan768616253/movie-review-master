@@ -85,7 +85,7 @@ After the cleanup, skeleton files were added for every new stage so implementing
 
 - Created `app/pipeline/stage{2,3,4,5,6,8}_*.py` — module docstrings, dataclass schemas, helper signatures, wired-up `build_parser()`, `main()` stub. Bodies raise `NotImplementedError("Phase X.Y — see plan.md")`.
 - Created `tmp/step_{02,03,04,05,06,08}_*.py` harness scripts that load config, build paths, dispatch to the matching stage's `main()`.
-- Updated `tmp/_common.py` with all 29 path slots the new pipeline needs (stage0–stage9 dirs plus per-stage artifact paths). Voiceover filename follows the legacy `voiceover_<style-stem>_voiceclone.{mp3,manifest.json}` pattern so the surviving subtitle-alignment module finds it without changes.
+- Updated `tmp/_common.py` with all 29 path slots the new pipeline needs (stage0–stage9 dirs plus per-stage artifact paths). Voiceover filename follows the new `voiceover_<tag>.{mp3,manifest.json}` pattern.
 - Registered new entry points in `pyproject.toml`: `select-shots`, `assemble-rough-cut`, `write-narration`, `generate-audio`, `fit-visuals`, `render-video`.
 - Verified all 6 new modules import cleanly and `--help` works for every new CLI.
 
@@ -328,7 +328,7 @@ Test baseline post-scaffold: **70 passed, 3 failed** (the 3 are pre-existing —
   3. For each beat: TTS the text, capture the resulting audio duration.
   4. Concatenate into one MP3, loudness-normalize.
   5. Write the manifest with real measured `audio_start_s`/`audio_end_s` per beat.
-  6. Output filenames: `voiceover_<tag>_voiceclone.mp3` and `voiceover_<tag>_voiceclone.manifest.json` (default `tag` = style stem).
+  6. Output filenames: `voiceover_<tag>.mp3` and `voiceover_<tag>.manifest.json` (default `tag` = style stem).
 - **Engine reuse:** copy the engine portion of `/tmp/stage3_legacy.py` (Task 3.1) into the new file. Replace the anchored-chunk parser with a simple JSON load. The Qwen3 model loading, generation API, and concat logic should be reusable verbatim.
 - **Done when:**
   - Entry point `generate-audio` registered.

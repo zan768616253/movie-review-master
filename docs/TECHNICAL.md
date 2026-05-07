@@ -164,6 +164,14 @@ Transcribe one `.mp3` file or a directory tree of `.mp3` files into `.txt`. Used
 
 Build a copy-paste prompt for external LLMs to draft a full movie-retelling script from a style markdown file, Stage 0 `visual_segments.json`, and Stage 1 `subtitles.json`. The tool converts the structured inputs into a single chronological plain-text timeline so the external model can infer the whole movie without watching it. Entry point: `build-story-prompt`. Test-covered.
 
+### `app/tools/generate_script_audio.py`
+
+Generate a voice-cloned narration MP3 plus a chunk manifest from the final manual script text. Entry point: `generate-script-audio`. Test-covered.
+
+### `app/tools/generate_audio_subtitles.py`
+
+Generate subtitle files for the narration audio from the final script text and generated audio. The tool prefers the sibling audio manifest for exact chunk timing and falls back to proportional timing when no manifest is available. Entry point: `generate-audio-subtitles`. Test-covered.
+
 ### `app/tools/voice_analysis.py`
 
 One-off analysis helper for TTS experiments. Computes pacing, pauses, pitch, and energy stats from a reference audio plus transcript. Not a pipeline stage.
@@ -297,8 +305,8 @@ Expected generated asset layout once the new pipeline is complete:
 movies/<title>/
   selected_shots.json
   narration.json
-  voiceover_<style>_voiceclone.mp3
-  voiceover_<style>_voiceclone.manifest.json
+  voiceover_<style>.mp3
+  voiceover_<style>.manifest.json
   output/
     rough_cut/rough_cut.mp4
     rough_cut/rough_cut.json
@@ -319,6 +327,8 @@ Configured in `pyproject.toml`:
 - `transcribe = app.tools.transcribe_audio:main`
 - `build-story-prompt = app.tools.build_story_prompt:main`
 - `prepare-voice-reference = app.tools.prepare_voice_reference:main`
+- `generate-script-audio = app.tools.generate_script_audio:main`
+- `generate-audio-subtitles = app.tools.generate_audio_subtitles:main`
 
 New entry points (`select-shots`, `assemble-rough-cut`, `write-narration`, `generate-audio`, `fit-visuals`, `render-video`) will be added as those modules land.
 

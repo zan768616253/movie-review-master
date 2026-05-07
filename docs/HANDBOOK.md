@@ -349,8 +349,8 @@ movies/<title>/
   synopsis.md                              # optional plot/cast context
   selected_shots.json
   narration.json
-  voiceover_<style>_voiceclone.mp3
-  voiceover_<style>_voiceclone.manifest.json
+  voiceover_<style>.mp3
+  voiceover_<style>.manifest.json
   output/
     rough_cut/
     fitted/

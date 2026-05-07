@@ -47,6 +47,7 @@ transcribe = "app.tools.transcribe_audio:main"
 build-story-prompt = "app.tools.build_story_prompt:main"
 prepare-voice-reference = "app.tools.prepare_voice_reference:main"
 generate-script-audio = "app.tools.generate_script_audio:main"
+generate-audio-subtitles = "app.tools.generate_audio_subtitles:main"
 
 [tool.pytest.ini_options]
 minversion = "7.0"
