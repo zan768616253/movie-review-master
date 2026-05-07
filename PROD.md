@@ -65,8 +65,8 @@ movies/<title>/
     rough_cut/                # selected-shot concatenation, beat-segmented
     fitted/                   # per-beat videos trimmed to TTS duration
     keyframes/                # fallback stills
-  voiceover_<style>_voiceclone.mp3
-  voiceover_<style>_voiceclone.manifest.json
+  voiceover_<style>.mp3
+  voiceover_<style>.manifest.json
   selected_shots.json
   narration.json
 ```

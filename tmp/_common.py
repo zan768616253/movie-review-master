@@ -175,11 +175,9 @@ def build_paths(config: dict) -> Paths:
     stage8_dir = work_dir / "stage8"
     stage9_dir = work_dir / "stage9"
 
-    # Voiceover filename follows the legacy convention so the surviving
-    # subtitle-alignment module finds it without changes:
-    #   voiceover_<style-stem>_voiceclone.{mp3,manifest.json}
+    #   voiceover_<style-stem>.{mp3,manifest.json}
     tag = style.stem
-    voiceover_basename = f"voiceover_{tag}_voiceclone"
+    voiceover_basename = f"voiceover_{tag}"
     voice_reference_dir = style.parent / "voice-assets" / style.stem / "reference"
 
     return Paths(
