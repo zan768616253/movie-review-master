@@ -243,7 +243,7 @@ def _extract_golden_paragraph(genre_text: str, max_lines: int = 20) -> str | Non
 def build_prompt(
     *,
     style_text: str,
-    timeline_text: str,
+    timeline_text: str | None = None,
     digest_text: str | None = None,
     movie_title: str = "",
     synopsis_text: str | None = None,
@@ -420,7 +420,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         synopsis_text = _read_text(synopsis_path) if synopsis_path is not None else None
 
         # --- Digest mode (two-pass workflow) ---
-        timeline_text: str
+        timeline_text: str | None = None
         digest_text: str | None = None
         visual_segments: list[dict[str, object]] = []
         subtitles: list[dict[str, object]] = []

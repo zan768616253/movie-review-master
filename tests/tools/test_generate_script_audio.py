@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import importlib.util
 import tempfile
+import numpy as np
 
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.tools.generate_script_audio import parse_script_chunks
+from app.tools.generate_script_audio import (
+    Chunk,
+    build_voice_prompt,
+    generate_chunks,
+    parse_script_chunks,
+    split_text_for_tts,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -155,6 +162,7 @@ def test_harness_passes_voice_overrides_to_tool(monkeypatch) -> None:
                     "ref_audio": str(ref_audio),
                     "ref_text": str(ref_text),
                     "tag": "demo-voice",
+                    "max_chars_per_request": 180,
                 }
             },
         }
@@ -183,3 +191,124 @@ def test_harness_passes_voice_overrides_to_tool(monkeypatch) -> None:
     assert str(ref_text.resolve()) in captured_args
     assert "--tag" in captured_args
     assert "demo-voice" in captured_args
+    assert "--max-chars-per-request" in captured_args
+    assert "180" in captured_args
+
+
+def test_build_voice_prompt_uses_icl_transcript(tmp_path: Path) -> None:
+    ref_audio = tmp_path / "ref.mp3"
+    ref_audio.write_bytes(b"audio")
+    ref_text = tmp_path / "ref.txt"
+    ref_text.write_text("你好世界\n", encoding="utf-8")
+
+    class FakeModel:
+        def __init__(self) -> None:
+            self.kwargs = None
+
+        def create_voice_clone_prompt(self, **kwargs):
+            self.kwargs = kwargs
+            return object()
+
+    model = FakeModel()
+
+    build_voice_prompt(
+        model,
+        ref_audio,
+        ref_text,
+    )
+
+    assert model.kwargs == {
+        "ref_audio": str(ref_audio),
+        "ref_text": "你好世界",
+    }
+
+
+def test_split_text_for_tts_keeps_requests_within_limit() -> None:
+    text = "\n".join(
+        [
+            "第一句比较短。",
+            "第二句也比较短。",
+            "第三句稍微长一点但是还在可控范围内。",
+            "第四句继续往下说，方便测试换段。",
+        ]
+    )
+
+    requests = split_text_for_tts(text, max_chars_per_request=20)
+
+    assert requests == [
+        "第一句比较短。\n第二句也比较短。",
+        "第三句稍微长一点但是还在可控范围内。",
+        "第四句继续往下说，方便测试换段。",
+    ]
+    assert all(len(request) <= 20 for request in requests)
+
+
+def test_generate_chunks_splits_long_chunk_but_keeps_manifest_granularity() -> None:
+    chunk = Chunk(
+        index=1,
+        section="ACT 2",
+        text="\n".join(
+            [
+                "甲" * 40 + "。",
+                "乙" * 40 + "。",
+                "丙" * 40 + "。",
+            ]
+        ),
+    )
+
+    class FakeModel:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def generate_voice_clone(self, **kwargs):
+            self.calls.append(kwargs)
+            return [np.ones(24, dtype=np.float32)], 12
+
+    model = FakeModel()
+    wavs, sample_rate = generate_chunks(
+        model,
+        [chunk],
+        voice_prompt=object(),
+        max_chars_per_request=90,
+    )
+
+    assert len(wavs) == 1
+    assert sample_rate == 12
+    assert len(model.calls) == 2
+    assert all(len(str(call["text"])) <= 90 for call in model.calls)
+    assert len(wavs[0]) == 48
+
+
+def test_generate_chunks_retries_with_smaller_requests_when_model_hits_cap() -> None:
+    chunk = Chunk(
+        index=1,
+        section="ACT 3",
+        text=("甲" * 45 + "。\n" + "乙" * 45 + "。"),
+    )
+
+    class FakeModel:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def generate_voice_clone(self, **kwargs):
+            self.calls.append(kwargs)
+            text = str(kwargs["text"])
+            max_new_tokens = int(kwargs["max_new_tokens"])
+            if len(text) > 80:
+                return [np.ones(max_new_tokens, dtype=np.float32)], 12
+            return [np.ones(120, dtype=np.float32)], 12
+
+    model = FakeModel()
+    wavs, sample_rate = generate_chunks(
+        model,
+        [chunk],
+        voice_prompt=object(),
+        max_chars_per_request=120,
+    )
+
+    assert len(wavs) == 1
+    assert sample_rate == 12
+    assert len(model.calls) == 3
+    assert len(str(model.calls[0]["text"])) > 80
+    assert all(len(str(call["text"])) <= 80 for call in model.calls[1:])
+    assert len(wavs[0]) == 240
