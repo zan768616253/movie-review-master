@@ -14,7 +14,7 @@ import re
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -35,7 +35,17 @@ DEFAULT_STYLE_PATH = STYLES_DIR / "niu-shu.md"
 REFERENCE_AUDIO_FILENAME = "clone_reference.mp3"
 REFERENCE_TEXT_FILENAME = "clone_reference.txt"
 
+DEFAULT_MAX_CHARS_PER_REQUEST = 120
+DEFAULT_TEMPERATURE = 0.7
+DEFAULT_TOP_P = 0.8
+DEFAULT_TOP_K = 40
+DEFAULT_REPETITION_PENALTY = 1.1
+DEFAULT_MAX_NEW_TOKENS = 1024
+
 STRUCTURAL_MARKER_RE = re.compile(r"^\[(?P<label>TITLE|HOOK|CLOSING|ACT[^\]]*)\]$")
+ANCHOR_LINE_RE = re.compile(r"^\[ANCHOR\s+(?P<body>.*)\]$")
+ANCHOR_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
+SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？；])")
 
 
 @dataclass
@@ -45,6 +55,8 @@ class Chunk:
     index: int
     section: str
     text: str
+    ranges: list[tuple[str, str]] = field(default_factory=list)
+    characters: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -92,29 +104,58 @@ def parse_structural_marker(line: str) -> Optional[str]:
     return match.group("label").strip()
 
 
+def parse_anchor_line(body: str) -> tuple[list[tuple[str, str]], list[str]]:
+    attrs = dict(ANCHOR_ATTR_RE.findall(body))
+    ranges: list[tuple[str, str]] = []
+    raw_ranges = attrs.get("ranges", "").strip()
+    if raw_ranges:
+        for piece in raw_ranges.split(","):
+            piece = piece.strip()
+            if not piece:
+                continue
+            start, _, end = piece.partition("-")
+            if end:
+                ranges.append((start.strip(), end.strip()))
+    raw_characters = attrs.get("characters", "").strip()
+    characters = (
+        [c.strip() for c in raw_characters.split(",") if c.strip()]
+        if raw_characters
+        else []
+    )
+    return ranges, characters
+
+
 def parse_script_chunks(script_text: str) -> list[Chunk]:
     """Split a script into spoken chunks.
 
-    Each structural block after `[HOOK]` becomes one chunk.
+    Each structural block after `[HOOK]` becomes one chunk. `[ANCHOR ...]`
+    lines attach range / character metadata to the surrounding section
+    without contributing to the spoken text.
     """
     lines = [raw.strip() for raw in script_text.splitlines()]
 
     chunks: list[Chunk] = []
     current_section: Optional[str] = None
     pending_lines: list[str] = []
+    pending_ranges: list[tuple[str, str]] = []
+    pending_characters: list[str] = []
     in_script = False
 
     def flush() -> None:
-        nonlocal pending_lines
+        nonlocal pending_lines, pending_ranges, pending_characters
         if pending_lines:
             chunks.append(
                 Chunk(
                     index=len(chunks) + 1,
                     section=current_section or "SCRIPT",
                     text="\n".join(pending_lines),
+                    ranges=pending_ranges,
+                    characters=pending_characters,
                 )
             )
         pending_lines = []
+        pending_ranges = []
+        pending_characters = []
 
     for line in lines:
         if not line:
@@ -138,10 +179,94 @@ def parse_script_chunks(script_text: str) -> list[Chunk]:
             current_section = marker
             continue
 
+        anchor_match = ANCHOR_LINE_RE.match(line)
+        if anchor_match is not None:
+            anchor_ranges, anchor_characters = parse_anchor_line(anchor_match.group("body"))
+            pending_ranges.extend(anchor_ranges)
+            if anchor_characters:
+                pending_characters = anchor_characters
+            continue
+
         pending_lines.append(line)
 
     flush()
     return chunks
+
+
+def _force_split_oversize(unit: str, max_chars: int) -> list[str]:
+    """Best-effort split for a single sentence that exceeds max_chars.
+
+    Tries the Chinese comma first, then falls back to a hard char-count slice.
+    """
+    if len(unit) <= max_chars:
+        return [unit]
+    parts = [p.strip() for p in unit.split("，") if p.strip()]
+    if len(parts) > 1:
+        out: list[str] = []
+        current = ""
+        for part in parts:
+            piece = part if part.endswith("，") else part + "，"
+            candidate = piece if not current else current + piece
+            if len(candidate) <= max_chars:
+                current = candidate
+            else:
+                if current:
+                    out.append(current.rstrip("，"))
+                if len(piece) <= max_chars:
+                    current = piece
+                else:
+                    out.extend(
+                        piece[i : i + max_chars] for i in range(0, len(piece), max_chars)
+                    )
+                    current = ""
+        if current:
+            out.append(current.rstrip("，"))
+        return out
+    return [unit[i : i + max_chars] for i in range(0, len(unit), max_chars)]
+
+
+def split_text_for_tts(text: str, max_chars_per_request: int) -> list[str]:
+    """Split narration text into TTS requests of at most `max_chars_per_request` chars.
+
+    Splits on Chinese sentence punctuation and newlines so each request ends on a
+    natural boundary, then greedily packs sentences (joined by newlines) up to the
+    cap. Sentences that exceed the cap on their own are sub-split on commas and,
+    as a last resort, by character count.
+    """
+    if max_chars_per_request <= 0:
+        raise ValueError("max_chars_per_request must be positive")
+
+    units: list[str] = []
+    for paragraph in text.split("\n"):
+        paragraph = paragraph.strip()
+        if not paragraph:
+            continue
+        for piece in SENTENCE_SPLIT_RE.split(paragraph):
+            piece = piece.strip()
+            if piece:
+                units.append(piece)
+
+    requests: list[str] = []
+    current = ""
+    for unit in units:
+        if not current:
+            current = unit
+            continue
+        if len(current) + 1 + len(unit) <= max_chars_per_request:
+            current = current + "\n" + unit
+        else:
+            requests.append(current)
+            current = unit
+    if current:
+        requests.append(current)
+
+    final: list[str] = []
+    for request in requests:
+        if len(request) <= max_chars_per_request:
+            final.append(request)
+        else:
+            final.extend(_force_split_oversize(request, max_chars_per_request))
+    return final
 
 
 def validate_script_input(script_path: Path, script_text: str, chunks: list[Chunk]) -> None:
@@ -204,36 +329,99 @@ def generate_chunks(
     model,
     chunks: list[Chunk],
     voice_prompt: object,
+    *,
+    max_chars_per_request: int = DEFAULT_MAX_CHARS_PER_REQUEST,
+    temperature: float = DEFAULT_TEMPERATURE,
+    top_p: float = DEFAULT_TOP_P,
+    top_k: int = DEFAULT_TOP_K,
+    repetition_penalty: float = DEFAULT_REPETITION_PENALTY,
+    max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
 ) -> tuple[list[np.ndarray], int]:
-    import torch
+    """Generate one wav per chunk, sub-chunking each into TTS-sized pieces.
+
+    Each chunk is split via `split_text_for_tts` and synthesised piece-by-piece,
+    then concatenated so manifest/SRT timing stays per-section. If the model
+    truncates at `max_new_tokens` (cap-hit heuristic), char and token limits are
+    halved and the remaining pieces are re-split before retrying.
+    """
+    try:
+        import torch  # type: ignore
+
+        cuda_available = torch.cuda.is_available()
+    except Exception:
+        torch = None  # type: ignore
+        cuda_available = False
 
     wavs: list[np.ndarray] = []
     sample_rate: Optional[int] = None
     total = len(chunks)
 
     for chunk in chunks:
-        t0 = time.time()
-        out_wavs, out_sr = model.generate_voice_clone(
-            text=chunk.text,
-            voice_clone_prompt=voice_prompt,
-            language="chinese",
-        )
-        if not out_wavs:
-            raise RuntimeError(f"TTS returned no audio for chunk {chunk.index}")
+        char_limit = max_chars_per_request
+        token_limit = max_new_tokens
+        pending = split_text_for_tts(chunk.text, char_limit)
+        chunk_wavs: list[np.ndarray] = []
+        i = 0
+        piece_seq = 0
+        retries = 0
+        max_retries = 4
 
-        wav = np.asarray(out_wavs[0], dtype=np.float32)
-        wavs.append(wav)
-        sample_rate = out_sr
-        audio_s = len(wav) / out_sr
-        location = chunk.section
-        print(
-            f"[gen  {chunk.index:>3}/{total}] "
-            f"{location:>16} "
-            f"{len(chunk.text):>3}ch "
-            f"-> {audio_s:5.1f}s audio in {time.time() - t0:5.1f}s"
-        )
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        while i < len(pending):
+            piece = pending[i]
+            piece_seq += 1
+            t0 = time.time()
+            out_wavs, out_sr = model.generate_voice_clone(
+                text=piece,
+                voice_clone_prompt=voice_prompt,
+                language="chinese",
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                repetition_penalty=repetition_penalty,
+                max_new_tokens=token_limit,
+            )
+            if not out_wavs:
+                raise RuntimeError(f"TTS returned no audio for chunk {chunk.index}")
+
+            wav = np.asarray(out_wavs[0], dtype=np.float32)
+            sample_rate = out_sr
+
+            if len(wav) == token_limit and retries < max_retries:
+                retries += 1
+                new_char_limit = max(char_limit // 2, 20)
+                new_token_limit = max(token_limit // 2, 256)
+                if new_char_limit == char_limit and new_token_limit == token_limit:
+                    chunk_wavs.append(wav)
+                    i += 1
+                    continue
+                remaining = "\n".join(pending[i:])
+                pending = pending[:i] + split_text_for_tts(remaining, new_char_limit)
+                print(
+                    f"[gen  {chunk.index:>3}/{total} piece {piece_seq:>2}] "
+                    f"{chunk.section:>16} cap hit "
+                    f"({len(piece)}ch, max_new_tokens={token_limit}) -> "
+                    f"halving to {new_char_limit}ch / {new_token_limit} tokens"
+                )
+                char_limit = new_char_limit
+                token_limit = new_token_limit
+                continue
+
+            chunk_wavs.append(wav)
+            audio_s = len(wav) / out_sr
+            print(
+                f"[gen  {chunk.index:>3}/{total} piece {piece_seq:>2}/{len(pending)}] "
+                f"{chunk.section:>16} "
+                f"{len(piece):>3}ch "
+                f"-> {audio_s:5.1f}s audio in {time.time() - t0:5.1f}s"
+            )
+            i += 1
+
+            if cuda_available and torch is not None:
+                torch.cuda.empty_cache()
+
+        if not chunk_wavs:
+            raise RuntimeError(f"No audio produced for chunk {chunk.index}")
+        wavs.append(np.concatenate(chunk_wavs))
 
     assert sample_rate is not None
     return wavs, sample_rate
@@ -300,8 +488,8 @@ def write_manifest(
         {
             "index": chunk.index,
             "section": chunk.section,
-            "ranges": [],
-            "characters": [],
+            "ranges": [list(r) for r in chunk.ranges],
+            "characters": list(chunk.characters),
             "text": chunk.text,
             "audio_start_s": start_s,
             "audio_end_s": end_s,
@@ -358,9 +546,25 @@ def run_full_generation(
     manifest_path: Path,
     subtitle_path: Path,
     *,
+    max_chars_per_request: int = DEFAULT_MAX_CHARS_PER_REQUEST,
+    temperature: float = DEFAULT_TEMPERATURE,
+    top_p: float = DEFAULT_TOP_P,
+    top_k: int = DEFAULT_TOP_K,
+    repetition_penalty: float = DEFAULT_REPETITION_PENALTY,
+    max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
     run_cmd=subprocess.run,
 ) -> None:
-    wavs, sample_rate = generate_chunks(model, chunks, voice_prompt)
+    wavs, sample_rate = generate_chunks(
+        model,
+        chunks,
+        voice_prompt,
+        max_chars_per_request=max_chars_per_request,
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
+        repetition_penalty=repetition_penalty,
+        max_new_tokens=max_new_tokens,
+    )
     audio_ranges = concat_and_normalize(wavs, sample_rate, mp3_path, run_cmd=run_cmd)
     write_manifest(chunks, audio_ranges, manifest_path)
     write_subtitles(chunks, audio_ranges, subtitle_path)
@@ -403,6 +607,42 @@ def build_parser() -> argparse.ArgumentParser:
         "--tag",
         default=None,
         help="Optional filename tag. Defaults to the style filename stem.",
+    )
+    parser.add_argument(
+        "--max-chars-per-request",
+        type=int,
+        default=DEFAULT_MAX_CHARS_PER_REQUEST,
+        help="Max characters per TTS request. Long sections are split on Chinese sentence punctuation.",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=DEFAULT_TEMPERATURE,
+        help="Sampling temperature. Lower = sharper distribution, less drift toward laugh/breath tokens.",
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=DEFAULT_TOP_P,
+        help="Nucleus sampling threshold. Lower truncates the codec-vocab tail (where laughs/sighs live).",
+    )
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=DEFAULT_TOP_K,
+        help="Hard cap on candidate tokens per sampling step.",
+    )
+    parser.add_argument(
+        "--repetition-penalty",
+        type=float,
+        default=DEFAULT_REPETITION_PENALTY,
+        help="Penalty applied to recently sampled tokens to avoid getting stuck on non-speech loops.",
+    )
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=DEFAULT_MAX_NEW_TOKENS,
+        help="Hard cap on codec frames per request. Cap-hit triggers a halve-and-retry.",
     )
     return parser
 
@@ -482,6 +722,12 @@ def main(
             mp3_path,
             manifest_path,
             subtitle_path,
+            max_chars_per_request=args.max_chars_per_request,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            top_k=args.top_k,
+            repetition_penalty=args.repetition_penalty,
+            max_new_tokens=args.max_new_tokens,
             run_cmd=run_cmd,
         )
         print(f"[done] wall time {(time.time() - total_t0) / 60:.1f} min")
