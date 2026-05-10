@@ -35,6 +35,12 @@ def run() -> int:
     ref_audio = get_optional_tool_path(cfg, "generate_script_audio", "ref_audio")
     ref_text = get_optional_tool_path(cfg, "generate_script_audio", "ref_text")
     tag = get_tool_value(cfg, "generate_script_audio", "tag")
+    max_chars_per_request = get_tool_value(cfg, "generate_script_audio", "max_chars_per_request")
+    temperature = get_tool_value(cfg, "generate_script_audio", "temperature")
+    top_p = get_tool_value(cfg, "generate_script_audio", "top_p")
+    top_k = get_tool_value(cfg, "generate_script_audio", "top_k")
+    repetition_penalty = get_tool_value(cfg, "generate_script_audio", "repetition_penalty")
+    max_new_tokens = get_tool_value(cfg, "generate_script_audio", "max_new_tokens")
 
     if not script_path.is_file():
         return fail(f"script not found: {script_path}")
@@ -62,6 +68,18 @@ def run() -> int:
         args.extend(["--ref-text", str(ref_text)])
     if tag:
         args.extend(["--tag", str(tag)])
+    if max_chars_per_request is not None:
+        args.extend(["--max-chars-per-request", str(max_chars_per_request)])
+    if temperature is not None:
+        args.extend(["--temperature", str(temperature)])
+    if top_p is not None:
+        args.extend(["--top-p", str(top_p)])
+    if top_k is not None:
+        args.extend(["--top-k", str(top_k)])
+    if repetition_penalty is not None:
+        args.extend(["--repetition-penalty", str(repetition_penalty)])
+    if max_new_tokens is not None:
+        args.extend(["--max-new-tokens", str(max_new_tokens)])
     return generate_script_audio_main(args)
 
 
