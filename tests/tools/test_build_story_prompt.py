@@ -107,13 +107,9 @@ def test_main_writes_prompt_file(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    subtitles_json_path = tmp_path / "subtitles.json"
-    subtitles_json_path.write_text(
-        json.dumps(
-            [{"start": 1.0, "end": 2.0, "text": "门后有人", "speaker": None, "style": None}],
-            ensure_ascii=False,
-            indent=2,
-        ),
+    subtitles_txt_path = tmp_path / "subtitles.txt"
+    subtitles_txt_path.write_text(
+        "[00:00:01.000 -> 00:00:02.000] 门后有人\n",
         encoding="utf-8",
     )
 
@@ -127,8 +123,8 @@ def test_main_writes_prompt_file(tmp_path: Path) -> None:
             str(style_path),
             "--visual-segments",
             str(visual_segments_path),
-            "--subtitles-json",
-            str(subtitles_json_path),
+            "--subtitles-txt",
+            str(subtitles_txt_path),
             "--synopsis",
             str(synopsis_path),
             "--movie-title",

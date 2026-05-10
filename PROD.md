@@ -2,9 +2,9 @@
 
 `PROD.md` is the root project document. It defines the product scope and points to the small set of remaining source-of-truth docs:
 
-- [docs/HANDBOOK.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/HANDBOOK.md) for stable knowledge, design, and pipeline rules
-- [plan.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/plan.md) for current progress and next work
-- [docs/TECHNICAL.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/TECHNICAL.md) for coding-facing contracts and implementation reference
+- [docs/HANDBOOK.md](docs/HANDBOOK.md) for stable knowledge, design, and pipeline rules
+- [plan.md](plan.md) for current progress and next work
+- [docs/TECHNICAL.md](docs/TECHNICAL.md) for coding-facing contracts and implementation reference
 
 ## 1. Product Goal
 

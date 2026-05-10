@@ -9,9 +9,9 @@ This document is the code-facing reference for repository structure, entry point
 
 ## 1. Source-of-Truth Split
 
-- product scope: [PROD.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/PROD.md)
-- stable design knowledge: [docs/HANDBOOK.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/HANDBOOK.md)
-- current status and next tasks: [plan.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/plan.md)
+- product scope: [PROD.md](../PROD.md)
+- stable design knowledge: [docs/HANDBOOK.md](HANDBOOK.md)
+- current status and next tasks: [plan.md](../plan.md)
 - implementation details: this file
 
 ## 2. Repository Map (post-cleanup)
@@ -47,9 +47,11 @@ movie-review-master/
         video_encoder.py             # NVENC/libx264 selector
     tools/
       __init__.py
+      build_story_prompt.py
+      generate_script_audio.py
+      prepare_voice_reference.py
       transcribe_audio.py
       voice_analysis.py
-      prepare_voice_reference.py
   styles/
     niu-shu.md
     first-person-pov.md
@@ -65,6 +67,8 @@ movie-review-master/
       test_stage4_align_subtitles.py
       test_stage7_finalize_video.py
     tools/
+      test_build_story_prompt.py
+      test_generate_script_audio.py
       test_prepare_voice_reference.py
       test_transcribe_audio.py
       test_video_encoder.py
@@ -86,7 +90,7 @@ Canonical Python command rule:
 - every Python command must be prefixed with `conda run -n py312_machine_learning --no-capture-output`
 - dependency updates go through `pyproject.toml`, then `pip install -e .`
 
-Reference: [docs/agent-rules/python-environment.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/agent-rules/python-environment.md)
+Reference: [docs/agent-rules/python-environment.md](agent-rules/python-environment.md)
 
 ## 4. Current Script Inventory
 
@@ -167,10 +171,6 @@ Build a copy-paste prompt for external LLMs to draft a full movie-retelling scri
 ### `app/tools/generate_script_audio.py`
 
 Generate a voice-cloned narration MP3 plus a chunk manifest from the final manual script text. Entry point: `generate-script-audio`. Test-covered.
-
-### `app/tools/generate_audio_subtitles.py`
-
-Generate subtitle files for the narration audio from the final script text and generated audio. The tool prefers the sibling audio manifest for exact chunk timing and falls back to proportional timing when no manifest is available. Entry point: `generate-audio-subtitles`. Test-covered.
 
 ### `app/tools/voice_analysis.py`
 
@@ -328,9 +328,14 @@ Configured in `pyproject.toml`:
 - `build-story-prompt = app.tools.build_story_prompt:main`
 - `prepare-voice-reference = app.tools.prepare_voice_reference:main`
 - `generate-script-audio = app.tools.generate_script_audio:main`
-- `generate-audio-subtitles = app.tools.generate_audio_subtitles:main`
+- `select-shots = app.pipeline.stage2_select_shots:main`
+- `assemble-rough-cut = app.pipeline.stage3_assemble_rough_cut:main`
+- `write-narration = app.pipeline.stage4_write_narration:main`
+- `generate-audio = app.pipeline.stage5_generate_audio:main`
+- `fit-visuals = app.pipeline.stage6_fit_visuals:main`
+- `render-video = app.pipeline.stage8_render_video:main`
 
-New entry points (`select-shots`, `assemble-rough-cut`, `write-narration`, `generate-audio`, `fit-visuals`, `render-video`) will be added as those modules land.
+The new pipeline entry points above are configured already, but the corresponding stages are still skeletons unless noted otherwise in §4.
 
 ## 8. Testing Baseline
 
@@ -344,13 +349,13 @@ Automated coverage exists for:
 - finalize/mux
 - video-encoder selection
 
-Pre-cleanup baseline: `140 passed, 1 skipped`. Post-cleanup: `70 passed, 3 failed`. The 3 failures are pre-existing assertions about Stage 0 chunk duration (changed in commit `d3bb445` from 6 to 7 minutes); the test file was not updated. They are unrelated to the pipeline architecture change and tracked in `plan.md`.
+Run the test suite from the repo root with `conda run -n py312_machine_learning --no-capture-output pytest -q`.
 
 ## 9. Known Technical Gaps
 
 The repo needs dedicated engineering work in these areas:
 
-1. **Stages 2–6 and 8 are not implemented.** Module sketches in §5 above; full status in `plan.md`.
+1. **Stages 2–6 and 8 exist as skeleton entry points, not working implementations.** Module sketches in §5 above; full status in `plan.md`.
 2. **Stage 5 TTS engine** is recoverable from git history but needs to be re-fitted to the new beat-indexed input.
 3. **Stage 0 chunk-duration test failures** need a one-line update to match the 7-minute production value.
 4. **Stage 4 / Stage 7 will be renamed** to `stage7_align_subtitles` and `stage9_finalize_video` once the surrounding new stages exist.

@@ -24,7 +24,6 @@ tmp/
   _common.py                      # config loader, paths, helpers
   tools/
     build_story_prompt.py         # harness for app/tools/build_story_prompt.py
-    generate_audio_subtitles.py   # harness for app/tools/generate_audio_subtitles.py
     generate_script_audio.py      # harness for app/tools/generate_script_audio.py
     prepare_voice_reference.py    # harness for app/tools/prepare_voice_reference.py
     transcribe_audio.py           # harness for app/tools/transcribe_audio.py
@@ -112,11 +111,6 @@ Optional tool-specific settings live in `tmp/configs/current_movie.toml` under
 - `generate_script_audio` defaults to `tmp/work/<movie_slug>/tools/scripts.txt`
   for the script and `tmp/work/<movie_slug>/tools/` for outputs. Override
   `script`, `out_dir`, `ref_audio`, `ref_text`, or `tag` if needed.
-- `generate_audio_subtitles` defaults to the same script and output tag as
-  `generate_script_audio`, writes `voiceover_<tag>.srt` by default,
-  and auto-uses the sibling `.manifest.json` when present. Override `script`,
-  `audio`, `manifest`, `out`, `format`, `audio_dir`, `tag`, or
-  `max_chars_per_cue` if needed.
 - `prepare_voice_reference` requires `[tools.prepare_voice_reference].source_audio`
   because the source clip cannot be inferred from the movie config alone.
   `transcript`, `start`, and `end` are optional.

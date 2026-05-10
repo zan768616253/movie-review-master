@@ -24,14 +24,21 @@ def test_stage0_gemini_integration(tmp_path):
     """
     if not FIXTURE_VIDEO.exists():
         pytest.skip(f"Fixture video {FIXTURE_VIDEO} not found.")
-        
+
     output_path = tmp_path / "gemini_segments.json"
+    synopsis_path = tmp_path / "synopsis.md"
+    synopsis_path.write_text("# Cast Reference\nDemo cast list.\n", encoding="utf-8")
+    characters_dir = tmp_path / "characters"
+    characters_dir.mkdir()
+    (characters_dir / "demo.txt").write_text("placeholder", encoding="utf-8")
 
     args = [
         "index-visuals",
         "--video", str(FIXTURE_VIDEO),
         "--output", str(output_path),
         "--tmp-dir", str(tmp_path / "tmp"),
+        "--synopsis", str(synopsis_path),
+        "--characters-dir", str(characters_dir),
     ]
 
     with patch.object(sys, "argv", args):

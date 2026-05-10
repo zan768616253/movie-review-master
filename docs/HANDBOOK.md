@@ -4,7 +4,7 @@
 > May 2026 after structural audio/video sync problems proved to be a
 > consequence of the architecture rather than implementation bugs. The
 > project is now mid-rebuild as a **video-driven** pipeline. See
-> [`plan.md`](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/plan.md)
+> [`plan.md`](../plan.md)
 > for current implementation status; sections below describe the new
 > target architecture.
 
@@ -14,13 +14,13 @@ This handbook is the central source of truth for stable project knowledge: conce
 
 Use each document for one job only:
 
-- [PROD.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/PROD.md): product scope, success criteria, boundaries
-- [docs/HANDBOOK.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/HANDBOOK.md): durable knowledge and system design
-- [plan.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/plan.md): current status, priorities, next work
-- [docs/TECHNICAL.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/TECHNICAL.md): code-facing architecture, contracts, pipeline, tools, tests
+- [PROD.md](../PROD.md): product scope, success criteria, boundaries
+- [docs/HANDBOOK.md](HANDBOOK.md): durable knowledge and system design
+- [plan.md](../plan.md): current status, priorities, next work
+- [docs/TECHNICAL.md](TECHNICAL.md): code-facing architecture, contracts, pipeline, tools, tests
 - `styles/*.md`: style-specific writing rulebooks
-- [docs/style-c-xiaodao-research.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/style-c-xiaodao-research.md): supporting research for the unfinished Style C
-- [docs/agent-rules/python-environment.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/agent-rules/python-environment.md): Python execution rule
+- Style C research materials under `styles/voice-assets/xiao-dao/analysis/`
+- [docs/agent-rules/python-environment.md](agent-rules/python-environment.md): Python execution rule
 
 ## 2. System Goal
 
@@ -273,7 +273,7 @@ The project is built around style-specific narration rulebooks.
 - archetype nicknames instead of original names
 - best for high-energy or high-plot-density reviews
 
-Source of truth: [styles/niu-shu.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/styles/niu-shu.md)
+Source of truth: [styles/niu-shu.md](../styles/niu-shu.md)
 
 ### Style B: First-Person Protagonist POV
 
@@ -281,7 +281,7 @@ Source of truth: [styles/niu-shu.md](/home/ericw/Project/Learn/AI/agent-skills/m
 - emotional, intimate, subjective narration
 - original names are preserved
 
-Source of truth: [styles/first-person-pov.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/styles/first-person-pov.md)
+Source of truth: [styles/first-person-pov.md](../styles/first-person-pov.md)
 
 ### Style C: Xiaodao
 
@@ -289,7 +289,7 @@ Source of truth: [styles/first-person-pov.md](/home/ericw/Project/Learn/AI/agent
 - reflective, emotional, meaning-driven framing
 - intended for classics, dramas, and high-emotion stories
 
-Current research reference: [docs/style-c-xiaodao-research.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/style-c-xiaodao-research.md)
+Current research materials live under `styles/voice-assets/xiao-dao/analysis/`.
 
 ## 9. Technology Decisions
 
@@ -388,7 +388,7 @@ Naming rules:
 Python execution and dependency management are standardized:
 
 - use the `py312_machine_learning` conda environment
-- follow [docs/agent-rules/python-environment.md](/home/ericw/Project/Learn/AI/agent-skills/movie-review-master/docs/agent-rules/python-environment.md) as the canonical command rule
+- follow [docs/agent-rules/python-environment.md](agent-rules/python-environment.md) as the canonical command rule
 - treat `pyproject.toml` as the dependency source of truth
 
 ## 12. Design Principles
