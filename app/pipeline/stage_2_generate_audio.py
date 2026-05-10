@@ -1,10 +1,8 @@
-"""Generate a voice-cloned MP3 + manifest from a manual script file.
+"""Stage 2: generate a voice-cloned MP3 + SRT + manifest from the manual script.
 
-Supports both:
-
-- plain sectioned scripts like `tmp/work/<movie>/tools/scripts.txt`
-
-Each structural block (`[HOOK]`, `[ACT ...]`, `[CLOSING]`) becomes one chunk.
+Reads a sectioned script (`[HOOK]`, `[ACT ...]`, `[CLOSING]`) such as
+``workbench/work/<movie>/stage1/script.txt``. Each structural block becomes
+one TTS chunk; outputs land in ``workbench/work/<movie>/stage2/``.
 """
 
 from __future__ import annotations

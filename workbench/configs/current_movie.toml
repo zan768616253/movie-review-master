@@ -10,19 +10,12 @@ subtitle_file = "杀破狼2.ass"
 style_path    = "styles/niu-shu.md"
 genre         = "Action"
 
-# Target final-review length in seconds.
+# Soft hint for prompt builders. Final review length in seconds.
 target_seconds = 720.0
 
-# Optional tool harness settings used by tmp/tools/*.py.
-# Most tool paths are derived automatically from [common]. Uncomment only the
-# overrides you actually need.
-
-[tools.build_story_prompt]
-out = "tmp/work/sha_po_lang_2/tools/story_prompt.txt"
-
-# Voice-clone TTS sampling settings live with the style in
-# styles/voice-assets/<style>/voice_clone.toml so all movies that use the same
-# style get the same voice. Override here only for one-off per-movie tuning.
+# Optional per-movie overrides. Voice-clone TTS sampling defaults live with
+# the style at styles/voice-assets/<style>/voice_clone.toml. Override here
+# only for one-off per-movie tuning.
 
 # [tools.prepare_voice_reference]
 # source_audio = "movies/杀破狼2/reference_clip.wav"
@@ -38,26 +31,3 @@ out = "tmp/work/sha_po_lang_2/tools/story_prompt.txt"
 # audio = "styles/voice-assets/niu-shu/reference/clone_reference.mp3"
 # transcript = "styles/voice-assets/niu-shu/reference/clone_reference.txt"
 # out = "styles/voice-assets/niu-shu/reference/clone_reference.analysis.json"
-
-
-
-# # Pipeline config for "Jujutsu Kaisen 0".
-# # Paths are relative to the repo root.
-
-# [common]
-# movie_slug    = "jujutsu_kaisen_0"
-# movie_dir     = "movies/呪術回戦0"
-# movie_title   = "呪術回戦0 (Jujutsu Kaisen 0)"
-# video_file    = "呪術回戦0.mkv"
-# subtitle_file = "呪術回戦0.srt"
-# style_path    = "styles/niu-shu.md"
-# genre         = "action"
-
-# # Roughly how long the final review should be, in seconds.
-# # Used as a hint in the Stage 2 writer prompt.
-# target_seconds = 1200.0
-
-# [stage3]
-# # Optional override for the stage3 output filename tag.
-# # Leave commented out to default to the style filename stem.
-# # tag = "jujutsu12min"

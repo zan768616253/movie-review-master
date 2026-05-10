@@ -6,16 +6,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.pipeline.stage0_index_visuals import _build_strategy, build_parser
-from app.pipeline.stage0_indexers.base import (
+from app.pipeline.stage_0_index_visuals import build_parser
+from app.pipeline.indexers.base import (
     seconds_to_timestamp,
     snap_to_shot_boundaries,
     timestamp_to_seconds,
     merge_segments,
 )
-from app.pipeline.stage0_indexers.shared import build_prompt
-from app.pipeline.stage0_indexers.gemini import GeminiStrategy
-from app.pipeline.stage0_indexers.openrouter import OpenRouterStrategy
+from app.pipeline.indexers.shared import build_prompt
+from app.pipeline.indexers.gemini import GeminiStrategy
 
 
 # ---------------------------------------------------------------------------
@@ -173,22 +172,10 @@ def _build_fake_gemini_client(response_text: str) -> MagicMock:
     return mock_client
 
 
-def _build_fake_openrouter_response(response_text: str) -> MagicMock:
-    mock_http_response = MagicMock()
-    mock_http_response.read.return_value = json.dumps({
-        "choices": [{"message": {"content": response_text}}],
-    }).encode("utf-8")
-
-    mock_context_manager = MagicMock()
-    mock_context_manager.__enter__.return_value = mock_http_response
-    mock_context_manager.__exit__.return_value = False
-    return mock_context_manager
-
-
 class TestGeminiStrategy:
-    @patch("app.pipeline.stage0_indexers.gemini.detect_shot_boundaries", return_value=[])
-    @patch("app.pipeline.stage0_indexers.gemini.genai")
-    @patch("app.pipeline.stage0_indexers.gemini.get_video_duration")
+    @patch("app.pipeline.indexers.gemini.detect_shot_boundaries", return_value=[])
+    @patch("app.pipeline.indexers.gemini.genai")
+    @patch("app.pipeline.indexers.gemini.get_video_duration")
     @patch.object(GeminiStrategy, "_extract_chunk")
     def test_index_video_splits_and_merges(
         self, mock_extract, mock_duration, mock_genai, mock_boundaries, tmp_path,
@@ -212,9 +199,9 @@ class TestGeminiStrategy:
         assert results[0]["start"] == "00:00:00.000"
         assert results[1]["start"] == "00:07:00.000"
 
-    @patch("app.pipeline.stage0_indexers.gemini.detect_shot_boundaries", return_value=[])
-    @patch("app.pipeline.stage0_indexers.gemini.genai")
-    @patch("app.pipeline.stage0_indexers.gemini.get_video_duration")
+    @patch("app.pipeline.indexers.gemini.detect_shot_boundaries", return_value=[])
+    @patch("app.pipeline.indexers.gemini.genai")
+    @patch("app.pipeline.indexers.gemini.get_video_duration")
     @patch.object(GeminiStrategy, "_extract_chunk")
     def test_prompt_contract_covers_timestamps_characters_and_dialogue_skip(
         self, mock_extract, mock_duration, mock_genai, mock_boundaries, tmp_path,
@@ -239,9 +226,9 @@ class TestGeminiStrategy:
         assert "visually re-identify" in prompt_text
         assert "NEVER guess" in prompt_text
 
-    @patch("app.pipeline.stage0_indexers.gemini.detect_shot_boundaries", return_value=[])
-    @patch("app.pipeline.stage0_indexers.gemini.genai")
-    @patch("app.pipeline.stage0_indexers.gemini.get_video_duration")
+    @patch("app.pipeline.indexers.gemini.detect_shot_boundaries", return_value=[])
+    @patch("app.pipeline.indexers.gemini.genai")
+    @patch("app.pipeline.indexers.gemini.get_video_duration")
     @patch.object(GeminiStrategy, "_extract_chunk")
     def test_index_video_persists_and_reuses_chunk_segments(
         self, mock_extract, mock_duration, mock_genai, mock_boundaries, tmp_path,
@@ -268,12 +255,12 @@ class TestGeminiStrategy:
 
         with patch.object(strategy, "_extract_chunk", side_effect=AssertionError("should not extract")), \
              patch.object(strategy, "_index_chunk", side_effect=AssertionError("should not reindex")), \
-             patch("app.pipeline.stage0_indexers.gemini.detect_shot_boundaries", side_effect=AssertionError("should not detect")):
+             patch("app.pipeline.indexers.gemini.detect_shot_boundaries", side_effect=AssertionError("should not detect")):
             second_results = strategy.index_video(tmp_path / "movie.mp4", tmp_idx_dir)
 
         assert second_results == first_results
 
-    @patch("app.pipeline.stage0_indexers.gemini.get_video_duration", return_value=600.0)
+    @patch("app.pipeline.indexers.gemini.get_video_duration", return_value=600.0)
     def test_index_video_parallel_preserves_chunk_order(self, mock_duration, tmp_path):
         tmp_idx_dir = tmp_path / "tmp"
         tmp_idx_dir.mkdir()
@@ -295,58 +282,6 @@ class TestGeminiStrategy:
 
         assert [segment["summary"] for segment in results] == ["chunk-0", "chunk-1"]
         assert results[1]["start"] == "00:07:00.000"
-
-
-class TestOpenRouterStrategy:
-    @patch.object(OpenRouterStrategy, "_detect_shot_boundaries", return_value=[])
-    @patch.object(OpenRouterStrategy, "_get_video_duration", return_value=240.0)
-    @patch.object(OpenRouterStrategy, "_extract_chunk")
-    @patch("app.pipeline.stage0_indexers.openrouter.urllib.request.urlopen")
-    def test_index_video_splits_and_merges(
-        self, mock_urlopen, mock_extract, mock_duration, mock_boundaries, tmp_path,
-    ):
-        tmp_idx_dir = tmp_path / "tmp"
-        tmp_idx_dir.mkdir()
-
-        def fake_extract(_video_path, _start_s, _duration_s, out_path):
-            out_path.write_bytes(b"fake-video")
-
-        mock_extract.side_effect = fake_extract
-
-        mock_urlopen.return_value = _build_fake_openrouter_response(json.dumps([{
-            "start": "00:00:00.000", "end": "00:00:03.000", "summary": "test",
-            "ocr_text": "", "characters": []
-        }]))
-
-        strategy = OpenRouterStrategy(api_key="fake")
-        results = strategy.index_video(tmp_path / "movie.mp4", tmp_idx_dir)
-
-        assert len(results) == 2
-        assert mock_extract.call_count == 2
-        assert results[0]["start"] == "00:00:00.000"
-        assert results[1]["start"] == "00:02:00.000"
-
-    @patch("app.pipeline.stage0_indexers.openrouter.urllib.request.urlopen")
-    def test_index_chunk_sends_inline_video_and_json_schema(self, mock_urlopen, tmp_path):
-        mock_urlopen.return_value = _build_fake_openrouter_response(json.dumps([]))
-
-        chunk_path = tmp_path / "chunk.mp4"
-        chunk_path.write_bytes(b"fake-video")
-
-        strategy = OpenRouterStrategy(api_key="fake")
-        strategy._index_chunk(chunk_path)
-
-        request = mock_urlopen.call_args.args[0]
-        payload = json.loads(request.data.decode("utf-8"))
-        content = payload["messages"][0]["content"]
-
-        assert payload["model"] == "qwen/qwen2.5-vl-72b-instruct"
-        assert payload["response_format"]["type"] == "json_schema"
-        assert payload["provider"]["require_parameters"] is True
-        assert content[0]["type"] == "text"
-        assert "burned into the TOP-LEFT corner" in content[0]["text"]
-        assert content[1]["type"] == "video_url"
-        assert content[1]["video_url"]["url"].startswith("data:video/mp4;base64,")
 
 
 def test_stage0_parser_requires_synopsis_and_characters_dir():
@@ -390,33 +325,6 @@ def test_stage0_parser_rejects_empty_characters_dir(tmp_path):
             "--characters-dir",
             str(empty_characters_dir),
         ])
-
-
-def test_stage0_parser_accepts_strategy_flag(tmp_path):
-    synopsis = tmp_path / "synopsis.md"
-    synopsis.write_text("Yuta: protagonist", encoding="utf-8")
-
-    characters_dir = tmp_path / "characters"
-    characters_dir.mkdir()
-    (characters_dir / "Kit.jpg").write_bytes(b"fake-image")
-
-    args = build_parser().parse_args([
-        "--video",
-        "movie.mp4",
-        "--strategy",
-        "openrouter",
-        "--synopsis",
-        str(synopsis),
-        "--characters-dir",
-        str(characters_dir),
-    ])
-    assert args.strategy == "openrouter"
-
-
-def test_build_strategy_returns_openrouter_strategy():
-    strategy = _build_strategy("openrouter")
-    assert isinstance(strategy, OpenRouterStrategy)
-    assert strategy.max_workers == 5
 
 
 def test_stage0_timestamp_font_path_from_env_exists():
@@ -475,18 +383,13 @@ def test_gemini_strategy_uses_synopsis_and_face_gallery_when_provided(tmp_path):
     assert "# Face Gallery" in strategy.prompt
 
 
-def test_openrouter_strategy_uses_synopsis_when_provided():
-    strategy = OpenRouterStrategy(api_key="fake", synopsis_text="Yuta: protagonist")
-    assert "Cast Reference" in strategy.prompt
-
-
 def test_strategy_without_synopsis_keeps_conservative_rule():
     strategy = GeminiStrategy(api_key="fake")
     assert "Cast Reference" not in strategy.prompt
     assert "NEVER guess from general knowledge" in strategy.prompt
 
 
-@patch("app.pipeline.stage0_indexers.gemini.genai")
+@patch("app.pipeline.indexers.gemini.genai")
 def test_index_chunk_deletes_uploaded_file_when_json_parse_fails(mock_genai, tmp_path):
     mock_client = _build_fake_gemini_client("not valid json")
     mock_genai.Client.return_value = mock_client
@@ -499,7 +402,7 @@ def test_index_chunk_deletes_uploaded_file_when_json_parse_fails(mock_genai, tmp
     mock_client.files.delete.assert_called_once()
 
 
-@patch("app.pipeline.stage0_indexers.gemini.genai")
+@patch("app.pipeline.indexers.gemini.genai")
 def test_index_chunk_uploads_face_gallery_and_cleans_up_all_files(mock_genai, tmp_path):
     mock_client = _build_fake_gemini_client(json.dumps([]))
     mock_genai.Client.return_value = mock_client

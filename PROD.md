@@ -1,155 +1,138 @@
 # Product Requirements Document: movie-review-master
 
-`PROD.md` is the root project document. It defines the product scope and points to the small set of remaining source-of-truth docs:
+`PROD.md` defines the product scope and points to the small set of
+source-of-truth docs:
 
-- [docs/HANDBOOK.md](docs/HANDBOOK.md) for stable knowledge, design, and pipeline rules
-- [plan.md](plan.md) for current progress and next work
-- [docs/TECHNICAL.md](docs/TECHNICAL.md) for coding-facing contracts and implementation reference
+- [docs/HANDBOOK.md](docs/HANDBOOK.md) — stable knowledge, design, pipeline rules
+- [docs/TECHNICAL.md](docs/TECHNICAL.md) — code-facing contracts and implementation reference
+- [workbench/README.md](workbench/README.md) — per-movie pipeline harness
 
 ## 1. Product Goal
 
-`movie-review-master` turns a movie file plus subtitles into a draft long-form movie-review video package:
+`movie-review-master` automates the slow parts of producing a long-form
+movie-review video so the operator only has to do the final timeline
+assembly in 剪映 (CapCut). The automated output is:
 
-- a chronological rough cut of high-information shots
-- a narration script written against that rough cut
-- an AI-generated voiceover
-- a watchable draft render with burned subtitles
-- separate assets that can be refined in DaVinci Resolve
+- a structured plot prompt + LLM-written retelling script in the chosen style
+- an AI voiceover MP3 of that script
+- a matching SRT subtitle file
+- per-chunk timing manifest for re-cutting
 
-The product is not trying to replace the final edit. It is trying to produce a strong first-pass review package that is fast to polish manually.
+Final picture cut, B-roll, transitions, and BGM are done manually in 剪映
+because that's where the operator's editing skill lives.
 
 ## 2. Target Workflow
 
-The pipeline follows a **video-driven** ordering: visuals are picked first, narration is written against those visuals, audio is generated, then visuals are trimmed to fit the actual audio. This deliberately inverts an earlier "audio-first" design that produced structural sync mismatches.
+1. Drop the movie file and subtitle file under `movies/<title>/` together
+   with `synopsis.md` and a `characters/` face-gallery folder.
+2. Update `workbench/configs/current_movie.toml` to point at the movie.
+3. **Step 0** — run `step_0_prepare_inputs.py`: visual indexing + subtitle parse.
+4. **Step 1** — run `step_1_build_prompt.py` (optionally `--digest` first
+   for two-pass mode), paste the prompt into Gemini 3 Pro / DeepSeek / Qwen,
+   paste the reply back as `script.txt`.
+5. **Step 2** — run `step_2_generate_audio.py`: TTS the script into an MP3
+   plus a matching SRT.
+6. **Step 3 (manual)** — open the source movie, the voiceover MP3, and the
+   SRT in 剪映. Cut the picture against the narration timeline.
 
-The intended user flow is:
-
-1. Provide a movie file and subtitle file.
-2. Run shot detection.
-3. Pick the high-information shots that should appear in the review.
-4. Assemble a rough cut from those shots, ordered chronologically into 30–60s narrative beats.
-5. Write one narration line per beat in the chosen review style.
-6. Generate the voiceover.
-7. Trim each beat's micro-shots so they match the actual audio duration.
-8. Render a draft review video with burned subtitles.
-9. Open the output folder in DaVinci Resolve for final polish and export.
-
-Steps 3 and 5 are manual in the first iteration; everything else is automated. Each manual step is designed as a replaceable module so it can be automated incrementally.
+Step 4 is the only manual data step. Steps 0, 1 (assembly), and 2 are fully
+automated; the user only handles the LLM paste-paste in step 1.
 
 ## 3. Inputs
 
-Required inputs:
-
 | Input | Format | Notes |
 |------|--------|-------|
-| Movie | `.mp4` or `.mkv` | Full-length source movie |
-| Subtitles | `.srt` or `.ass` | UTF-8 preferred; can be explicitly passed even if filename stem differs from the movie |
-
-Preferred operating rule:
-
-- Keep movie and generated assets inside the WSL filesystem, not under `/mnt/c/...`.
-- Use subtitles as the primary plot context for narration writing.
-- Treat direct audio transcription as fallback support, not the primary pipeline path.
+| Movie | `.mp4` / `.mkv` | Full-length source |
+| Subtitles | `.srt` / `.ass` | UTF-8 preferred |
+| Synopsis | `synopsis.md` next to the movie | Plot summary + named cast |
+| Face gallery | `characters/` next to the movie | Reference images for VLM character labelling |
+| Style | `styles/<style>.md` | Defines narrator voice, naming rules, structure |
 
 ## 4. Outputs
 
-The main deliverable is a DaVinci-ready output folder next to the source movie.
-
-Expected asset set:
-
 ```text
-movies/<title>/
-  output/
-    review.mp4
-    final_video.mp4
-    rough_cut/                # selected-shot concatenation, beat-segmented
-    fitted/                   # per-beat videos trimmed to TTS duration
-    keyframes/                # fallback stills
-  voiceover_<style>.mp3
-  voiceover_<style>.manifest.json
-  selected_shots.json
-  narration.json
+workbench/work/<movie_slug>/
+  stage0/
+    visual_segments.json
+    subtitles.txt
+  stage1/
+    digest_prompt.txt        # only if two-pass mode
+    plot_digest.txt          # only if two-pass mode
+    story_prompt.txt
+    script.txt
+  stage2/
+    voiceover_<style>.mp3
+    voiceover_<style>.srt
+    voiceover_<style>.manifest.json
 ```
 
-Product-level output rules:
-
-- `review.mp4` is the watchable draft render.
-- `final_video.mp4` is the upload-ready master emitted after final muxing.
-- Original movie audio is not part of the review timeline.
-- Separate assets must remain reusable so manual editing in DaVinci is easy.
+The MP3 + SRT pair is the deliverable handed to 剪映. The manifest is
+retained so a re-cut can map any timestamp back to the script chunk that
+produced it.
 
 ## 5. Supported Review Styles
 
 ### Style A: Uncle Niu
 
-- Third-person omniscient narrator
-- Deadpan, fast, sarcastic
-- Uses archetype nicknames instead of original character names
-- Best fit for genre, action, thriller, and high-plot-density reviews
+- Third-person, deadpan, fast, sarcastic
+- Archetype nicknames in place of character names
+- Best for action, thriller, and high-plot-density reviews
 
 ### Style B: First-Person Protagonist POV
 
 - First-person confessional narrator
 - Emotional, subjective, character-driven
-- Uses original character names
-- Best fit for immersive, protagonist-centered retellings
+- Original names preserved
 
-### Style C: Xiaodao
+### Style C: Xiaodao (research only)
 
-- Planned style direction
-- Warm, reflective, emotional storyteller
-- Uses original character names
-- Best fit for dramas, classics, and high-emotion films
+- Warm, reflective storyteller
+- Best for dramas and classics
+- Not yet runnable
 
 ## 6. Functional Requirements
 
 The product must:
 
-1. Accept `.mp4` and `.mkv` movies plus `.srt` or `.ass` subtitles.
-2. Detect shot boundaries and emit a per-shot summary.
-3. Allow a human (v1) or scorer (v2) to select the high-information subset.
-4. Assemble a rough cut from the selection, segmented into narrative beats.
-5. Support style-constrained narration writing per beat.
-6. Produce an AI voiceover track from the per-beat narration.
-7. Trim each beat's micro-shots to fit the actual TTS duration.
-8. Render a playable draft review video with burned subtitles.
-9. Preserve separate assets needed for manual post-production.
+1. Accept `.mp4` / `.mkv` movies plus `.srt` / `.ass` subtitles.
+2. Index shot boundaries with per-shot summary, OCR, and character labels.
+3. Build a copy-pasteable LLM prompt (single-pass timeline mode or
+   two-pass digest mode) that the operator runs against an external LLM.
+4. TTS the user-pasted script into a voiceover MP3.
+5. Generate burnable SRT cues aligned to real per-chunk audio durations.
+6. Persist per-chunk timing so the editor can re-cut against any time range.
 
 ## 7. Quality Requirements
 
-The draft pipeline should produce:
-
-- Chinese output as the primary path
-- Visuals and narration that describe the same beat at the same time
-- Mostly motion footage, not a slideshow
-- Readable on-screen subtitles aligned to actual speech pauses
-- Consistent voiceover loudness
-- A folder structure that imports cleanly into DaVinci Resolve
+- Chinese output as the primary path.
+- Voiceover stays loudness-consistent across chunks.
+- SRT cues are short enough to read on a phone screen (~22 chars per line).
+- The manual editor (剪映) can locate any narration timestamp and the
+  script chunk that produced it.
 
 ## 8. Operating Constraints
 
-- Primary runtime environment: WSL2 Ubuntu with an RTX 4060.
-- Final polish/export environment: DaVinci Resolve on Windows.
+- Primary runtime: Windows 11 + WSL2 with an RTX 4060 (NVENC + CUDA decode).
+- Final cut: 剪映 (CapCut).
 - `ffmpeg` is the core media tool.
 - Local TTS is preferred over paid hosted TTS.
-- The design assumes Chinese-language narration first, with English as secondary support.
+- Chinese narration first; English narration is secondary.
 
 ## 9. Success Criteria
 
 A successful run means:
 
-1. The project produces a playable `final_video.mp4`.
-2. The voiceover, narration, rough cut, and manifests all exist.
-3. The draft covers the full plot arc.
-4. The chosen style's narrative rules are visibly followed.
-5. The output folder is practical to reopen and finish in DaVinci Resolve.
+1. `voiceover_<style>.mp3` plays end-to-end with consistent loudness.
+2. `voiceover_<style>.srt` is readable in 剪映 and aligned to speech pauses.
+3. The script covers the full plot arc and follows the chosen style's
+   narrative rules.
+4. The manifest lets the operator jump to any chunk's audio range when
+   editing.
 
 ## 10. Out of Scope
 
-Not part of the core product target right now:
-
-- automatic YouTube upload
-- fully autonomous final mastering
-- multi-movie batch orchestration
-- advanced motion graphics packages
-- AI-generated background music
+- Automatic picture cutting / final video assembly (done in 剪映).
+- Automatic YouTube upload.
+- Multi-movie batch orchestration.
+- AI-generated background music.
+- Advanced motion-graphics packages.

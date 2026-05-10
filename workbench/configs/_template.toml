@@ -1,51 +1,30 @@
-# Template for the active movie. Copy this file to current_movie.toml and fill in.
+# Template for the active movie. Copy to current_movie.toml and fill in.
 # Paths are relative to the repo root.
 
 [common]
-movie_slug    = "TODO_short_slug_no_spaces"      # used as the work folder name under tmp/work/
+movie_slug    = "TODO_short_slug_no_spaces"      # used as workbench/work/<slug>/
 movie_dir     = "movies/TODO_movie_folder_name"
 movie_title   = "TODO Display Title"
 video_file    = "TODO.mkv"
 subtitle_file = "TODO.srt"
 style_path    = "styles/niu-shu.md"
-genre         = "action"                          # action / drama / etc
+genre         = "action"
 
-# Target final-review length in seconds. The new video-driven pipeline
-# uses this as a soft hint for how much rough cut to assemble.
-target_seconds = 300.0
+# Soft hint for prompt builders.
+target_seconds = 720.0
 
-# Optional tool harness settings used by tmp/tools/*.py.
-# Most tool paths are derived automatically from [common]. Only add entries
-# here when you need to override defaults or provide an extra input.
-
-# [tools.build_story_prompt]
-# out = "tmp/work/TODO_short_slug_no_spaces/tools/story_prompt.txt"
-
-# [tools.prepare_voice_reference]
-# source_audio = "movies/TODO_movie_folder_name/reference_clip.wav"
-# transcript = "movies/TODO_movie_folder_name/reference_clip.txt"
-# start = "00:00:00"
-# end = "00:01:30"
-
-# [tools.transcribe_audio]
-# input_path = "styles/voice-assets/niu-shu/reference"
-# language = "zh"
-
-# [tools.voice_analysis]
-# audio = "styles/voice-assets/niu-shu/reference/clone_reference.mp3"
-# transcript = "styles/voice-assets/niu-shu/reference/clone_reference.txt"
-# out = "styles/voice-assets/niu-shu/reference/clone_reference.analysis.json"
+# Optional per-movie overrides. TTS sampling defaults live with the style
+# at styles/voice-assets/<style>/voice_clone.toml. Set values here only for
+# one-off per-movie tuning. CLI overrides > this file > style toml > defaults.
 
 # [tools.generate_script_audio]
-# script = "tmp/work/TODO_short_slug_no_spaces/tools/scripts.txt"
-# out_dir = "tmp/work/TODO_short_slug_no_spaces/tools"
-# style = "styles/niu-shu.md"
-# ref_audio = "styles/voice-assets/niu-shu/reference/clone_reference.mp3"
-# ref_text = "styles/voice-assets/niu-shu/reference/clone_reference.txt"
-# tag = "niu-shu-custom"
-#
-# TTS sampling (temperature, top_p, top_k, repetition_penalty, max_chars_per_request,
-# max_new_tokens) is loaded from styles/voice-assets/<style>/voice_clone.toml so
-# every movie using the same style inherits the same voice. Override priority:
-# CLI flag > [tools.generate_script_audio] here > style voice_clone.toml > defaults.
-# Only set sampling values here for one-off per-movie tuning.
+# temperature = 0.65
+
+# [tools.prepare_voice_reference]
+# source_audio = "movies/TODO/reference_clip.wav"
+# transcript   = "movies/TODO/reference_clip.txt"
+# start        = "00:00:00"
+# end          = "00:01:30"
+
+# [tools.transcribe_audio]
+# language = "zh"

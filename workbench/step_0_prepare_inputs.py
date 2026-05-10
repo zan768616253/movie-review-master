@@ -18,8 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import DEFAULT_CONFIG, banner, build_paths, ensure_stage_dirs, fail, load_config
 
 from app.pipeline.common.script_contract import seconds_to_timestamp
-from app.pipeline.index_visuals import main as index_visuals_main
-from app.pipeline.parse_subtitles import parse_subtitles
+from app.pipeline.stage_0_index_visuals import main as stage_0_index_visuals_main
+from app.pipeline.stage_0_parse_subtitles import parse_subtitles
 
 
 def _run_index_visuals(paths) -> int:
@@ -36,7 +36,7 @@ def _run_index_visuals(paths) -> int:
     print(f"face gallery : {paths.characters_dir}")
     print(f"output       : {paths.visual_segments}")
 
-    return index_visuals_main([
+    return stage_0_index_visuals_main([
         "--video", str(paths.video),
         "--output", str(paths.visual_segments),
         "--tmp-dir", str(paths.stage0_dir / "indexing"),

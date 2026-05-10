@@ -4,8 +4,8 @@ import json
 
 from pathlib import Path
 
-from app.tools.build_story_prompt import (
-    build_prompt,
+from app.pipeline.stage_1_build_prompt import (
+    build_story_prompt as build_prompt,
     build_timeline_entries,
     main,
     render_timeline,

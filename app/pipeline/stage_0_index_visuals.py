@@ -1,6 +1,8 @@
-"""Stage 0: Visual Indexing.
-Split a long movie into chunks, use Gemini 3 Flash to index visual segments,
-and merge them into a single visual_segments.json.
+"""Stage 0: visual indexing.
+
+Split a long movie into chunks, run them through Gemini 3 Flash for visual
+segmentation, and merge the per-chunk segments into a single
+``visual_segments.json``.
 """
 
 import argparse
@@ -10,10 +12,10 @@ from typing import Sequence
 
 from app.pipeline.common.json_io import dump_json
 from app.pipeline.common.script_contract import get_video_duration, validate_visual_segments
-from app.pipeline.stage0_indexers import GeminiStrategy, OpenRouterStrategy, VisualIndexerStrategy
+from app.pipeline.indexers import GeminiStrategy
 
 
-DEFAULT_STAGE0_WORKERS = 5
+DEFAULT_INDEX_WORKERS = 5
 
 
 def _existing_file_path(value: str) -> Path:
@@ -39,18 +41,12 @@ def _non_empty_directory(value: str) -> Path:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="index-visuals",
-        description="Stage 0: Index visuals using a configured VLM strategy.",
+        description="Stage 0: index visuals via Gemini 3 Flash.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--video", type=Path, required=True, help="Path to full movie file")
     parser.add_argument("--output", type=Path, help="Path to output visual_segments.json")
     parser.add_argument("--tmp-dir", type=Path, default=Path("tmp/indexing"), help="Temp directory for chunks")
-    parser.add_argument(
-        "--strategy",
-        choices=["gemini", "openrouter"],
-        default="gemini",
-        help="Visual indexing backend to use",
-    )
     parser.add_argument(
         "--synopsis",
         type=_existing_file_path,
@@ -64,14 +60,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Required non-empty directory containing character reference images (e.g., Kit.jpg).",
     )
     return parser
-
-
-def _build_strategy(name: str, synopsis_text: str = "", characters_dir: Path | None = None) -> VisualIndexerStrategy:
-    if name == "gemini":
-        return GeminiStrategy(max_workers=DEFAULT_STAGE0_WORKERS, synopsis_text=synopsis_text, characters_dir=characters_dir)
-    if name == "openrouter":
-        return OpenRouterStrategy(max_workers=DEFAULT_STAGE0_WORKERS, synopsis_text=synopsis_text)
-    raise ValueError(f"Unsupported strategy: {name}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -92,7 +80,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         characters_dir = args.characters_dir.resolve()
         print(f"Face Gallery attached from: {characters_dir}")
 
-        strategy = _build_strategy(args.strategy, synopsis_text=synopsis_text, characters_dir=characters_dir)
+        strategy = GeminiStrategy(
+            max_workers=DEFAULT_INDEX_WORKERS,
+            synopsis_text=synopsis_text,
+            characters_dir=characters_dir,
+        )
         raw_segments = strategy.index_video(video_path, args.tmp_dir)
 
         video_duration_s = get_video_duration(video_path)

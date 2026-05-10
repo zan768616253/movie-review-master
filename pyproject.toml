@@ -33,20 +33,12 @@ dev = [
 include = ["app*"]
 
 [project.scripts]
-index-visuals = "app.pipeline.stage0_index_visuals:main"
-parse-subtitles = "app.pipeline.stage1_parse_subtitles:main"
-select-shots = "app.pipeline.stage2_select_shots:main"
-assemble-rough-cut = "app.pipeline.stage3_assemble_rough_cut:main"
-write-narration = "app.pipeline.stage4_write_narration:main"
-generate-audio = "app.pipeline.stage5_generate_audio:main"
-fit-visuals = "app.pipeline.stage6_fit_visuals:main"
-align-subtitles = "app.pipeline.stage4_align_subtitles:main"
-render-video = "app.pipeline.stage8_render_video:main"
-finalize-video = "app.pipeline.stage7_finalize_video:main"
-transcribe = "app.tools.transcribe_audio:main"
-build-story-prompt = "app.tools.build_story_prompt:main"
+index-visuals = "app.pipeline.stage_0_index_visuals:main"
+parse-subtitles = "app.pipeline.stage_0_parse_subtitles:main"
+build-prompt = "app.pipeline.stage_1_build_prompt:main"
+generate-script-audio = "app.pipeline.stage_2_generate_audio:main"
 prepare-voice-reference = "app.tools.prepare_voice_reference:main"
-generate-script-audio = "app.tools.generate_script_audio:main"
+transcribe = "app.tools.transcribe_audio:main"
 
 [tool.pytest.ini_options]
 minversion = "7.0"

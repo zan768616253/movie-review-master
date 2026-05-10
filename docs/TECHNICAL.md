@@ -1,362 +1,217 @@
 # Technical Documentation
 
-> **NOTE (2026-05-04):** The audio-driven `[ANCHOR]` pipeline was retired
-> in May 2026. Stages 2–6 of the new video-driven pipeline are
-> **designed but not yet implemented**. This document describes the
-> post-cleanup repository state and the target module boundaries.
-
-This document is the code-facing reference for repository structure, entry points, contracts, and implementation boundaries. It complements the handbook instead of duplicating it.
+Code-facing reference for repository structure, entry points, and data
+contracts. Complements the handbook instead of duplicating it.
 
 ## 1. Source-of-Truth Split
 
 - product scope: [PROD.md](../PROD.md)
 - stable design knowledge: [docs/HANDBOOK.md](HANDBOOK.md)
-- current status and next tasks: [plan.md](../plan.md)
 - implementation details: this file
 
-## 2. Repository Map (post-cleanup)
+## 2. Repository Map
 
 ```text
 movie-review-master/
   README.md
   PROD.md
-  plan.md
   pyproject.toml
   docs/
     HANDBOOK.md
     TECHNICAL.md
     agent-rules/
   app/
-    __init__.py
     pipeline/
-      __init__.py
-      stage0_index_visuals.py        # shot detection (auto)
-      stage0_indexers/
-        __init__.py
+      stage_0_index_visuals.py     # shot detection (auto)
+      stage_0_parse_subtitles.py   # subtitle parse (auto)
+      stage_1_build_prompt.py      # LLM prompt builder (story default; --digest pass 1)
+      stage_2_generate_audio.py    # TTS the manual script -> MP3 + SRT + manifest
+      indexers/                    # Gemini VLM strategy
         base.py
         gemini.py
-        openrouter.py
         shared.py
-      stage1_parse_subtitles.py      # subtitle parse (auto)
-      stage4_align_subtitles.py      # subtitle cues from voiceover (auto, legacy numbering)
-      stage7_finalize_video.py       # mux to final_video.mp4 (auto, legacy numbering)
       common/
-        __init__.py
         json_io.py
-        script_contract.py           # time helpers, visual-segment validation, shot-boundary set
-        video_encoder.py             # NVENC/libx264 selector
+        script_contract.py         # time helpers, visual-segment validation
+        subtitle_utils.py          # SRT cue rendering
+        video_encoder.py           # ffmpeg hwaccel helpers (used by indexers)
     tools/
-      __init__.py
-      build_story_prompt.py
-      generate_script_audio.py
-      prepare_voice_reference.py
-      transcribe_audio.py
-      voice_analysis.py
+      prepare_voice_reference.py   # one-time voice-clone reference prep
+      transcribe_audio.py          # one-time Whisper transcription helper
+      voice_analysis.py            # one-time prosody analysis helper
   styles/
     niu-shu.md
     first-person-pov.md
-    voice-assets/
-      niu-shu/{analysis,reference}/
-      first-person-pov/analysis/
-      xiao-dao/analysis/
+    voice-assets/<style>/{reference,analysis}/
+  workbench/                       # pipeline harness — see workbench/README.md
+    configs/current_movie.toml
+    step_0_prepare_inputs.py
+    step_1_build_prompt.py
+    step_2_generate_audio.py
+    tools/                         # one-time-per-style asset prep wrappers
+    work/<movie_slug>/{stage0,stage1,stage2}/
   tests/
-    pipeline/
-      test_stage0_visual_indexing.py
-      test_stage0_visual_indexing_integration.py
-      test_stage1_parse_subtitles.py
-      test_stage4_align_subtitles.py
-      test_stage7_finalize_video.py
-    tools/
-      test_build_story_prompt.py
-      test_generate_script_audio.py
-      test_prepare_voice_reference.py
-      test_transcribe_audio.py
-      test_video_encoder.py
-  tmp/
-    README.md
-    _common.py
-    configs/
-    step_00_index_visuals.py
-    step_01_parse_subtitles.py
-    work/<movie_slug>/stage0/        # stage0 outputs preserved across cleanup
+    pipeline/{test_stage_0_index_visuals,test_stage_0_index_visuals_integration,test_stage_0_parse_subtitles,test_stage_1_build_prompt,test_stage_2_generate_audio}.py
+    tools/{test_prepare_voice_reference,test_transcribe_audio}.py
 ```
 
-Note on numbering: surviving modules retain their legacy numeric prefixes (`stage4_align_subtitles`, `stage7_finalize_video`) until the new pipeline modules land. The target numbering after the rebuild is documented in §5.
+## 3. Environment and Execution
 
-## 3. Environment and Execution Rules
+Every Python command must be prefixed with
+`conda run -n py312_machine_learning --no-capture-output`. Dependency
+changes go through `pyproject.toml` followed by `pip install -e .`.
 
-Canonical Python command rule:
+Reference: [docs/agent-rules/python-environment.md](agent-rules/python-environment.md).
 
-- every Python command must be prefixed with `conda run -n py312_machine_learning --no-capture-output`
-- dependency updates go through `pyproject.toml`, then `pip install -e .`
+## 4. Pipeline Modules
 
-Reference: [docs/agent-rules/python-environment.md](agent-rules/python-environment.md)
+### `app/pipeline/stage_0_index_visuals.py`
 
-## 4. Current Script Inventory
+Detect every shot via Gemini 3 Flash + ffmpeg scene-detect, emit
+`visual_segments.json`. Requires both `--synopsis` (inlined as Cast
+Reference in the VLM prompt) and `--characters-dir` (non-empty face gallery
+for consistent character naming across chunks). Entry point: `index-visuals`.
 
-Pipeline modules use a `stageN_` prefix. Tools live under `app/tools/`.
+### `app/pipeline/stage_0_parse_subtitles.py`
 
-### `app/pipeline/stage0_index_visuals.py`
+Parse `.srt` / `.ass` subtitles into normalized text and structured JSON.
+Entry point: `parse-subtitles`. Test-covered.
 
-Purpose:
+### `app/pipeline/stage_1_build_prompt.py`
 
-- detect every shot in the source movie via VLM + ffmpeg scene-detect
-- emit `visual_segments.json`
+Build the LLM prompt for movie script writing. Two modes via `--digest`:
 
-Status: implemented. Entry point: `index-visuals`.
+- default (story): `build_story_prompt()` — single-pass timeline mode,
+  or two-pass digest mode if `--plot-digest PATH` is supplied.
+- `--digest`: `build_digest_prompt()` — emit the Pass 1 prompt that asks
+  the LLM to extract a structured plot digest first.
 
-### `app/pipeline/stage1_parse_subtitles.py`
+Embeds the chosen style markdown verbatim and (optionally) a genre example
+script. Entry point: `build-prompt`. Test-covered.
 
-Purpose:
+### `app/pipeline/stage_2_generate_audio.py`
 
-- parse `.srt` / `.ass` subtitles into normalized text and structured JSON
+TTS the final manual script with Qwen3 voice cloning. Produces:
 
-Status: implemented. Entry point: `parse-subtitles`. Test-covered.
+- `voiceover_<tag>.mp3` — concatenated, loudness-normalized voice track.
+- `voiceover_<tag>.manifest.json` — per-chunk `{index, section, text, audio_start_s, audio_end_s}`.
+- `voiceover_<tag>.srt` — burnable subtitle cues built from the chunks.
 
-### `app/pipeline/stage4_align_subtitles.py`
+Sampling resolves CLI > `voice_clone.toml` (per-style) > built-in defaults.
+Entry point: `generate-script-audio`. Test-covered.
 
-Purpose:
+### `app/pipeline/indexers/`
 
-- split voiceover narration into shorter subtitle cues using ffmpeg `silencedetect`
-- emit `subtitle_manifest.json`
+Visual-indexer implementation for Stage 0:
 
-Status: implemented (legacy numbering retained — will be renamed to `stage7_align_subtitles.py` when the new pipeline lands). Entry point: `align-subtitles`.
-
-### `app/pipeline/stage7_finalize_video.py`
-
-Purpose:
-
-- remux the draft `review.mp4` with the voiceover into an upload-ready `final_video.mp4` with `+faststart`
-
-Status: implemented (legacy numbering retained — will be renamed to `stage9_finalize_video.py` when the new pipeline lands). Entry point: `finalize-video`.
+- `base.py` — `VisualIndexerStrategy` abstract class plus `merge_segments`.
+- `gemini.py` — Gemini 3 Flash backend.
+- `shared.py` — shared utilities (chunk extraction, prompt assembly).
 
 ### `app/pipeline/common/script_contract.py`
 
-Shared time, shot-boundary, and visual-segment helpers. Trust boundary between Stage 0 (VLM output) and the rest of the pipeline.
-
-Public surface:
+Time helpers and Stage 0 trust boundary. Public surface:
 
 - `timestamp_to_seconds`, `seconds_to_timestamp`, `normalize_timestamp`
 - `probe_media_duration`, `get_video_duration`
 - `validate_visual_segments`, `VisualSegmentDiagnostics`, `MAX_VISUAL_SEGMENT_DURATION_S`
 - `load_visual_segments`
-- `build_shot_boundary_set`, `should_collapse_segment_inner_cuts`, `COLLAPSE_INNER_CUTS_BELOW_S`
-- `REAL_TTS_CPS = 6.74` (measured TTS speech rate, used to estimate narration audio duration from char count)
+- `build_shot_boundary_set`, `should_collapse_segment_inner_cuts`
+- `REAL_TTS_CPS = 6.74` (measured TTS speech rate)
 
 ### `app/pipeline/common/video_encoder.py`
 
-`resolve_encoder()`, `nvenc_available()`, `encoder_ffmpeg_args()`. Used wherever the pipeline emits `-c:v ...` arguments. Prefers `h264_nvenc` on the RTX 4060 target, falls back to `libx264 -preset fast`.
+ffmpeg hwaccel detection used by the indexers when chunking the source
+video: `nvenc_available()`, `cuda_decode_available()`, `hwaccel_decode_args()`.
 
-### `app/pipeline/common/json_io.py`
+### `app/pipeline/common/json_io.py`, `subtitle_utils.py`
 
-Generic JSON read/write helpers used by every stage that produces a manifest.
+Generic JSON I/O and SRT cue rendering used across the codebase.
 
-### `app/pipeline/stage0_indexers/`
+## 5. Tools
 
-Strategy implementations driven by `stage0_index_visuals.py`:
-
-- `base.py` — `VisualIndexerStrategy` abstract class and the `merge_segments` helper
-- `gemini.py` — Gemini 3 Flash backend (default)
-- `openrouter.py` — OpenRouter backend (alternative)
-- `shared.py` — shared utilities
-
-### `app/tools/transcribe_audio.py`
-
-Transcribe one `.mp3` file or a directory tree of `.mp3` files into `.txt`. Used when preparing voice-clone references. Entry point: `transcribe`. Test-covered.
-
-### `app/tools/build_story_prompt.py`
-
-Build a copy-paste prompt for external LLMs to draft a full movie-retelling script from a style markdown file, Stage 0 `visual_segments.json`, and Stage 1 `subtitles.json`. The tool converts the structured inputs into a single chronological plain-text timeline so the external model can infer the whole movie without watching it. Entry point: `build-story-prompt`. Test-covered.
-
-### `app/tools/generate_script_audio.py`
-
-Generate a voice-cloned narration MP3 plus a chunk manifest from the final manual script text. Entry point: `generate-script-audio`. Test-covered.
-
-### `app/tools/voice_analysis.py`
-
-One-off analysis helper for TTS experiments. Computes pacing, pauses, pitch, and energy stats from a reference audio plus transcript. Not a pipeline stage.
+These are one-time-per-voice asset-prep CLIs, not part of the per-movie
+pipeline. Wrappers live under `workbench/tools/`.
 
 ### `app/tools/prepare_voice_reference.py`
 
-Prepare the canonical `styles/voice-assets/<style>/reference/clone_reference.*` bundle for ICL voice cloning. Entry point: `prepare-voice-reference`. Test-covered.
+Slice a reference clip and place it under
+`styles/voice-assets/<style>/reference/`. Entry point:
+`prepare-voice-reference`.
 
-## 5. New Pipeline — Module Boundaries (designed, not implemented)
+### `app/tools/transcribe_audio.py`
 
-The numbering below is the **target** layout for the new video-driven pipeline. Surviving legacy files (current `stage4_align_subtitles.py`, current `stage7_finalize_video.py`) keep their old numbers in the meantime; they will be renamed to match this layout when the surrounding stages are implemented.
+Whisper-based transcription helper for one-shot voice-asset prep.
+Entry point: `transcribe`.
 
-| # | Target Module | Role | Auto/Manual |
-|---|---|---|---|
-| 0 | `stage0_index_visuals.py` | Shot detection | Auto (already exists) |
-| 1 | `stage1_parse_subtitles.py` | Subtitle parse | Auto (already exists) |
-| 2 | `stage2_select_shots.py` | Shot selection | Manual v1 → Auto v2 |
-| 3 | `stage3_assemble_rough_cut.py` | Rough cut concat + beat segmentation | Auto |
-| 4 | `stage4_write_narration.py` | Narration writing | Manual v1 → Auto v2 |
-| 5 | `stage5_generate_audio.py` | TTS + voiceover concat | Auto |
-| 6 | `stage6_fit_visuals.py` | Per-beat trim/loop to fit TTS duration | Auto |
-| 7 | `stage7_align_subtitles.py` | Subtitle cues (renamed from current `stage4_align_subtitles.py`) | Auto |
-| 8 | `stage8_render_video.py` | Concat fitted beats, burn subs, mux audio | Auto |
-| 9 | `stage9_finalize_video.py` | Upload-ready remux (renamed from current `stage7_finalize_video.py`) | Auto |
+### `app/tools/voice_analysis.py`
 
-Each new module is a single CLI entry point with explicit input/output paths. The modules do not import each other; they communicate through the JSON manifests in §6.
+Emit prosody stats (pacing, pauses, pitch, energy) from a reference
+audio + transcript pair. Used to tune `voice_clone.toml`.
 
 ## 6. Data Contracts
 
 ### Visual Segment Contract (Stage 0)
 
-`stage0_index_visuals.py` writes a JSON list where each entry contains:
+`stage_0_index_visuals.py` writes a JSON list. Each entry:
 
-- optional `id` (when absent, loaders assign `visual:NNN`)
-- `start` (HH:MM:SS.mmm, always within `[0, video_duration]` after validation)
-- `end` (HH:MM:SS.mmm, clamped to video duration, always greater than `start`)
+- optional `id` (loaders assign `visual:NNN` when absent)
+- `start`, `end` (HH:MM:SS.mmm, validated to fall in `[0, video_duration]`)
 - `summary`
 - `ocr_text`
 - `characters`
-- `shot_boundaries_s` — list of cut times (absolute seconds, sorted) that fall strictly inside the `(start, end)` window
+- `shot_boundaries_s` — sorted cut times strictly inside `(start, end)`
 
-Every segment in the written file has already passed `validate_visual_segments()`. Downstream stages may call the validator again defensively but should not re-clamp.
+Every entry has already passed `validate_visual_segments()`.
 
-The full set of shot-cut timestamps is reconstructed by `build_shot_boundary_set(visual_segments)`: union of every segment's start/end (excluding the t=0 movie start) with every entry in any segment's `shot_boundaries_s` (subject to inner-cut collapse for segments where micro-cuts represent false granularity).
+### Subtitle JSON Contract (Stage 0)
 
-**Required Cast Reference and Face Gallery:** `stage0_index_visuals.py` now requires both `--synopsis PATH` and `--characters-dir DIR`. The synopsis text is always inlined into the VLM prompt as a Cast Reference block, and the face-gallery directory must contain at least one reference image so the VLM can label characters consistently across chunks.
-
-### Subtitle JSON Contract (Stage 1)
-
-`stage1_parse_subtitles.py --format json` emits a list shaped like:
+`stage_0_parse_subtitles.py --format json` emits:
 
 ```json
 { "start": 12.34, "end": 15.67, "text": "subtitle text", "speaker": null, "style": null }
 ```
 
-`speaker` and `style` are populated for ASS when available. Plain-text export writes only the normalized `text` lines in order.
+`speaker` / `style` are populated from ASS when available.
 
-### Selected Shots Contract (Stage 2 — designed)
+### Voiceover Manifest (Stage 2)
 
-```json
-[
-  {
-    "shot_id": "visual:042",
-    "start": "00:14:23.500",
-    "end": "00:14:27.100",
-    "tags": ["hook", "establishing"]
-  },
-  ...
-]
-```
-
-Order is chronological. `tags` is optional and free-form for now.
-
-### Rough Cut Manifest (Stage 3 — designed)
+`stage_2_generate_audio.py` emits:
 
 ```json
-[
-  {
-    "beat_index": 1,
-    "shot_ids": ["visual:042", "visual:043", "visual:045"],
-    "start_s": 0.0,
-    "end_s": 38.4,
-    "total_duration_s": 38.4
-  },
-  ...
-]
+{
+  "index": 1,
+  "section": "HOOK",
+  "ranges": [],
+  "characters": [],
+  "text": "narration text for this chunk",
+  "audio_start_s": 0.0,
+  "audio_end_s": 4.82
+}
 ```
 
-`start_s`/`end_s` are positions inside `rough_cut.mp4`, not source-movie timestamps.
-
-### Narration Contract (Stage 4 — designed)
-
-```json
-[
-  { "beat_index": 1, "text": "narration line for this beat" },
-  ...
-]
-```
-
-### Voiceover Manifest (Stage 5 — designed, names preserved from legacy)
-
-```json
-[
-  {
-    "index": 1,
-    "text": "narration line for this beat",
-    "audio_start_s": 0.0,
-    "audio_end_s": 4.82
-  },
-  ...
-]
-```
-
-`index` corresponds to `beat_index` from Stage 3/4. Field names `text`, `audio_start_s`, `audio_end_s` are preserved from the legacy contract so existing consumers (Stage 7 subtitle alignment) continue to work without changes.
-
-### Subtitle Manifest (Stage 7)
-
-`stage4_align_subtitles.py` writes a JSON list where each entry contains:
-
-- `index`
-- `chunk_index` (= beat index from the voiceover manifest)
-- `text`
-- `start_s`
-- `end_s`
-
-### Output Layout Contract
-
-Expected generated asset layout once the new pipeline is complete:
-
-```text
-movies/<title>/
-  selected_shots.json
-  narration.json
-  voiceover_<style>.mp3
-  voiceover_<style>.manifest.json
-  output/
-    rough_cut/rough_cut.mp4
-    rough_cut/rough_cut.json
-    fitted/beat_NNN.mp4
-    keyframes/keyframe_NNN.jpg
-    review.mp4
-    final_video.mp4
-```
+One entry per script structural block (`[HOOK]`, `[ACT ...]`, `[CLOSING]`).
 
 ## 7. Entry Points
 
 Configured in `pyproject.toml`:
 
-- `index-visuals = app.pipeline.stage0_index_visuals:main`
-- `parse-subtitles = app.pipeline.stage1_parse_subtitles:main`
-- `align-subtitles = app.pipeline.stage4_align_subtitles:main`
-- `finalize-video = app.pipeline.stage7_finalize_video:main`
-- `transcribe = app.tools.transcribe_audio:main`
-- `build-story-prompt = app.tools.build_story_prompt:main`
+- `index-visuals = app.pipeline.stage_0_index_visuals:main`
+- `parse-subtitles = app.pipeline.stage_0_parse_subtitles:main`
+- `build-prompt = app.pipeline.stage_1_build_prompt:main`
+- `generate-script-audio = app.pipeline.stage_2_generate_audio:main`
 - `prepare-voice-reference = app.tools.prepare_voice_reference:main`
-- `generate-script-audio = app.tools.generate_script_audio:main`
-- `select-shots = app.pipeline.stage2_select_shots:main`
-- `assemble-rough-cut = app.pipeline.stage3_assemble_rough_cut:main`
-- `write-narration = app.pipeline.stage4_write_narration:main`
-- `generate-audio = app.pipeline.stage5_generate_audio:main`
-- `fit-visuals = app.pipeline.stage6_fit_visuals:main`
-- `render-video = app.pipeline.stage8_render_video:main`
+- `transcribe = app.tools.transcribe_audio:main`
 
-The new pipeline entry points above are configured already, but the corresponding stages are still skeletons unless noted otherwise in §4.
+## 8. Testing
 
-## 8. Testing Baseline
+Automated coverage:
 
-Automated coverage exists for:
+- subtitle parsing + CLI behaviour
+- visual indexing (mocked Gemini)
+- prompt assembly (story + digest modes)
+- TTS chunking + manifest layout
+- transcription CLI with fake Whisper
+- voice-reference preparation with injected ffmpeg/transcription helpers
 
-- subtitle parsing
-- subtitle CLI behavior
-- transcription input collection and CLI flow with a fake model
-- reference-preparation CLI flow with injected ffmpeg, transcription, and analysis helpers
-- subtitle alignment
-- finalize/mux
-- video-encoder selection
-
-Run the test suite from the repo root with `conda run -n py312_machine_learning --no-capture-output pytest -q`.
-
-## 9. Known Technical Gaps
-
-The repo needs dedicated engineering work in these areas:
-
-1. **Stages 2–6 and 8 exist as skeleton entry points, not working implementations.** Module sketches in §5 above; full status in `plan.md`.
-2. **Stage 5 TTS engine** is recoverable from git history but needs to be re-fitted to the new beat-indexed input.
-3. **Stage 0 chunk-duration test failures** need a one-line update to match the 7-minute production value.
-4. **Stage 4 / Stage 7 will be renamed** to `stage7_align_subtitles` and `stage9_finalize_video` once the surrounding new stages exist.
-5. Style C exists as research only, not as a runnable style file.
+Run from the repo root: `conda run -n py312_machine_learning --no-capture-output pytest`.

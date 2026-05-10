@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import DEFAULT_CONFIG, banner, build_paths, ensure_stage_dirs, fail, get_tool_value, load_config
 
-from app.tools.generate_script_audio import main as generate_script_audio_main
+from app.pipeline.stage_2_generate_audio import main as stage_2_main
 
 
 _OVERRIDES = (
@@ -52,7 +52,7 @@ def run() -> int:
         value = get_tool_value(cfg, "generate_script_audio", key)
         if value is not None:
             args.extend([f"--{key.replace('_', '-')}", str(value)])
-    return generate_script_audio_main(args)
+    return stage_2_main(args)
 
 
 if __name__ == "__main__":

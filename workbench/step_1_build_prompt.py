@@ -20,8 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import DEFAULT_CONFIG, banner, build_paths, ensure_stage_dirs, fail, load_config
 
-from app.tools.build_digest_prompt import main as build_digest_prompt_main
-from app.tools.build_story_prompt import main as build_story_prompt_main
+from app.pipeline.stage_1_build_prompt import main as stage_1_main
 
 
 def _target_minutes(cfg: dict) -> float | None:
@@ -29,13 +28,20 @@ def _target_minutes(cfg: dict) -> float | None:
     return seconds / 60.0 if seconds else None
 
 
-def _run_digest(cfg, paths) -> int:
+def _common_inputs_present(paths) -> int | None:
     if not paths.visual_segments.is_file():
         return fail(f"visual segments not found: {paths.visual_segments}")
     if not paths.subtitles_text.is_file():
         return fail(f"subtitles not found: {paths.subtitles_text}")
     if not paths.synopsis.is_file():
         return fail(f"synopsis not found: {paths.synopsis}")
+    return None
+
+
+def _run_digest(cfg, paths) -> int:
+    rc = _common_inputs_present(paths)
+    if rc is not None:
+        return rc
 
     banner(f"Stage 1 — digest prompt for {cfg['common']['movie_title']}")
     print(f"visual segments : {paths.visual_segments}")
@@ -44,6 +50,7 @@ def _run_digest(cfg, paths) -> int:
     print(f"output          : {paths.digest_prompt}")
 
     args = [
+        "--digest",
         "--visual-segments", str(paths.visual_segments),
         "--subtitles-txt", str(paths.subtitles_text),
         "--synopsis", str(paths.synopsis),
@@ -53,21 +60,20 @@ def _run_digest(cfg, paths) -> int:
     target_minutes = _target_minutes(cfg)
     if target_minutes is not None:
         args.extend(["--target-minutes", str(target_minutes)])
-    return build_digest_prompt_main(args)
+    return stage_1_main(args)
 
 
 def _run_story(cfg, paths) -> int:
     if not paths.style.is_file():
         return fail(f"style file not found: {paths.style}")
-    if not paths.synopsis.is_file():
-        return fail(f"synopsis not found: {paths.synopsis}")
 
     use_digest = paths.plot_digest.is_file()
     if not use_digest:
-        if not paths.visual_segments.is_file():
-            return fail(f"visual segments not found: {paths.visual_segments}")
-        if not paths.subtitles_text.is_file():
-            return fail(f"subtitles not found: {paths.subtitles_text}")
+        rc = _common_inputs_present(paths)
+        if rc is not None:
+            return rc
+    elif not paths.synopsis.is_file():
+        return fail(f"synopsis not found: {paths.synopsis}")
 
     paths.script.touch(exist_ok=True)
 
@@ -103,7 +109,7 @@ def _run_story(cfg, paths) -> int:
     target_minutes = _target_minutes(cfg)
     if target_minutes is not None:
         args.extend(["--target-minutes", str(target_minutes)])
-    return build_story_prompt_main(args)
+    return stage_1_main(args)
 
 
 def run(argv: list[str] | None = None) -> int:

@@ -1,121 +1,84 @@
-# Pipeline runner scripts (manual / debug-friendly)
+# Workbench — pipeline harness
 
-These are not unit tests. They are scratch scripts that drive the real
-pipeline stages (`app/pipeline/stage*.py`) end-to-end, with each stage
-isolated to its own file so you can re-run / debug any single stage in
-VSCode with one click.
-
-> **Status (2026-05-04):** the audio-driven pipeline was retired. Only
-> Stage 0 (shot detection) and Stage 1 (subtitle parse) have working
-> step files right now. The rest of the new video-driven pipeline
-> (stages 2–9) will get step files as those modules are implemented —
-> see [`../plan.md`](../plan.md).
-
----
-
-## Layout
+The `workbench/` folder drives the per-movie pipeline. Each numbered step
+corresponds to one phase of the workflow described in
+[`../PROD.md`](../PROD.md).
 
 ```
-tmp/
+workbench/
   configs/
-    current_movie.toml            # the harness always reads this file
-    _template.toml                # copy this when adding a new movie
-    backup/                       # archived per-movie configs for reference
-  _common.py                      # config loader, paths, helpers
-  tools/
-    build_story_prompt.py         # harness for app/tools/build_story_prompt.py
-    generate_script_audio.py      # harness for app/tools/generate_script_audio.py
-    prepare_voice_reference.py    # harness for app/tools/prepare_voice_reference.py
-    transcribe_audio.py           # harness for app/tools/transcribe_audio.py
-    voice_analysis.py             # harness for app/tools/voice_analysis.py
-  step_00_index_visuals.py        # ← open & press ▶ to run stage 0
-  step_01_parse_subtitles.py
-  README.md                       # this file
-
-  work/<movie_slug>/              # all per-movie outputs land here
-    stage0/                       # currently the only populated stage dir
+    current_movie.toml       # active movie config (always read by every step)
+    _template.toml           # copy this when adding a new movie
+    backup/                  # archived per-movie configs
+  _common.py                 # config loader, paths, helpers
+  step_0_prepare_inputs.py   # ▶ index visuals + parse subtitles
+  step_1_build_prompt.py     # ▶ build LLM prompt (story by default; --digest for pass 1)
+  step_2_generate_audio.py   # ▶ TTS the manual script into MP3 + SRT
+  tools/                     # one-time-per-style asset prep
+    prepare_voice_reference.py
+    transcribe_audio.py
+    voice_analysis.py
+  work/<movie_slug>/
+    stage0/
+      visual_segments.json   # from step_0
+      subtitles.txt          # from step_0
+      indexing/              # intermediate chunked clips (gitignored)
+    stage1/
+      digest_prompt.txt      # optional, written by step_1 --digest
+      plot_digest.txt        # optional, user-pasted LLM reply to digest_prompt
+      story_prompt.txt       # written by step_1 (uses plot_digest if it exists)
+      script.txt             # user-pasted LLM reply to story_prompt
+    stage2/
+      voiceover_<style>.mp3
+      voiceover_<style>.srt
+      voiceover_<style>.manifest.json
 ```
 
-Inputs (movie file, subtitle file, style file) stay where they already live
-under `movies/` and `styles/`. Only outputs go into `tmp/work/`.
-
----
-
-## Running a single step
-
-1. Open the step file you want, e.g. `step_00_index_visuals.py`.
-2. Skim the file — it prints all paths it will read/write before running.
-3. Press the ▶ (Run Current File) button in VSCode, **or** from a terminal:
-
-   ```bash
-   conda run -n py312_machine_learning --no-capture-output \
-     python tmp/step_00_index_visuals.py
-   ```
-
-To switch movies: overwrite `tmp/configs/current_movie.toml` with the movie
-you want to run. If you want to keep the old one around, store a named copy
-under `tmp/configs/backup/`.
-
-Tool harnesses work the same way. Open a file in `tmp/tools/` and run it, or
-invoke it from the terminal. Example:
+## End-to-end flow
 
 ```bash
-conda run -n py312_machine_learning --no-capture-output \
-  python tmp/tools/build_story_prompt.py
+# 0. Prepare inputs
+conda run -n py312_machine_learning --no-capture-output python workbench/step_0_prepare_inputs.py
+
+# 1a. (Optional, two-pass mode) Build digest prompt, paste into LLM,
+#     save reply as workbench/work/<slug>/stage1/plot_digest.txt
+conda run -n py312_machine_learning --no-capture-output python workbench/step_1_build_prompt.py --digest
+
+# 1b. Build story prompt (auto-detects digest mode), paste into LLM,
+#     save reply as workbench/work/<slug>/stage1/script.txt
+conda run -n py312_machine_learning --no-capture-output python workbench/step_1_build_prompt.py
+
+# 2. Generate voiceover MP3 + SRT
+conda run -n py312_machine_learning --no-capture-output python workbench/step_2_generate_audio.py
+
+# 3. Open the MP3 + SRT (and the source movie) in 剪映 for the manual edit.
 ```
 
-All `tmp/tools/*.py` wrappers read `tmp/configs/current_movie.toml` through
-`tmp/_common.py`. They derive as much as possible from the active movie + style
-config and only need extra keys in `current_movie.toml` when a tool has inputs
-that cannot be inferred automatically.
+## Switching movies
 
----
+Overwrite `workbench/configs/current_movie.toml` with the movie you want to
+run. Keep the previous one under `configs/backup/` if you want to come back.
 
-## Debugging tips
+Each new movie folder needs:
 
-- Each stage's outputs live under `tmp/work/<movie_slug>/stageN/`. Inspect
-  files there to find where things went wrong.
-- To force a stage to re-run, delete its output (e.g. delete
-  `tmp/work/<slug>/stage0/visual_segments.json` to re-run Stage 0).
-- The first lines printed by each step echo the exact input/output paths,
-  so the log itself tells you where to look.
+1. Movie file + subtitle file under `movies/<folder>/`.
+2. `movies/<folder>/synopsis.md` — plot summary and named cast list.
+3. `movies/<folder>/characters/` — non-empty folder of character reference
+   images (Stage 0 uses these to keep names consistent across chunks).
 
----
+## Re-running a step
 
-## Adding a new movie
+Each step echoes the exact paths it reads and writes before doing work, so
+the log itself tells you where to look. To force a step to re-run, delete
+its outputs (e.g. `workbench/work/<slug>/stage0/visual_segments.json`).
 
-1. Drop the movie file + subtitle into `movies/<some_folder>/`.
-2. Copy `tmp/configs/_template.toml` to `tmp/configs/current_movie.toml` and
-  fill it in.
-3. If you want to preserve the old movie config, save a named copy under
-  `tmp/configs/backup/` first.
-4. Put `synopsis.md` in the movie folder
-  (`movies/<some_folder>/synopsis.md`) with a plot summary and named cast
-  list, and create a non-empty `characters/` folder with reference images.
-  Stage 0 requires both inputs, attaches the synopsis as a Cast Reference
-  block, and uses the face gallery to keep character names consistent across
-  chunks.
-5. Run.
+## Style asset prep (one-time per voice)
 
----
+The `workbench/tools/*.py` scripts wrap the asset-prep CLIs in `app.tools.*`.
+They are not part of the per-movie loop — run them once when adding or
+tuning a voice clone:
 
-## Tool Config
-
-Optional tool-specific settings live in `tmp/configs/current_movie.toml` under
-`[tools.<tool_name>]`.
-
-- `build_story_prompt` uses the current movie/style/stage outputs automatically,
-  including `movies/<...>/synopsis.md` from `tmp/_common.py` as default plot/cast
-  grounding. Override `[tools.build_story_prompt].out` only if you want a
-  non-default output path.
-- `generate_script_audio` defaults to `tmp/work/<movie_slug>/tools/scripts.txt`
-  for the script and `tmp/work/<movie_slug>/tools/` for outputs. Override
-  `script`, `out_dir`, `ref_audio`, `ref_text`, or `tag` if needed.
-- `prepare_voice_reference` requires `[tools.prepare_voice_reference].source_audio`
-  because the source clip cannot be inferred from the movie config alone.
-  `transcript`, `start`, and `end` are optional.
-- `transcribe_audio` defaults to the active style's
-  `styles/voice-assets/<style>/reference/` folder. Override `input_path` or
-  `language` if needed.
-- `voice_analysis` defaults to the active style's `clone_reference.*` files.
-  Override `audio`, `transcript`, or `out` only when needed.
+- `prepare_voice_reference.py` — slice a reference clip and place it under
+  `styles/voice-assets/<style>/reference/`.
+- `transcribe_audio.py` — transcribe the reference clip with Whisper.
+- `voice_analysis.py` — emit prosody stats for tuning `voice_clone.toml`.

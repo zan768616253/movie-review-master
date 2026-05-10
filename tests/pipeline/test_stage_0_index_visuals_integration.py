@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.pipeline.stage0_index_visuals import main
+from app.pipeline.stage_0_index_visuals import main
 
 FIXTURE_VIDEO = Path(__file__).parent.parent / "fixtures" / "test_indexing_clip.mp4"
 
