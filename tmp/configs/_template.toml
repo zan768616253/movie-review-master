@@ -43,13 +43,9 @@ target_seconds = 300.0
 # ref_audio = "styles/voice-assets/niu-shu/reference/clone_reference.mp3"
 # ref_text = "styles/voice-assets/niu-shu/reference/clone_reference.txt"
 # tag = "niu-shu-custom"
-# # Sampling knobs (defaults: temperature=0.7 top_p=0.8 top_k=40 rep_penalty=1.1 max_chars=120)
-# # top_p must stay <= 0.8 to keep laugh/sigh/weird-voice tokens out of the candidate pool.
-# # Raise temperature for more emotion (max ~0.9). Raise max_chars_per_request for flowing
-# # delivery (max ~180). Lower repetition_penalty toward 1.0 to allow emphatic repeats.
-# temperature = 0.7
-# top_p = 0.8
-# top_k = 40
-# repetition_penalty = 1.05
-# max_chars_per_request = 120
-# max_new_tokens = 1024
+#
+# TTS sampling (temperature, top_p, top_k, repetition_penalty, max_chars_per_request,
+# max_new_tokens) is loaded from styles/voice-assets/<style>/voice_clone.toml so
+# every movie using the same style inherits the same voice. Override priority:
+# CLI flag > [tools.generate_script_audio] here > style voice_clone.toml > defaults.
+# Only set sampling values here for one-off per-movie tuning.

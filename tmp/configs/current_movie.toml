@@ -20,17 +20,9 @@ target_seconds = 720.0
 [tools.build_story_prompt]
 out = "tmp/work/sha_po_lang_2/tools/story_prompt.txt"
 
-# Voice-clone TTS knobs tuned for 东北话 humorous + relaxed narration.
-# - top_p evicts laugh/sigh/weird-voice tokens entirely; do not raise above 0.8.
-# - temperature 0.9 = max safe swing while top_p still locks the bad tail.
-# - max_chars_per_request 180 keeps comic timing flowing across multiple sentences.
-# - repetition_penalty 1.0 lets the speaker repeat freely for emphasis.
-[tools.generate_script_audio]
-temperature = 0.9
-top_p = 0.8
-top_k = 40
-repetition_penalty = 1.0
-max_chars_per_request = 180
+# Voice-clone TTS sampling settings live with the style in
+# styles/voice-assets/<style>/voice_clone.toml so all movies that use the same
+# style get the same voice. Override here only for one-off per-movie tuning.
 
 # [tools.prepare_voice_reference]
 # source_audio = "movies/杀破狼2/reference_clip.wav"

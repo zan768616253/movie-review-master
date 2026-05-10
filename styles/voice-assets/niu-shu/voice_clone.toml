@@ -1,0 +1,22 @@
+# TTS sampling parameters for the niu-shu (东北话 / Northeastern Chinese) style.
+# Loaded automatically by app/tools/generate_script_audio.py whenever this style
+# is selected, so every movie using niu-shu inherits the same voice settings.
+#
+# Tuned for humorous + relaxed movie-review narration:
+#   - top_p caps the candidate pool below the codec's laugh / sigh / weird-voice
+#     tail. Do not raise above 0.8 unless you accept those sounds returning.
+#   - temperature 0.9 gives playful pitch swings within the surviving (all-speech)
+#     tokens. 0.9 is the model default and the upper edge of "safe with top_p=0.8".
+#   - max_chars_per_request 180 keeps comic timing flowing across multiple
+#     sentences instead of resetting prosody at every period.
+#   - repetition_penalty 1.0 lets the speaker repeat freely for emphasis
+#     ("好家伙好家伙") without the model fighting it.
+#
+# Override priority: CLI flag > tmp/configs/current_movie.toml > this file > defaults.
+
+temperature = 0.9
+top_p = 0.8
+top_k = 40
+repetition_penalty = 1.0
+max_chars_per_request = 180
+max_new_tokens = 1024

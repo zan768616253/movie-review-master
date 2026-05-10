@@ -14,9 +14,10 @@ import re
 import subprocess
 import sys
 import time
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 
 import numpy as np
 
@@ -34,6 +35,16 @@ STYLES_DIR = REPO_ROOT / "styles"
 DEFAULT_STYLE_PATH = STYLES_DIR / "niu-shu.md"
 REFERENCE_AUDIO_FILENAME = "clone_reference.mp3"
 REFERENCE_TEXT_FILENAME = "clone_reference.txt"
+STYLE_VOICE_CONFIG_FILENAME = "voice_clone.toml"
+
+VOICE_CONFIG_KEYS: tuple[str, ...] = (
+    "temperature",
+    "top_p",
+    "top_k",
+    "repetition_penalty",
+    "max_chars_per_request",
+    "max_new_tokens",
+)
 
 DEFAULT_MAX_CHARS_PER_REQUEST = 120
 DEFAULT_TEMPERATURE = 0.7
@@ -89,6 +100,37 @@ def resolve_voice_reference(
         audio_path=resolve_optional_path(ref_audio) or reference_dir / REFERENCE_AUDIO_FILENAME,
         text_path=resolve_optional_path(ref_text) or reference_dir / REFERENCE_TEXT_FILENAME,
     )
+
+
+def resolve_style_voice_config_path(style_path: Path) -> Path:
+    return style_path.parent / "voice-assets" / style_path.stem / STYLE_VOICE_CONFIG_FILENAME
+
+
+def load_style_voice_config(style_path: Path) -> dict[str, Any]:
+    """Load per-style TTS sampling overrides from styles/voice-assets/<style>/voice_clone.toml.
+
+    Returns an empty dict if the file is absent. Unknown keys are ignored so the
+    file format stays forward-compatible.
+    """
+    config_path = resolve_style_voice_config_path(style_path)
+    if not config_path.exists():
+        return {}
+    with config_path.open("rb") as f:
+        loaded = tomllib.load(f)
+    return {key: loaded[key] for key in VOICE_CONFIG_KEYS if key in loaded}
+
+
+def resolve_voice_setting(
+    cli_value: Any,
+    style_value: Any,
+    default_value: Any,
+) -> Any:
+    """Pick the highest-priority value: CLI > style config > hardcoded default."""
+    if cli_value is not None:
+        return cli_value
+    if style_value is not None:
+        return style_value
+    return default_value
 
 
 def resolve_output_tag(style_path: Path, explicit_tag: Optional[str]) -> str:
@@ -611,38 +653,56 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-chars-per-request",
         type=int,
-        default=DEFAULT_MAX_CHARS_PER_REQUEST,
-        help="Max characters per TTS request. Long sections are split on Chinese sentence punctuation.",
+        default=None,
+        help=(
+            "Max characters per TTS request. Long sections are split on Chinese sentence punctuation. "
+            f"Falls back to the style's voice_clone.toml, then {DEFAULT_MAX_CHARS_PER_REQUEST}."
+        ),
     )
     parser.add_argument(
         "--temperature",
         type=float,
-        default=DEFAULT_TEMPERATURE,
-        help="Sampling temperature. Lower = sharper distribution, less drift toward laugh/breath tokens.",
+        default=None,
+        help=(
+            "Sampling temperature. Lower = sharper distribution, less drift toward laugh/breath tokens. "
+            f"Falls back to the style's voice_clone.toml, then {DEFAULT_TEMPERATURE}."
+        ),
     )
     parser.add_argument(
         "--top-p",
         type=float,
-        default=DEFAULT_TOP_P,
-        help="Nucleus sampling threshold. Lower truncates the codec-vocab tail (where laughs/sighs live).",
+        default=None,
+        help=(
+            "Nucleus sampling threshold. Lower truncates the codec-vocab tail (where laughs/sighs live). "
+            f"Falls back to the style's voice_clone.toml, then {DEFAULT_TOP_P}."
+        ),
     )
     parser.add_argument(
         "--top-k",
         type=int,
-        default=DEFAULT_TOP_K,
-        help="Hard cap on candidate tokens per sampling step.",
+        default=None,
+        help=(
+            "Hard cap on candidate tokens per sampling step. "
+            f"Falls back to the style's voice_clone.toml, then {DEFAULT_TOP_K}."
+        ),
     )
     parser.add_argument(
         "--repetition-penalty",
         type=float,
-        default=DEFAULT_REPETITION_PENALTY,
-        help="Penalty applied to recently sampled tokens to avoid getting stuck on non-speech loops.",
+        default=None,
+        help=(
+            "Penalty applied to recently sampled tokens to avoid getting stuck on non-speech loops. "
+            f"Falls back to the style's voice_clone.toml, then {DEFAULT_REPETITION_PENALTY}."
+        ),
     )
     parser.add_argument(
         "--max-new-tokens",
         type=int,
-        default=DEFAULT_MAX_NEW_TOKENS,
-        help="Hard cap on codec frames per request. Cap-hit triggers a halve-and-retry.",
+        default=None,
+        help=(
+            "Hard cap on codec frames per request. Cap-hit triggers a halve-and-retry. "
+            f"Falls back to the style's voice_clone.toml, then {DEFAULT_MAX_NEW_TOKENS}."
+        ),
     )
     return parser
 
@@ -715,6 +775,30 @@ def main(
             voice_reference.audio_path,
             voice_reference.text_path,
         )
+        style_voice = load_style_voice_config(style_path)
+        if style_voice:
+            print(f"[voice-config] {resolve_style_voice_config_path(style_path)}")
+            for key in VOICE_CONFIG_KEYS:
+                if key in style_voice:
+                    print(f"  {key} = {style_voice[key]}")
+        else:
+            print(
+                f"[voice-config] no voice_clone.toml at "
+                f"{resolve_style_voice_config_path(style_path)} — using built-in defaults"
+            )
+
+        resolved = {
+            key: resolve_voice_setting(getattr(args, key), style_voice.get(key), default)
+            for key, default in (
+                ("max_chars_per_request", DEFAULT_MAX_CHARS_PER_REQUEST),
+                ("temperature", DEFAULT_TEMPERATURE),
+                ("top_p", DEFAULT_TOP_P),
+                ("top_k", DEFAULT_TOP_K),
+                ("repetition_penalty", DEFAULT_REPETITION_PENALTY),
+                ("max_new_tokens", DEFAULT_MAX_NEW_TOKENS),
+            )
+        }
+
         run_full_generation(
             model,
             chunks,
@@ -722,12 +806,12 @@ def main(
             mp3_path,
             manifest_path,
             subtitle_path,
-            max_chars_per_request=args.max_chars_per_request,
-            temperature=args.temperature,
-            top_p=args.top_p,
-            top_k=args.top_k,
-            repetition_penalty=args.repetition_penalty,
-            max_new_tokens=args.max_new_tokens,
+            max_chars_per_request=resolved["max_chars_per_request"],
+            temperature=resolved["temperature"],
+            top_p=resolved["top_p"],
+            top_k=resolved["top_k"],
+            repetition_penalty=resolved["repetition_penalty"],
+            max_new_tokens=resolved["max_new_tokens"],
             run_cmd=run_cmd,
         )
         print(f"[done] wall time {(time.time() - total_t0) / 60:.1f} min")
