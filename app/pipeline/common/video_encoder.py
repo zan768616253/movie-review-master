@@ -1,4 +1,4 @@
-"""GPU-only video encoder helpers shared by Stage 4 and Stage 5."""
+"""ffmpeg hardware-decode helpers used by Stage 0 chunking."""
 
 from __future__ import annotations
 
@@ -43,31 +43,3 @@ def hwaccel_decode_args(codec: str) -> list[str]:
     if codec == GPU_CODEC and cuda_decode_available():
         return ["-hwaccel", "cuda"]
     return []
-
-
-def resolve_encoder() -> str:
-    """Return the required GPU codec or raise when ffmpeg cannot use it."""
-    if not nvenc_available():
-        raise RuntimeError(
-            "GPU-only video processing requires ffmpeg with the h264_nvenc encoder, but it is not available."
-        )
-    if not cuda_decode_available():
-        raise RuntimeError(
-            "GPU-only video processing requires ffmpeg with CUDA hwaccel decoding, but it is not available."
-        )
-    return GPU_CODEC
-
-
-def encoder_ffmpeg_args(codec: str) -> list[str]:
-    """Return the ffmpeg -c:v ... arguments for the required GPU codec."""
-    if codec == GPU_CODEC:
-        return [
-            "-c:v", "h264_nvenc",
-            "-preset", "p4",
-            "-tune", "hq",
-            "-rc", "vbr",
-            "-cq", "23",
-            "-profile:v", "high",
-            "-pix_fmt", "yuv420p",
-        ]
-    raise ValueError(f"Unsupported codec: {codec}")
