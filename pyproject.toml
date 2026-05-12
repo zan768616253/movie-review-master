@@ -33,10 +33,11 @@ dev = [
 include = ["app*"]
 
 [project.scripts]
-index-visuals = "app.pipeline.stage_0_index_visuals:main"
-parse-subtitles = "app.pipeline.stage_0_parse_subtitles:main"
-build-prompt = "app.pipeline.stage_1_build_prompt:main"
-generate-script-audio = "app.pipeline.stage_2_generate_audio:main"
+generate-subtitles = "app.pipeline.stage_0_generate_subtitles:main"
+index-visuals = "app.pipeline.stage_1_index_visuals:main"
+parse-subtitles = "app.pipeline.stage_1_parse_subtitles:main"
+build-prompt = "app.pipeline.stage_2_build_prompt:main"
+generate-script-audio = "app.pipeline.stage_3_generate_audio:main"
 prepare-voice-reference = "app.tools.prepare_voice_reference:main"
 transcribe = "app.tools.transcribe_audio:main"
 

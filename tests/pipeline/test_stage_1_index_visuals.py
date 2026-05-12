@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.pipeline.stage_0_index_visuals import build_parser
+from app.pipeline.stage_1_index_visuals import build_parser
 from app.pipeline.indexers.base import (
     seconds_to_timestamp,
     snap_to_shot_boundaries,

@@ -1,12 +1,12 @@
 """Shared time, shot-boundary, and visual-segment helpers.
 
-This module is the trust boundary between Stage 0 (VLM output) and the rest
+This module is the trust boundary between Stage 1 (VLM output) and the rest
 of the pipeline:
 
 - timestamp parse/format helpers (used everywhere timestamps cross module
   boundaries),
 - ffprobe-based media duration probing,
-- ``validate_visual_segments`` — clamps and filters Stage 0 output against
+- ``validate_visual_segments`` — clamps and filters Stage 1 output against
   the real video length so downstream stages can rely on every entry being
   in-range,
 - ``build_shot_boundary_set`` — derives the canonical shot-cut universe
@@ -64,10 +64,10 @@ def seconds_to_timestamp(seconds: float) -> str:
 REAL_TTS_CPS = 6.74
 
 
-# Sub-shots produced by Stage 0's scene-detect that are shorter than this
+# Sub-shots produced by Stage 1's scene-detect that are shorter than this
 # threshold are treated as "false granularity" — micro-cuts inside what
 # was editorially one continuous beat (rapid action, motion changes,
-# camera shake). When ANY sub-shot of a Stage 0 segment falls below this
+# camera shake). When ANY sub-shot of a Stage 1 segment falls below this
 # bar after flicker-drop, the whole segment's inner cuts are collapsed.
 COLLAPSE_INNER_CUTS_BELOW_S = 3.0
 
@@ -116,7 +116,7 @@ def should_collapse_segment_inner_cuts(
 def build_shot_boundary_set(
     visual_segments: list[dict[str, object]] | None,
 ) -> list[float]:
-    """Collect every shot-boundary timestamp from Stage 0's visual segments.
+    """Collect every shot-boundary timestamp from Stage 1's visual segments.
 
     The full set of "places where a shot cut happens" is:
 

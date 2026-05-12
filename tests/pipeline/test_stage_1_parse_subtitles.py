@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 from shutil import copyfile
 
-from app.pipeline.stage_0_parse_subtitles import (
+from app.pipeline.stage_1_parse_subtitles import (
     main,
     parse_subtitles,
     parse_timestamp,

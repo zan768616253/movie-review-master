@@ -1,4 +1,4 @@
-"""Stage 0: visual indexing.
+"""Stage 1: visual indexing.
 
 Split a long movie into chunks, run them through Gemini 3 Flash for visual
 segmentation, and merge the per-chunk segments into a single
@@ -41,7 +41,7 @@ def _non_empty_directory(value: str) -> Path:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="index-visuals",
-        description="Stage 0: index visuals via Gemini 3 Flash.",
+        description="Stage 1: index visuals via Gemini 3 Flash.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--video", type=Path, required=True, help="Path to full movie file")

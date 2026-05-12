@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from app.pipeline.stage_2_generate_audio import (
+from app.pipeline.stage_3_generate_audio import (
     Chunk,
     build_voice_prompt,
     generate_chunks,

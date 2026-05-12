@@ -1,7 +1,7 @@
-"""Step 0 — prepare inputs for script generation.
+"""Step 1 — prepare inputs for script generation.
 
 Indexes the movie into visual segments and parses the subtitle file into
-a normalized text + JSON pair. Both outputs feed Step 1's prompt builder.
+a normalized text + JSON pair. Both outputs feed Step 2's prompt builder.
 
 Reads:  movies/<title>/<movie>.{mkv,mp4}, movies/<title>/<movie>.{srt,ass}
 Writes: workbench/work/<slug>/stage0/visual_segments.json
@@ -18,8 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import DEFAULT_CONFIG, banner, build_paths, ensure_stage_dirs, fail, load_config
 
 from app.pipeline.common.script_contract import seconds_to_timestamp
-from app.pipeline.stage_0_index_visuals import main as stage_0_index_visuals_main
-from app.pipeline.stage_0_parse_subtitles import parse_subtitles
+from app.pipeline.stage_1_index_visuals import main as stage_1_index_visuals_main
+from app.pipeline.stage_1_parse_subtitles import parse_subtitles
 
 
 def _run_index_visuals(paths) -> int:
@@ -30,13 +30,13 @@ def _run_index_visuals(paths) -> int:
     if not paths.characters_dir.is_dir() or not any(paths.characters_dir.iterdir()):
         return fail(f"face gallery directory missing or empty: {paths.characters_dir}")
 
-    banner("Stage 0a — index visuals")
+    banner("Stage 1a — index visuals")
     print(f"video        : {paths.video}")
     print(f"synopsis     : {paths.synopsis}")
     print(f"face gallery : {paths.characters_dir}")
     print(f"output       : {paths.visual_segments}")
 
-    return stage_0_index_visuals_main([
+    return stage_1_index_visuals_main([
         "--video", str(paths.video),
         "--output", str(paths.visual_segments),
         "--tmp-dir", str(paths.stage0_dir / "indexing"),
@@ -49,7 +49,7 @@ def _run_parse_subtitles(paths) -> int:
     if not paths.subtitle_srt.exists():
         return fail(f"subtitle file not found: {paths.subtitle_srt}")
 
-    banner("Stage 0b — parse subtitles")
+    banner("Stage 1b — parse subtitles")
     print(f"input  : {paths.subtitle_srt}")
     print(f"output : {paths.subtitles_text}")
 

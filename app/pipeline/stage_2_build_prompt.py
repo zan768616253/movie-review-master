@@ -1,4 +1,4 @@
-"""Stage 1: build the LLM prompt for movie script writing.
+"""Stage 2: build the LLM prompt for movie script writing.
 
 Two modes:
 
@@ -470,7 +470,7 @@ def build_digest_prompt(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="build-prompt",
-        description="Stage 1: build the LLM prompt for movie script writing.",
+        description="Stage 2: build the LLM prompt for movie script writing.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--digest", action="store_true",
@@ -484,9 +484,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--synopsis", type=Path,
                         help="Optional synopsis markdown for plot, cast, and continuity grounding.")
     parser.add_argument("--visual-segments", type=Path,
-                        help="Stage 0 visual_segments.json. Required unless --plot-digest is used in story mode.")
+                        help="Stage 1 visual_segments.json. Required unless --plot-digest is used in story mode.")
     parser.add_argument("--subtitles-txt", type=Path,
-                        help="Stage 0 subtitles.txt. Required unless --plot-digest is used in story mode.")
+                        help="Stage 1 subtitles.txt. Required unless --plot-digest is used in story mode.")
 
     # Story-mode-only options
     parser.add_argument("--style", type=Path,

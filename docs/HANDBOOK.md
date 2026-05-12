@@ -117,7 +117,7 @@ Warm, reflective, meaning-driven framing. Research materials live under
 - Gemini 3 Flash via `google-genai`.
 - Long movies are split into chunks (currently 7 minutes) before VLM calls.
 - The strategy interface (`VisualIndexerStrategy`) is preserved so a
-  second backend could be added later without touching Stage 0's CLI.
+  second backend could be added later without touching Stage 1's CLI.
 
 ### Prompt Assembly
 
@@ -151,7 +151,7 @@ Warm, reflective, meaning-driven framing. Research materials live under
 ### Video / GPU
 
 - `ffmpeg` is the baseline media engine.
-- Stage 0 chunking uses NVENC + CUDA hwaccel decoding when available.
+- Stage 1 chunking uses NVENC + CUDA hwaccel decoding when available.
 - Final cutting happens in 剪映, not in code; the project no longer
   ships its own video assembly stage.
 

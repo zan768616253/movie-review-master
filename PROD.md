@@ -23,20 +23,24 @@ because that's where the operator's editing skill lives.
 
 ## 2. Target Workflow
 
-1. Drop the movie file and subtitle file under `movies/<title>/` together
-   with `synopsis.md` and a `characters/` face-gallery folder.
+1. Drop the movie file under `movies/<title>/` together with `synopsis.md`
+   and a `characters/` face-gallery folder. A subtitle file (`.srt`/`.ass`)
+   alongside is optional — Step 0 generates one when missing.
 2. Update `workbench/configs/current_movie.toml` to point at the movie.
-3. **Step 0** — run `step_0_prepare_inputs.py`: visual indexing + subtitle parse.
-4. **Step 1** — run `step_1_build_prompt.py` (optionally `--digest` first
+3. **Step 0 (optional)** — run `step_0_generate_subtitles.py`: faster-whisper
+   transcribes the audio into a sibling `.srt`. Skipped automatically if the
+   movie folder already has a `.srt` or `.ass`.
+4. **Step 1** — run `step_1_prepare_inputs.py`: visual indexing + subtitle parse.
+5. **Step 2** — run `step_2_build_prompt.py` (optionally `--digest` first
    for two-pass mode), paste the prompt into Gemini 3 Pro / DeepSeek / Qwen,
    paste the reply back as `script.txt`.
-5. **Step 2** — run `step_2_generate_audio.py`: TTS the script into an MP3
+6. **Step 3** — run `step_3_generate_audio.py`: TTS the script into an MP3
    plus a matching SRT.
-6. **Step 3 (manual)** — open the source movie, the voiceover MP3, and the
+7. **Step 4 (manual)** — open the source movie, the voiceover MP3, and the
    SRT in 剪映. Cut the picture against the narration timeline.
 
-Step 4 is the only manual data step. Steps 0, 1 (assembly), and 2 are fully
-automated; the user only handles the LLM paste-paste in step 1.
+Step 4 is the only manual data step. Steps 0–3 are fully automated; the
+user only handles the LLM paste-paste in step 2.
 
 ## 3. Inputs
 

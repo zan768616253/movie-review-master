@@ -99,7 +99,7 @@ _PROMPT_FOOTER = """\
 
 
 def build_prompt(synopsis_text: str = "", has_face_gallery: bool = False) -> str:
-    """Assemble the Stage 0 VLM prompt with an optional Cast Reference block and Face Gallery block.
+    """Assemble the Stage 1 VLM prompt with an optional Cast Reference block and Face Gallery block.
 
     When ``synopsis_text`` is empty (no synopsis provided), the character
     rule is the conservative one: only label characters re-identified
@@ -257,12 +257,12 @@ class ChunkedVisualIndexerStrategy(VisualIndexerStrategy, ABC):
         (tmp_dir / "segments").mkdir(parents=True, exist_ok=True)
 
         print(
-            f"{self.provider_label} Stage 0 running. Video duration: {duration:.2f}s, "
+            f"{self.provider_label} Stage 1 running. Video duration: {duration:.2f}s, "
             f"splitting into {num_chunks} chunks of {self.chunk_minutes} minutes."
         )
         if self.max_workers > 1:
             print(
-                f"Stage 0 concurrency enabled with {self.max_workers} workers for missing chunk caches. "
+                f"Stage 1 concurrency enabled with {self.max_workers} workers for missing chunk caches. "
                 "Higher values can increase 503 risk."
             )
 

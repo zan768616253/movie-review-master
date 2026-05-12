@@ -22,10 +22,11 @@ movie-review-master/
     agent-rules/
   app/
     pipeline/
-      stage_0_index_visuals.py     # shot detection (auto)
-      stage_0_parse_subtitles.py   # subtitle parse (auto)
-      stage_1_build_prompt.py      # LLM prompt builder (story default; --digest pass 1)
-      stage_2_generate_audio.py    # TTS the manual script -> MP3 + SRT + manifest
+      stage_0_generate_subtitles.py # (optional) faster-whisper SRT when no human subtitle exists
+      stage_1_index_visuals.py     # shot detection (auto)
+      stage_1_parse_subtitles.py   # subtitle parse (auto)
+      stage_2_build_prompt.py      # LLM prompt builder (story default; --digest pass 1)
+      stage_3_generate_audio.py    # TTS the manual script -> MP3 + SRT + manifest
       indexers/                    # Gemini VLM strategy
         base.py
         gemini.py
@@ -45,13 +46,14 @@ movie-review-master/
     voice-assets/<style>/{reference,analysis}/
   workbench/                       # pipeline harness — see workbench/README.md
     configs/current_movie.toml
-    step_0_prepare_inputs.py
-    step_1_build_prompt.py
-    step_2_generate_audio.py
+    step_0_generate_subtitles.py
+    step_1_prepare_inputs.py
+    step_2_build_prompt.py
+    step_3_generate_audio.py
     tools/                         # one-time-per-style asset prep wrappers
     work/<movie_slug>/{stage0,stage1,stage2}/
   tests/
-    pipeline/{test_stage_0_index_visuals,test_stage_0_index_visuals_integration,test_stage_0_parse_subtitles,test_stage_1_build_prompt,test_stage_2_generate_audio}.py
+    pipeline/{test_stage_1_index_visuals,test_stage_1_index_visuals_integration,test_stage_1_parse_subtitles,test_stage_2_build_prompt,test_stage_3_generate_audio}.py
     tools/{test_prepare_voice_reference,test_transcribe_audio}.py
 ```
 
@@ -65,19 +67,25 @@ Reference: [docs/agent-rules/python-environment.md](agent-rules/python-environme
 
 ## 4. Pipeline Modules
 
-### `app/pipeline/stage_0_index_visuals.py`
+### `app/pipeline/stage_0_generate_subtitles.py`
+
+Optional. Scans the movie folder for `.srt` / `.ass` and skips when one
+exists. Otherwise runs `faster-whisper` `large-v3` on CUDA (float16) and
+writes a sibling `.srt` next to the video. Entry point: `generate-subtitles`.
+
+### `app/pipeline/stage_1_index_visuals.py`
 
 Detect every shot via Gemini 3 Flash + ffmpeg scene-detect, emit
 `visual_segments.json`. Requires both `--synopsis` (inlined as Cast
 Reference in the VLM prompt) and `--characters-dir` (non-empty face gallery
 for consistent character naming across chunks). Entry point: `index-visuals`.
 
-### `app/pipeline/stage_0_parse_subtitles.py`
+### `app/pipeline/stage_1_parse_subtitles.py`
 
 Parse `.srt` / `.ass` subtitles into normalized text and structured JSON.
 Entry point: `parse-subtitles`. Test-covered.
 
-### `app/pipeline/stage_1_build_prompt.py`
+### `app/pipeline/stage_2_build_prompt.py`
 
 Build the LLM prompt for movie script writing. Two modes via `--digest`:
 
@@ -89,7 +97,7 @@ Build the LLM prompt for movie script writing. Two modes via `--digest`:
 Embeds the chosen style markdown verbatim and (optionally) a genre example
 script. Entry point: `build-prompt`. Test-covered.
 
-### `app/pipeline/stage_2_generate_audio.py`
+### `app/pipeline/stage_3_generate_audio.py`
 
 TTS the final manual script with Qwen3 voice cloning. Produces:
 
@@ -102,7 +110,7 @@ Entry point: `generate-script-audio`. Test-covered.
 
 ### `app/pipeline/indexers/`
 
-Visual-indexer implementation for Stage 0:
+Visual-indexer implementation for Stage 1:
 
 - `base.py` — `VisualIndexerStrategy` abstract class plus `merge_segments`.
 - `gemini.py` — Gemini 3 Flash backend.
@@ -110,7 +118,7 @@ Visual-indexer implementation for Stage 0:
 
 ### `app/pipeline/common/script_contract.py`
 
-Time helpers and Stage 0 trust boundary. Public surface:
+Time helpers and Stage 1 trust boundary. Public surface:
 
 - `timestamp_to_seconds`, `seconds_to_timestamp`, `normalize_timestamp`
 - `probe_media_duration`, `get_video_duration`
@@ -151,9 +159,9 @@ audio + transcript pair. Used to tune `voice_clone.toml`.
 
 ## 6. Data Contracts
 
-### Visual Segment Contract (Stage 0)
+### Visual Segment Contract (Stage 1)
 
-`stage_0_index_visuals.py` writes a JSON list. Each entry:
+`stage_1_index_visuals.py` writes a JSON list. Each entry:
 
 - optional `id` (loaders assign `visual:NNN` when absent)
 - `start`, `end` (HH:MM:SS.mmm, validated to fall in `[0, video_duration]`)
@@ -164,9 +172,9 @@ audio + transcript pair. Used to tune `voice_clone.toml`.
 
 Every entry has already passed `validate_visual_segments()`.
 
-### Subtitle JSON Contract (Stage 0)
+### Subtitle JSON Contract (Stage 1)
 
-`stage_0_parse_subtitles.py --format json` emits:
+`stage_1_parse_subtitles.py --format json` emits:
 
 ```json
 { "start": 12.34, "end": 15.67, "text": "subtitle text", "speaker": null, "style": null }
@@ -174,9 +182,9 @@ Every entry has already passed `validate_visual_segments()`.
 
 `speaker` / `style` are populated from ASS when available.
 
-### Voiceover Manifest (Stage 2)
+### Voiceover Manifest (Stage 3)
 
-`stage_2_generate_audio.py` emits:
+`stage_3_generate_audio.py` emits:
 
 ```json
 {
@@ -196,10 +204,11 @@ One entry per script structural block (`[HOOK]`, `[ACT ...]`, `[CLOSING]`).
 
 Configured in `pyproject.toml`:
 
-- `index-visuals = app.pipeline.stage_0_index_visuals:main`
-- `parse-subtitles = app.pipeline.stage_0_parse_subtitles:main`
-- `build-prompt = app.pipeline.stage_1_build_prompt:main`
-- `generate-script-audio = app.pipeline.stage_2_generate_audio:main`
+- `generate-subtitles = app.pipeline.stage_0_generate_subtitles:main`
+- `index-visuals = app.pipeline.stage_1_index_visuals:main`
+- `parse-subtitles = app.pipeline.stage_1_parse_subtitles:main`
+- `build-prompt = app.pipeline.stage_2_build_prompt:main`
+- `generate-script-audio = app.pipeline.stage_3_generate_audio:main`
 - `prepare-voice-reference = app.tools.prepare_voice_reference:main`
 - `transcribe = app.tools.transcribe_audio:main`
 

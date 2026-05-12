@@ -1,4 +1,4 @@
-"""Stage 2: generate a voice-cloned MP3 + SRT + manifest from the manual script.
+"""Stage 3: generate a voice-cloned MP3 + SRT + manifest from the manual script.
 
 Reads a sectioned script (`[HOOK]`, `[ACT ...]`, `[CLOSING]`) such as
 ``workbench/work/<movie>/stage1/script.txt``. Each structural block becomes

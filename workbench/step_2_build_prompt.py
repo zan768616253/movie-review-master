@@ -1,13 +1,13 @@
-"""Step 1 — build the LLM prompt for script writing.
+"""Step 2 — build the LLM prompt for script writing.
 
 Default behaviour: build the story prompt (single-pass timeline mode, or
 two-pass digest mode if `plot_digest.txt` already exists in the stage1 dir).
 
 With ``--digest``: build the Pass 1 *digest* prompt instead. Workflow:
 
-    python workbench/step_1_build_prompt.py --digest      # writes digest_prompt.txt
+    python workbench/step_2_build_prompt.py --digest      # writes digest_prompt.txt
     # paste digest_prompt.txt into LLM, save reply as plot_digest.txt
-    python workbench/step_1_build_prompt.py               # writes story_prompt.txt (digest mode)
+    python workbench/step_2_build_prompt.py               # writes story_prompt.txt (digest mode)
     # paste story_prompt.txt into LLM, save reply as script.txt
 """
 
@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import DEFAULT_CONFIG, banner, build_paths, ensure_stage_dirs, fail, load_config
 
-from app.pipeline.stage_1_build_prompt import main as stage_1_main
+from app.pipeline.stage_2_build_prompt import main as stage_2_main
 
 
 def _target_minutes(cfg: dict) -> float | None:
@@ -43,7 +43,7 @@ def _run_digest(cfg, paths) -> int:
     if rc is not None:
         return rc
 
-    banner(f"Stage 1 — digest prompt for {cfg['common']['movie_title']}")
+    banner(f"Stage 2 — digest prompt for {cfg['common']['movie_title']}")
     print(f"visual segments : {paths.visual_segments}")
     print(f"subtitles       : {paths.subtitles_text}")
     print(f"synopsis        : {paths.synopsis}")
@@ -60,7 +60,7 @@ def _run_digest(cfg, paths) -> int:
     target_minutes = _target_minutes(cfg)
     if target_minutes is not None:
         args.extend(["--target-minutes", str(target_minutes)])
-    return stage_1_main(args)
+    return stage_2_main(args)
 
 
 def _run_story(cfg, paths) -> int:
@@ -78,7 +78,7 @@ def _run_story(cfg, paths) -> int:
     paths.script.touch(exist_ok=True)
 
     mode = "DIGEST (two-pass)" if use_digest else "TIMELINE (single-pass)"
-    banner(f"Stage 1 — story prompt for {cfg['common']['movie_title']} [{mode}]")
+    banner(f"Stage 2 — story prompt for {cfg['common']['movie_title']} [{mode}]")
     print(f"style           : {paths.style}")
     print(f"synopsis        : {paths.synopsis}")
     if use_digest:
@@ -109,7 +109,7 @@ def _run_story(cfg, paths) -> int:
     target_minutes = _target_minutes(cfg)
     if target_minutes is not None:
         args.extend(["--target-minutes", str(target_minutes)])
-    return stage_1_main(args)
+    return stage_2_main(args)
 
 
 def run(argv: list[str] | None = None) -> int:

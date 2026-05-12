@@ -1,4 +1,4 @@
-"""ffmpeg hardware-decode helpers used by Stage 0 chunking."""
+"""ffmpeg hardware-decode helpers used by Stage 1 chunking."""
 
 from __future__ import annotations
 
