@@ -1,8 +1,8 @@
 """Stage 3: generate a voice-cloned MP3 + SRT + manifest from the manual script.
 
 Reads a sectioned script (`[HOOK]`, `[ACT ...]`, `[CLOSING]`) such as
-``workbench/work/<movie>/stage1/script.txt``. Each structural block becomes
-one TTS chunk; outputs land in ``workbench/work/<movie>/stage2/``.
+``workbench/work/<movie>/stage2/script.txt``. Each structural block becomes
+one TTS chunk; outputs land in ``workbench/work/<movie>/stage3/``.
 """
 
 from __future__ import annotations

@@ -4,9 +4,9 @@ Indexes the movie into visual segments and parses the subtitle file into
 a normalized text + JSON pair. Both outputs feed Step 2's prompt builder.
 
 Reads:  movies/<title>/<movie>.{mkv,mp4}, movies/<title>/<movie>.{srt,ass}
-Writes: workbench/work/<slug>/stage0/visual_segments.json
-        workbench/work/<slug>/stage0/subtitles.txt
-        workbench/work/<slug>/stage0/subtitles.json
+Writes: workbench/work/<slug>/stage1/visual_segments.json
+        workbench/work/<slug>/stage1/subtitles.txt
+        workbench/work/<slug>/stage1/subtitles.json
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ def _run_index_visuals(paths) -> int:
     return stage_1_index_visuals_main([
         "--video", str(paths.video),
         "--output", str(paths.visual_segments),
-        "--tmp-dir", str(paths.stage0_dir / "indexing"),
+        "--tmp-dir", str(paths.stage1_dir / "indexing"),
         "--synopsis", str(paths.synopsis),
         "--characters-dir", str(paths.characters_dir),
     ])

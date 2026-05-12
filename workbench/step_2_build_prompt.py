@@ -1,7 +1,7 @@
 """Step 2 — build the LLM prompt for script writing.
 
 Default behaviour: build the story prompt (single-pass timeline mode, or
-two-pass digest mode if `plot_digest.txt` already exists in the stage1 dir).
+two-pass digest mode if `plot_digest.txt` already exists in the stage2 dir).
 
 With ``--digest``: build the Pass 1 *digest* prompt instead. Workflow:
 

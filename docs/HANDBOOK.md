@@ -173,16 +173,17 @@ movies/<title>/
 
 ```text
 workbench/work/<movie_slug>/
-  stage0/
+  stage0/                     # reserved for Step 0 (SRT lives next to the video, not here)
+  stage1/
     visual_segments.json
     subtitles.txt
     indexing/                 # intermediate VLM-chunk clips (gitignored)
-  stage1/
+  stage2/
     digest_prompt.txt         # optional, only in two-pass mode
     plot_digest.txt           # optional, user-pasted LLM reply
     story_prompt.txt
     script.txt                # user-pasted LLM reply
-  stage2/
+  stage3/
     voiceover_<style>.mp3
     voiceover_<style>.srt
     voiceover_<style>.manifest.json

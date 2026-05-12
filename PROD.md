@@ -56,15 +56,16 @@ user only handles the LLM paste-paste in step 2.
 
 ```text
 workbench/work/<movie_slug>/
-  stage0/
+  stage0/                    # reserved for Step 0 (SRT is written next to the video, not here)
+  stage1/
     visual_segments.json
     subtitles.txt
-  stage1/
+  stage2/
     digest_prompt.txt        # only if two-pass mode
     plot_digest.txt          # only if two-pass mode
     story_prompt.txt
     script.txt
-  stage2/
+  stage3/
     voiceover_<style>.mp3
     voiceover_<style>.srt
     voiceover_<style>.manifest.json

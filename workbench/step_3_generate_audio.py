@@ -1,7 +1,7 @@
 """Step 3 — generate voiceover MP3 + SRT from the manual script.
 
-Reads:  workbench/work/<slug>/stage1/script.txt
-Writes: workbench/work/<slug>/stage2/voiceover_<style>.{mp3,srt,manifest.json}
+Reads:  workbench/work/<slug>/stage2/script.txt
+Writes: workbench/work/<slug>/stage3/voiceover_<style>.{mp3,srt,manifest.json}
 
 TTS sampling parameters resolve as: CLI override > [tools.generate_script_audio]
 in current_movie.toml > styles/voice-assets/<style>/voice_clone.toml > built-in defaults.
@@ -41,12 +41,12 @@ def run() -> int:
     banner(f"Stage 3 — generate audio for {cfg['common']['movie_title']}")
     print(f"script     : {paths.script}")
     print(f"style      : {paths.style}")
-    print(f"output dir : {paths.stage2_dir}")
+    print(f"output dir : {paths.stage3_dir}")
 
     args = [
         "--script", str(paths.script),
         "--style", str(paths.style),
-        "--output-dir", str(paths.stage2_dir),
+        "--output-dir", str(paths.stage3_dir),
     ]
     for key in _OVERRIDES:
         value = get_tool_value(cfg, "generate_script_audio", key)

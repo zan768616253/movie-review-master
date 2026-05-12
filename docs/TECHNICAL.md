@@ -51,7 +51,7 @@ movie-review-master/
     step_2_build_prompt.py
     step_3_generate_audio.py
     tools/                         # one-time-per-style asset prep wrappers
-    work/<movie_slug>/{stage0,stage1,stage2}/
+    work/<movie_slug>/{stage0,stage1,stage2,stage3}/
   tests/
     pipeline/{test_stage_1_index_visuals,test_stage_1_index_visuals_integration,test_stage_1_parse_subtitles,test_stage_2_build_prompt,test_stage_3_generate_audio}.py
     tools/{test_prepare_voice_reference,test_transcribe_audio}.py

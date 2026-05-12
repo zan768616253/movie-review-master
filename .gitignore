@@ -136,6 +136,6 @@ movies/
 .env
 
 workbench/work/**/stage*
-workbench/work/**/stage0/tmp/
+workbench/work/**/stage1/tmp/
 
 NarratoAI/

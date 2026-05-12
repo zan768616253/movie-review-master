@@ -15,7 +15,7 @@ conda run -n py312_machine_learning --no-capture-output python workbench/step_0_
 # 1. Prepare inputs (visual indexing + subtitle parse)
 conda run -n py312_machine_learning --no-capture-output python workbench/step_1_prepare_inputs.py
 
-# 2. Build prompt; paste into LLM; save reply as workbench/work/<slug>/stage1/script.txt
+# 2. Build prompt; paste into LLM; save reply as workbench/work/<slug>/stage2/script.txt
 conda run -n py312_machine_learning --no-capture-output python workbench/step_2_build_prompt.py
 
 # 3. TTS the script into MP3 + SRT

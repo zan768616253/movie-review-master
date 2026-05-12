@@ -20,16 +20,17 @@ workbench/
     transcribe_audio.py
     voice_analysis.py
   work/<movie_slug>/
-    stage0/
+    stage0/                  # reserved for Step 0 (currently empty: SRT is written next to the video)
+    stage1/
       visual_segments.json   # from step_1
       subtitles.txt          # from step_1
       indexing/              # intermediate chunked clips (gitignored)
-    stage1/
+    stage2/
       digest_prompt.txt      # optional, written by step_2 --digest
       plot_digest.txt        # optional, user-pasted LLM reply to digest_prompt
       story_prompt.txt       # written by step_2 (uses plot_digest if it exists)
       script.txt             # user-pasted LLM reply to story_prompt
-    stage2/
+    stage3/
       voiceover_<style>.mp3
       voiceover_<style>.srt
       voiceover_<style>.manifest.json
@@ -46,11 +47,11 @@ conda run -n py312_machine_learning --no-capture-output python workbench/step_0_
 conda run -n py312_machine_learning --no-capture-output python workbench/step_1_prepare_inputs.py
 
 # 2a. (Optional, two-pass mode) Build digest prompt, paste into LLM,
-#     save reply as workbench/work/<slug>/stage1/plot_digest.txt
+#     save reply as workbench/work/<slug>/stage2/plot_digest.txt
 conda run -n py312_machine_learning --no-capture-output python workbench/step_2_build_prompt.py --digest
 
 # 2b. Build story prompt (auto-detects digest mode), paste into LLM,
-#     save reply as workbench/work/<slug>/stage1/script.txt
+#     save reply as workbench/work/<slug>/stage2/script.txt
 conda run -n py312_machine_learning --no-capture-output python workbench/step_2_build_prompt.py
 
 # 3. Generate voiceover MP3 + SRT
@@ -76,7 +77,7 @@ Each new movie folder needs:
 
 Each step echoes the exact paths it reads and writes before doing work, so
 the log itself tells you where to look. To force a step to re-run, delete
-its outputs (e.g. `workbench/work/<slug>/stage0/visual_segments.json`).
+its outputs (e.g. `workbench/work/<slug>/stage1/visual_segments.json`).
 
 ## Style asset prep (one-time per voice)
 

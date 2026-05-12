@@ -1,6 +1,6 @@
 """Shared helpers for the workbench step scripts.
 
-Loads the active movie's TOML config, resolves every path the 3-step
+Loads the active movie's TOML config, resolves every path the 4-step
 pipeline uses, and exposes a single Paths dataclass that step_*.py
 consumes.
 """
@@ -38,19 +38,20 @@ class Paths:
     stage0_dir: Path
     stage1_dir: Path
     stage2_dir: Path
+    stage3_dir: Path
 
-    # Stage 0 — visuals + subtitles
+    # Stage 1 — visuals + subtitles
     visual_segments: Path
     subtitles_text: Path
     subtitles_json: Path
 
-    # Stage 1 — prompts + script
+    # Stage 2 — prompts + script
     digest_prompt: Path
     plot_digest: Path
     story_prompt: Path
     script: Path
 
-    # Stage 2 — voiceover + SRT
+    # Stage 3 — voiceover + SRT
     voiceover_mp3: Path
     voiceover_srt: Path
     voiceover_manifest: Path
@@ -110,6 +111,7 @@ def build_paths(config: dict) -> Paths:
     stage0_dir = work_dir / "stage0"
     stage1_dir = work_dir / "stage1"
     stage2_dir = work_dir / "stage2"
+    stage3_dir = work_dir / "stage3"
 
     tag = style.stem
     voiceover_basename = f"voiceover_{tag}"
@@ -125,16 +127,17 @@ def build_paths(config: dict) -> Paths:
         stage0_dir=stage0_dir,
         stage1_dir=stage1_dir,
         stage2_dir=stage2_dir,
-        visual_segments=stage0_dir / "visual_segments.json",
-        subtitles_text=stage0_dir / "subtitles.txt",
-        subtitles_json=stage0_dir / "subtitles.json",
-        digest_prompt=stage1_dir / "digest_prompt.txt",
-        plot_digest=stage1_dir / "plot_digest.txt",
-        story_prompt=stage1_dir / "story_prompt.txt",
-        script=stage1_dir / "script.txt",
-        voiceover_mp3=stage2_dir / f"{voiceover_basename}.mp3",
-        voiceover_srt=stage2_dir / f"{voiceover_basename}.srt",
-        voiceover_manifest=stage2_dir / f"{voiceover_basename}.manifest.json",
+        stage3_dir=stage3_dir,
+        visual_segments=stage1_dir / "visual_segments.json",
+        subtitles_text=stage1_dir / "subtitles.txt",
+        subtitles_json=stage1_dir / "subtitles.json",
+        digest_prompt=stage2_dir / "digest_prompt.txt",
+        plot_digest=stage2_dir / "plot_digest.txt",
+        story_prompt=stage2_dir / "story_prompt.txt",
+        script=stage2_dir / "script.txt",
+        voiceover_mp3=stage3_dir / f"{voiceover_basename}.mp3",
+        voiceover_srt=stage3_dir / f"{voiceover_basename}.srt",
+        voiceover_manifest=stage3_dir / f"{voiceover_basename}.manifest.json",
         voice_reference_dir=voice_reference_dir,
         voice_reference_audio=voice_reference_dir / "clone_reference.mp3",
         voice_reference_text=voice_reference_dir / "clone_reference.txt",
@@ -143,7 +146,7 @@ def build_paths(config: dict) -> Paths:
 
 
 def ensure_stage_dirs(paths: Paths) -> None:
-    for d in (paths.stage0_dir, paths.stage1_dir, paths.stage2_dir):
+    for d in (paths.stage0_dir, paths.stage1_dir, paths.stage2_dir, paths.stage3_dir):
         d.mkdir(parents=True, exist_ok=True)
 
 
