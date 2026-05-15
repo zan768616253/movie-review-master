@@ -1,14 +1,24 @@
 """Step 2 — build the LLM prompts for the multi-pass script pipeline.
 
-Pipeline:
+Default: auto-detect which pass to run based on which reply files have been
+filled. Run the command once at each stage of the workflow:
 
-    python workbench/step_2_build_prompt.py --outline   # writes outline_prompt.txt
-    # paste outline_prompt.txt into LLM, save reply as scene_markers.json
-    python workbench/step_2_build_prompt.py --digest    # writes digest_prompt.txt
-                                                        # (or 3 sibling files if digest_mode = "chunked")
-    # paste digest_prompt.txt into LLM, save reply as plot_digest.txt
-    python workbench/step_2_build_prompt.py             # writes story_prompt.txt
-    # paste story_prompt.txt into LLM, save reply as script.txt
+    python workbench/step_2_build_prompt.py   # 1st run: writes outline_prompt.txt
+    # paste LLM reply into scene_markers.json
+    python workbench/step_2_build_prompt.py   # 2nd run: detects scene_markers, writes digest_prompt.txt
+    # paste LLM reply into plot_digest.txt
+    python workbench/step_2_build_prompt.py   # 3rd run: detects plot_digest, writes story_prompt.txt
+    # paste LLM reply into script.txt
+    python workbench/step_2_build_prompt.py   # 4th run: all done, ready for stage 3
+
+Empty placeholder reply files are created alongside each generated prompt so
+the editor shows you exactly where to paste the LLM output.
+
+Override the auto-detection with one of these flags to force-rerun a step:
+
+    --outline   regenerate outline_prompt.txt
+    --digest    regenerate digest_prompt.txt
+    --story     regenerate story_prompt.txt
 """
 
 from __future__ import annotations
@@ -38,6 +48,31 @@ def _common_inputs_present(paths) -> int | None:
     return None
 
 
+def _is_filled(path: Path) -> bool:
+    """A reply file counts as 'filled' when it exists with non-whitespace content."""
+    if not path.is_file():
+        return False
+    try:
+        return path.read_text(encoding="utf-8").strip() != ""
+    except OSError:
+        return False
+
+
+def detect_next_step(scene_markers: Path, plot_digest: Path, script: Path) -> str:
+    """Return the next pass to run based on reply-file state.
+
+    Returns one of ``"outline"``, ``"digest"``, ``"story"``, ``"done"``.
+    The progression is sequential — an unfilled earlier reply blocks later steps.
+    """
+    if not _is_filled(scene_markers):
+        return "outline"
+    if not _is_filled(plot_digest):
+        return "digest"
+    if not _is_filled(script):
+        return "story"
+    return "done"
+
+
 def _run_outline(cfg, paths) -> int:
     rc = _common_inputs_present(paths)
     if rc is not None:
@@ -58,7 +93,10 @@ def _run_outline(cfg, paths) -> int:
         "--movie-title", str(cfg["common"]["movie_title"]),
         "--out", str(paths.outline_prompt),
     ]
-    return stage_2_main(args)
+    rc = stage_2_main(args)
+    if rc == 0:
+        paths.scene_markers.touch(exist_ok=True)
+    return rc
 
 
 def _run_digest(cfg, paths) -> int:
@@ -70,10 +108,11 @@ def _run_digest(cfg, paths) -> int:
     if digest_mode not in ("single", "chunked"):
         return fail(f"Invalid digest_mode: {digest_mode!r} (expected 'single' or 'chunked')")
 
-    if not paths.scene_markers.is_file():
+    if not paths.scene_markers.is_file() or not _is_filled(paths.scene_markers):
         return fail(
-            f"scene_markers.json not found: {paths.scene_markers}\n"
-            "Run --outline first and paste the LLM reply into that file."
+            f"scene_markers.json is empty or missing: {paths.scene_markers}\n"
+            "Run with --outline (or just rerun and it will auto-build the outline prompt) "
+            "and paste the LLM reply into that file before requesting the digest prompt."
         )
 
     banner(f"Stage 2 — digest (Pass 1, {digest_mode}) for {cfg['common']['movie_title']}")
@@ -82,6 +121,7 @@ def _run_digest(cfg, paths) -> int:
     print(f"synopsis        : {paths.synopsis}")
     print(f"scene markers   : {paths.scene_markers}")
     print(f"output          : {paths.digest_prompt}")
+    print(f"-> paste reply as: {paths.plot_digest.name}")
 
     args = [
         "--digest",
@@ -102,14 +142,17 @@ def _run_digest(cfg, paths) -> int:
         args.extend(["--target-minutes", str(target_minutes)])
     if digest_mode == "chunked":
         args.append("--chunked")
-    return stage_2_main(args)
+    rc = stage_2_main(args)
+    if rc == 0:
+        paths.plot_digest.touch(exist_ok=True)
+    return rc
 
 
 def _run_story(cfg, paths) -> int:
     if not paths.style.is_file():
         return fail(f"style file not found: {paths.style}")
 
-    use_digest = paths.plot_digest.is_file()
+    use_digest = _is_filled(paths.plot_digest)
     if not use_digest:
         rc = _common_inputs_present(paths)
         if rc is not None:
@@ -154,11 +197,25 @@ def _run_story(cfg, paths) -> int:
     return stage_2_main(args)
 
 
+def _report_done(cfg, paths) -> int:
+    banner(f"Stage 2 — already complete for {cfg['common']['movie_title']}")
+    print("All three reply files are filled:")
+    print(f"  scene_markers : {paths.scene_markers}")
+    print(f"  plot_digest   : {paths.plot_digest}")
+    print(f"  script        : {paths.script}")
+    print("\nNext: python workbench/step_3_generate_audio.py")
+    return 0
+
+
 def run(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--outline", action="store_true", help="Build Pass 0 outline prompt.")
-    mode.add_argument("--digest", action="store_true", help="Build Pass 1 digest prompt(s).")
+    mode.add_argument("--outline", action="store_true",
+                      help="Force-regenerate the Pass 0 outline prompt.")
+    mode.add_argument("--digest", action="store_true",
+                      help="Force-regenerate the Pass 1 digest prompt.")
+    mode.add_argument("--story", action="store_true",
+                      help="Force-regenerate the Pass 2 story prompt.")
     args = parser.parse_args(argv)
 
     cfg = load_config(DEFAULT_CONFIG)
@@ -169,7 +226,17 @@ def run(argv: list[str] | None = None) -> int:
         return _run_outline(cfg, paths)
     if args.digest:
         return _run_digest(cfg, paths)
-    return _run_story(cfg, paths)
+    if args.story:
+        return _run_story(cfg, paths)
+
+    next_step = detect_next_step(paths.scene_markers, paths.plot_digest, paths.script)
+    if next_step == "outline":
+        return _run_outline(cfg, paths)
+    if next_step == "digest":
+        return _run_digest(cfg, paths)
+    if next_step == "story":
+        return _run_story(cfg, paths)
+    return _report_done(cfg, paths)
 
 
 if __name__ == "__main__":
