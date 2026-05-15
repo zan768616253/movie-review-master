@@ -48,10 +48,13 @@ class Paths:
     thumbnails_dir: Path
 
     # Stage 2 — prompts + script
+    outline_prompt: Path
+    scene_markers: Path
     digest_prompt: Path
     plot_digest: Path
     story_prompt: Path
     script: Path
+    hallucination_report: Path
 
     # Stage 3 — voiceover + SRT
     voiceover_mp3: Path
@@ -139,10 +142,13 @@ def build_paths(config: dict) -> Paths:
         subtitles_text=stage1_dir / "subtitles.txt",
         subtitles_json=stage1_dir / "subtitles.json",
         thumbnails_dir=stage1_dir / "thumbnails",
+        outline_prompt=stage2_dir / "outline_prompt.txt",
+        scene_markers=stage2_dir / "scene_markers.json",
         digest_prompt=stage2_dir / "digest_prompt.txt",
         plot_digest=stage2_dir / "plot_digest.txt",
         story_prompt=stage2_dir / "story_prompt.txt",
         script=stage2_dir / "script.txt",
+        hallucination_report=stage2_dir / "hallucination_report.json",
         voiceover_mp3=stage3_dir / f"{voiceover_basename}.mp3",
         voiceover_srt=stage3_dir / f"{voiceover_basename}.srt",
         voiceover_manifest=stage3_dir / f"{voiceover_basename}.manifest.json",

@@ -1,13 +1,13 @@
-"""Step 2 — build the LLM prompt for script writing.
+"""Step 2 — build the LLM prompts for the multi-pass script pipeline.
 
-Default behaviour: build the story prompt (single-pass timeline mode, or
-two-pass digest mode if `plot_digest.txt` already exists in the stage2 dir).
+Pipeline:
 
-With ``--digest``: build the Pass 1 *digest* prompt instead. Workflow:
-
-    python workbench/step_2_build_prompt.py --digest      # writes digest_prompt.txt
+    python workbench/step_2_build_prompt.py --outline   # writes outline_prompt.txt
+    # paste outline_prompt.txt into LLM, save reply as scene_markers.json
+    python workbench/step_2_build_prompt.py --digest    # writes digest_prompt.txt
+                                                        # (or 3 sibling files if digest_mode = "chunked")
     # paste digest_prompt.txt into LLM, save reply as plot_digest.txt
-    python workbench/step_2_build_prompt.py               # writes story_prompt.txt (digest mode)
+    python workbench/step_2_build_prompt.py             # writes story_prompt.txt
     # paste story_prompt.txt into LLM, save reply as script.txt
 """
 
@@ -38,15 +38,49 @@ def _common_inputs_present(paths) -> int | None:
     return None
 
 
+def _run_outline(cfg, paths) -> int:
+    rc = _common_inputs_present(paths)
+    if rc is not None:
+        return rc
+
+    banner(f"Stage 2 — outline (Pass 0) for {cfg['common']['movie_title']}")
+    print(f"visual segments : {paths.visual_segments}")
+    print(f"subtitles       : {paths.subtitles_text}")
+    print(f"synopsis        : {paths.synopsis}")
+    print(f"output          : {paths.outline_prompt}")
+    print(f"-> paste reply as: {paths.scene_markers.name}")
+
+    args = [
+        "--outline",
+        "--visual-segments", str(paths.visual_segments),
+        "--subtitles-txt", str(paths.subtitles_text),
+        "--synopsis", str(paths.synopsis),
+        "--movie-title", str(cfg["common"]["movie_title"]),
+        "--out", str(paths.outline_prompt),
+    ]
+    return stage_2_main(args)
+
+
 def _run_digest(cfg, paths) -> int:
     rc = _common_inputs_present(paths)
     if rc is not None:
         return rc
 
-    banner(f"Stage 2 — digest prompt for {cfg['common']['movie_title']}")
+    digest_mode = cfg["common"].get("digest_mode", "single")
+    if digest_mode not in ("single", "chunked"):
+        return fail(f"Invalid digest_mode: {digest_mode!r} (expected 'single' or 'chunked')")
+
+    if not paths.scene_markers.is_file():
+        return fail(
+            f"scene_markers.json not found: {paths.scene_markers}\n"
+            "Run --outline first and paste the LLM reply into that file."
+        )
+
+    banner(f"Stage 2 — digest (Pass 1, {digest_mode}) for {cfg['common']['movie_title']}")
     print(f"visual segments : {paths.visual_segments}")
     print(f"subtitles       : {paths.subtitles_text}")
     print(f"synopsis        : {paths.synopsis}")
+    print(f"scene markers   : {paths.scene_markers}")
     print(f"output          : {paths.digest_prompt}")
 
     args = [
@@ -54,6 +88,7 @@ def _run_digest(cfg, paths) -> int:
         "--visual-segments", str(paths.visual_segments),
         "--subtitles-txt", str(paths.subtitles_text),
         "--synopsis", str(paths.synopsis),
+        "--scene-markers", str(paths.scene_markers),
         "--movie-title", str(cfg["common"]["movie_title"]),
         "--out", str(paths.digest_prompt),
     ]
@@ -65,6 +100,8 @@ def _run_digest(cfg, paths) -> int:
     target_minutes = _target_minutes(cfg)
     if target_minutes is not None:
         args.extend(["--target-minutes", str(target_minutes)])
+    if digest_mode == "chunked":
+        args.append("--chunked")
     return stage_2_main(args)
 
 
@@ -82,7 +119,7 @@ def _run_story(cfg, paths) -> int:
 
     paths.script.touch(exist_ok=True)
 
-    mode = "DIGEST (two-pass)" if use_digest else "TIMELINE (single-pass)"
+    mode = "DIGEST (multi-pass)" if use_digest else "TIMELINE (single-pass)"
     banner(f"Stage 2 — story prompt for {cfg['common']['movie_title']} [{mode}]")
     print(f"style           : {paths.style}")
     print(f"synopsis        : {paths.synopsis}")
@@ -119,15 +156,20 @@ def _run_story(cfg, paths) -> int:
 
 def run(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--digest", action="store_true",
-                        help="Build the Pass 1 digest prompt instead of the story prompt.")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--outline", action="store_true", help="Build Pass 0 outline prompt.")
+    mode.add_argument("--digest", action="store_true", help="Build Pass 1 digest prompt(s).")
     args = parser.parse_args(argv)
 
     cfg = load_config(DEFAULT_CONFIG)
     paths = build_paths(cfg)
     ensure_stage_dirs(paths)
 
-    return _run_digest(cfg, paths) if args.digest else _run_story(cfg, paths)
+    if args.outline:
+        return _run_outline(cfg, paths)
+    if args.digest:
+        return _run_digest(cfg, paths)
+    return _run_story(cfg, paths)
 
 
 if __name__ == "__main__":

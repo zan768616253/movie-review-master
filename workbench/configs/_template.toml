@@ -10,6 +10,11 @@ subtitle_file = "TODO.srt"
 style_path    = "styles/niu-shu.md"
 genre         = "action"
 
+# Stage 2 digest mode:
+#   "single"  (default) — one LLM call for Pass 1
+#   "chunked" — three LLM calls (front/climax/tail) for very long movies
+digest_mode   = "single"
+
 # Soft hint for prompt builders.
 target_seconds = 720.0
 
