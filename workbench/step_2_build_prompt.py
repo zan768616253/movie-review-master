@@ -73,6 +73,32 @@ def detect_next_step(scene_markers: Path, plot_digest: Path, script: Path) -> st
     return "done"
 
 
+def _print_next_steps(
+    *,
+    prompt_file: Path,
+    reply_file: Path,
+    reply_format: str,
+    next_pass_label: str,
+) -> None:
+    """Print copy/paste guidance after a prompt is generated.
+
+    ``next_pass_label`` is what the user advances to ("Pass 1 — digest", etc.).
+    """
+    print()
+    print("─" * 70)
+    print("NEXT STEPS")
+    print("─" * 70)
+    print(f"  1. Copy the contents of this prompt file into your LLM "
+          f"(Gemini / DeepSeek / Qwen):")
+    print(f"       {prompt_file}")
+    print(f"  2. Save the LLM's {reply_format} reply into this file "
+          f"(an empty placeholder has been created for you):")
+    print(f"       {reply_file}")
+    print(f"  3. Re-run the same command to advance to {next_pass_label}:")
+    print(f"       python workbench/step_2_build_prompt.py")
+    print("─" * 70)
+
+
 def _run_outline(cfg, paths) -> int:
     rc = _common_inputs_present(paths)
     if rc is not None:
@@ -83,7 +109,6 @@ def _run_outline(cfg, paths) -> int:
     print(f"subtitles       : {paths.subtitles_text}")
     print(f"synopsis        : {paths.synopsis}")
     print(f"output          : {paths.outline_prompt}")
-    print(f"-> paste reply as: {paths.scene_markers.name}")
 
     args = [
         "--outline",
@@ -96,6 +121,12 @@ def _run_outline(cfg, paths) -> int:
     rc = stage_2_main(args)
     if rc == 0:
         paths.scene_markers.touch(exist_ok=True)
+        _print_next_steps(
+            prompt_file=paths.outline_prompt,
+            reply_file=paths.scene_markers,
+            reply_format="JSON (scene_markers schema — character_glossary + scenes)",
+            next_pass_label="Pass 1 (digest)",
+        )
     return rc
 
 
@@ -121,7 +152,6 @@ def _run_digest(cfg, paths) -> int:
     print(f"synopsis        : {paths.synopsis}")
     print(f"scene markers   : {paths.scene_markers}")
     print(f"output          : {paths.digest_prompt}")
-    print(f"-> paste reply as: {paths.plot_digest.name}")
 
     args = [
         "--digest",
@@ -143,8 +173,35 @@ def _run_digest(cfg, paths) -> int:
     if digest_mode == "chunked":
         args.append("--chunked")
     rc = stage_2_main(args)
-    if rc == 0:
+    if rc != 0:
+        return rc
+
+    if digest_mode == "chunked":
         paths.plot_digest.touch(exist_ok=True)
+        front = paths.digest_prompt.with_suffix(f".front{paths.digest_prompt.suffix}")
+        climax = paths.digest_prompt.with_suffix(f".climax{paths.digest_prompt.suffix}")
+        tail = paths.digest_prompt.with_suffix(f".tail{paths.digest_prompt.suffix}")
+        print()
+        print("─" * 70)
+        print("NEXT STEPS (chunked digest mode)")
+        print("─" * 70)
+        print("  1. Copy EACH of these three prompt files into your LLM, one at a time:")
+        print(f"       {front}")
+        print(f"       {climax}")
+        print(f"       {tail}")
+        print("  2. Concatenate the three replies (front → climax → tail) into:")
+        print(f"       {paths.plot_digest}")
+        print("  3. Re-run to advance to Pass 2 (story):")
+        print("       python workbench/step_2_build_prompt.py")
+        print("─" * 70)
+    else:
+        paths.plot_digest.touch(exist_ok=True)
+        _print_next_steps(
+            prompt_file=paths.digest_prompt,
+            reply_file=paths.plot_digest,
+            reply_format="plot-digest text (Chinese; with 镜头: visual:NNN refs per beat)",
+            next_pass_label="Pass 2 (story)",
+        )
     return rc
 
 
@@ -172,7 +229,6 @@ def _run_story(cfg, paths) -> int:
         print(f"visual segments : {paths.visual_segments}")
         print(f"subtitles       : {paths.subtitles_text}")
     print(f"output prompt   : {paths.story_prompt}")
-    print(f"-> ready to fill: {paths.script.name} (paste LLM script output here)")
 
     args = [
         "--style", str(paths.style),
@@ -194,7 +250,15 @@ def _run_story(cfg, paths) -> int:
     target_minutes = _target_minutes(cfg)
     if target_minutes is not None:
         args.extend(["--target-minutes", str(target_minutes)])
-    return stage_2_main(args)
+    rc = stage_2_main(args)
+    if rc == 0:
+        _print_next_steps(
+            prompt_file=paths.story_prompt,
+            reply_file=paths.script,
+            reply_format="full script text (with <refs>visual:NNN</refs> on its own line above every sentence)",
+            next_pass_label="Stage 3 (TTS); re-run this command first to confirm the script is filled",
+        )
+    return rc
 
 
 def _report_done(cfg, paths) -> int:
@@ -203,7 +267,13 @@ def _report_done(cfg, paths) -> int:
     print(f"  scene_markers : {paths.scene_markers}")
     print(f"  plot_digest   : {paths.plot_digest}")
     print(f"  script        : {paths.script}")
-    print("\nNext: python workbench/step_3_generate_audio.py")
+    print()
+    print("─" * 70)
+    print("NEXT STEP")
+    print("─" * 70)
+    print("  Stage 2 is complete. Run the audio generation step:")
+    print("       python workbench/step_3_generate_audio.py")
+    print("─" * 70)
     return 0
 
 
