@@ -1,6 +1,7 @@
 import os
 import json
 import time
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -8,11 +9,13 @@ import pytest
 
 from app.pipeline.stage_1_index_visuals import build_parser
 from app.pipeline.indexers.base import (
+    detect_shot_boundaries,
     seconds_to_timestamp,
     snap_to_shot_boundaries,
     timestamp_to_seconds,
     merge_segments,
 )
+from app.pipeline.common.script_contract import validate_visual_segments
 from app.pipeline.indexers.shared import build_prompt
 from app.pipeline.indexers.gemini import GeminiStrategy
 
@@ -114,6 +117,39 @@ class TestMergeSegments:
         merged = merge_segments([chunk], 300.0)  # offset 0 for chunk 0
         assert merged[0]["shot_boundaries_s"] == [3.0, 7.0]
 
+    def test_repairs_range_packed_start_timestamp_before_merging(self):
+        chunk = [{
+            "start": "00:00:01.000 - 00:00:04.000",
+            "end": "00:00:04.000",
+            "summary": "range packed",
+        }]
+
+        merged = merge_segments([chunk], 300.0)
+
+        assert merged == [{
+            "start": "00:00:01.000",
+            "end": "00:00:04.000",
+            "summary": "range packed",
+        }]
+
+
+class TestValidateVisualSegments:
+    def test_repairs_range_packed_end_timestamp_before_validation(self):
+        segments = [{
+            "start": "00:00:10.000",
+            "end": "00:00:10.000 - 00:00:14.500",
+            "summary": "range packed",
+        }]
+
+        validated, diagnostics = validate_visual_segments(segments, video_duration_s=100.0)
+
+        assert diagnostics.kept == 1
+        assert validated == [{
+            "start": "00:00:10.000",
+            "end": "00:00:14.500",
+            "summary": "range packed",
+        }]
+
 
 class TestSnapToShotBoundaries:
     def test_snaps_start_and_end_within_tolerance(self):
@@ -151,6 +187,26 @@ class TestSnapToShotBoundaries:
         # Outer boundaries (10.0, 20.0) coincide with start/end; only the
         # two inner cuts (14.0 and 17.0) should land in shot_boundaries_s.
         assert snapped[0]["shot_boundaries_s"] == [14.0, 17.0]
+
+
+class TestDetectShotBoundaries:
+    @patch("app.pipeline.indexers.base.subprocess.run")
+    def test_uses_utf8_decoding_for_ffmpeg_output(self, mock_run, tmp_path):
+        mock_run.return_value = SimpleNamespace(
+            stderr="frame=1 pts_time:1.25\nframe=2 pts_time:2.5\n"
+        )
+
+        cuts = detect_shot_boundaries(tmp_path / "movie.mp4")
+
+        assert cuts == [1.25, 2.5]
+        assert mock_run.call_args.kwargs["encoding"] == "utf-8"
+        assert mock_run.call_args.kwargs["errors"] == "replace"
+
+    @patch("app.pipeline.indexers.base.subprocess.run")
+    def test_missing_stderr_returns_no_cuts_instead_of_crashing(self, mock_run, tmp_path):
+        mock_run.return_value = SimpleNamespace(stderr=None)
+
+        assert detect_shot_boundaries(tmp_path / "movie.mp4") == []
 
 
 # ---------------------------------------------------------------------------

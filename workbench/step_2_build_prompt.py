@@ -57,6 +57,11 @@ def _run_digest(cfg, paths) -> int:
         "--movie-title", str(cfg["common"]["movie_title"]),
         "--out", str(paths.digest_prompt),
     ]
+    if paths.style.is_file():
+        args.extend(["--style", str(paths.style)])
+    genre = cfg["common"].get("genre")
+    if genre:
+        args.extend(["--genre", str(genre)])
     target_minutes = _target_minutes(cfg)
     if target_minutes is not None:
         args.extend(["--target-minutes", str(target_minutes)])

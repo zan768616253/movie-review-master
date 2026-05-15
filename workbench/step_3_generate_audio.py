@@ -42,12 +42,16 @@ def run() -> int:
     print(f"script     : {paths.script}")
     print(f"style      : {paths.style}")
     print(f"output dir : {paths.stage3_dir}")
+    if paths.visual_segments.is_file():
+        print(f"visual segs: {paths.visual_segments}")
 
     args = [
         "--script", str(paths.script),
         "--style", str(paths.style),
         "--output-dir", str(paths.stage3_dir),
     ]
+    if paths.visual_segments.is_file():
+        args.extend(["--visual-segments", str(paths.visual_segments)])
     for key in _OVERRIDES:
         value = get_tool_value(cfg, "generate_script_audio", key)
         if value is not None:

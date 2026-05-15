@@ -17,6 +17,8 @@ def nvenc_available() -> bool:
             check=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
@@ -32,6 +34,8 @@ def cuda_decode_available() -> bool:
             check=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False

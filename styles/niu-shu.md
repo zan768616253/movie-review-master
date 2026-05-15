@@ -183,6 +183,8 @@ After narrating a beat, add ONE short sentence that tells the audience what the 
 
 The reframe is usually: **mundane**, **social**, **cynical**, or **mock-wise**. It translates movie-world drama into street-level understanding. **Reframes always go DOWN (see Soul section), never UP into poetry.**
 
+**Stack limit — ONE reframe per beat.** After a reframe, snap back to plot. Never stack 3+ reframes in a row, and never aggregate reframes into a multi-line meta-essay (see §6.12 and §12 red-line #17). If you have written 4+ consecutive non-plot lines, you have stopped narrating and started lecturing — break the block and re-attach single reframes to specific beats. Thesis-level commentary about the whole movie belongs in CLOSING, not mid-act.
+
 **Without the reframe, you are just summarizing. With it, you have the voice.**
 
 ### 1.6 Brief narrator self-insertion is allowed
@@ -366,6 +368,23 @@ Use a four-act spine, but the real engine is **selection pressure**.
 | 2 - Escalation | Stack pressure, betrayal, traps, and reversals |
 | 3 - Climax + Reveal | Spend the most detail here; this is where the movie earns its money |
 | 4 - Resolution + Button | Resolve the ending, then land a verdict, aftertaste, or life-lesson close |
+
+### 4.0 Act-balance invariant (read this BEFORE you start drafting)
+
+**ACT 3 (CLIMAX) MUST contain more narration lines than ACT 2 (ESCALATION).** This is a hard ordering invariant, not a soft guideline. A script where Act 2 is longer than Act 3 has failed — it means you spent the audience's patience on pressure-building beats and then short-changed the payoff they came to watch.
+
+Target line distribution for a 10–12 minute script (~350–500 total narration lines, excluding `<refs>` tags and blank lines):
+
+| Act | Target % | Target lines (≈12 min) | Failure signal |
+|-----|----------|------------------------|----------------|
+| HOOK | ~3–5% | 12–25 | over 30 lines = stalling on the hook |
+| ACT 1 - SETUP | 15–20% | 65–100 | over 25% = too much backstory before tension |
+| ACT 2 - ESCALATION | 25–30% | 110–150 | over 30% = pressure beats are stretching |
+| ACT 3 - CLIMAX | **35–40%** | **160–200** | **under 30% = climax is starved — REWRITE** |
+| ACT 4 - RESOLUTION | 10–15% | 40–65 | over 15% = aftermath is bloated |
+| CLOSING | ~2–4% | 8–15 | over 6% = the lesson is overcooked |
+
+**How to recover when Act 2 ends up longer than Act 3:** compress Act 2 first (cut emotional setup that primes the climax, side-character reactions, prep beats that aren't real reversals, and any extended bonsai/sincerity stretches that drain pressure). THEN expand Act 3 (every climax set-piece gets its own physical-percussion pass, plus a one-line X-ray reframe — see §1.5). Never ship a climax-starved script.
 
 ### 4.1 What gets slowed down
 
@@ -692,6 +711,65 @@ Create one-off slang compounds that sound colloquial even though they don't form
 
 **Rule:** Create 1-2 invented compounds or doubled-verb phrases per act. They should feel spontaneous, not rehearsed.
 
+### 6.12 Commentary attaches to beats — never aggregates into essays
+
+The narrator's voice is built from **short reframes glued to plot beats**, not from extended thesis paragraphs. A comment must ride a single beat in 1–3 lines, then snap back to plot. Multi-line analytical blocks mid-script kill momentum, break the co-conspirator illusion, and turn the review into a film-class lecture.
+
+**Hard rule: no run of more than 3 consecutive lines that does not advance the plot.** If you have a thesis to deliver about the whole movie ("all the villains are X", "this director's pattern is Y"), it belongs in CLOSING — one sharp button-line is enough. Never embed it mid-act as a block of 5+ lines.
+
+**Bad (aggregated essay dropped mid-climax — FAIL):**
+
+```
+咱们说说简短
+这场的调度确实利索
+没有那些花里胡哨的慢镜头
+就是实打实的物理碰撞
+看着都替他们腰疼
+大家发现了吗
+这电影里的反派
+一个比一个体面
+但死法一个比一个接地气
+机关算尽
+最后全败给了常识
+你能猜到吗
+有时候赢的不是主角光环
+是牛顿定律
+```
+
+13 consecutive non-plot lines. The narrator has stopped reviewing the movie and started teaching film school. The thesis material at the end (`反派一个比一个体面` / `是牛顿定律`) is good — but it belongs in CLOSING, where one sharp button lands. The cinematography praise at the top (`调度利索` / `没有慢镜头` / `实打实的物理碰撞`) must be CUT — see §6.13.
+
+**Good (single-line reframe glued to its beat, then back to plot):**
+
+```
+晋哥反手掏出隐藏钢针
+扑刺扑刺一顿小刺刺
+瞬间贯穿老猜的肩膀和大腿
+以暴制暴
+属于基本操作
+永强夺过一根针
+反插晋哥脖颈
+```
+
+One beat → one reframe (`以暴制暴` / `属于基本操作`) → next beat. The percussion never stops for a lecture.
+
+### 6.13 Never praise the filmmaking
+
+The narrator is ABOVE the movie (see Soul section). He never compliments the director, cinematographer, choreographer, editor, score, or production design. The moment he does, he has slipped from the balcony into the role of a film critic admiring the craft — altitude FAIL.
+
+**Forbidden register (the narrator does not talk like this):**
+
+- `这场打戏拍得真好` (compliment on filmmaking)
+- `这场的调度确实利索` (compliment on staging)
+- `没有那些花里胡哨的慢镜头` (technical praise via negation)
+- `导演用镜头讲故事的功力` (auteur worship)
+- `这段配乐响起的时候真戳人` (compliment on score)
+- `特效做得非常逼真` (compliment on VFX)
+- `这一段剪得干净利落` (compliment on editing)
+
+**Why:** The narrator is a guy on his balcony with a beer. He notices the *story*, the *characters*, the *power moves*, the *irony*. He does NOT notice the slow-motion. The audience came to hear what the movie MEANS, not how well it was shot.
+
+**Allowed:** physical reactions in the viewer's body, framed casually — `看着都替他们腰疼`, `这一刀听着都牙酸`, `看得我心脏都跟着提了一下`. These describe the audience's gut response, not the filmmaker's craft.
+
 ---
 
 ## 7. Genre Modulation (类型调音)
@@ -994,6 +1072,9 @@ These rules cannot be broken:
 13. **No literary/poetic violence language.** Do not use wuxia-novel phrases like `手起刀落`, `势大力沉`, `剑光一闪`. Use casual, percussive, visceral language instead (see 7.1).
 14. **Audience address every 15-25 lines.** If you go 25+ lines without a `咱们`, a rhetorical question, or a direct aside, you are losing the conversational voice.
 15. **Sentence-ending particles in 25-35% of lines.** Without `吧/啊/呢/嘛`, the script sounds like a news report. See 6.9.
+16. **Act 3 (CLIMAX) must contain more narration lines than Act 2 (ESCALATION).** This is a measurable invariant — see §4.0. A climax-starved script fails regardless of how good the prose is. If Act 3 < Act 2, compress Act 2 and expand Act 3 before submitting.
+17. **No aggregated commentary blocks.** No run of more than 3 consecutive lines that does not advance the plot. Comments attach to beats in 1–3 lines and snap back. Multi-line thesis statements belong in CLOSING, not mid-act. See §6.12.
+18. **No filmmaking critique.** The narrator never compliments or analyses the director, cinematography, choreography, editing, score, or VFX. Audience body-reactions (`看着都替他们腰疼`) are allowed; craft praise (`这场的调度确实利索`) is not. See §6.13.
 
 ---
 
@@ -1061,6 +1142,7 @@ This style uses **short, staccato lines** — one breath per line. As a result, 
 - **Expected output density:** ~400 Chinese characters per minute of spoken narration.
 - **Average line length:** 8-18 characters. Lines above 25 characters should be rare.
 - **Line count calibration:** A 10-minute script should be ~350-420 lines. A 12-minute script should be ~420-500 lines.
+- **Per-act distribution:** see §4.0 for the act-by-act line targets. The invariant `Act 3 line count > Act 2 line count` MUST hold — verify this before submitting.
 - If the script looks like prose paragraphs, it is wrong. If it looks like a vertical column of short punches, it is right.
 
 ### Output rules
@@ -1124,3 +1206,9 @@ Before submitting, run this soul-check. **The first 5 items are the SOUL — if 
 17. **Audience address:** Did I address the audience directly (`咱们`, rhetorical questions, meta-asides) every 15-25 lines?
 18. **Greeting:** Does the script include `哈喽大家好，我是小七` after the hook?
 19. **Violence texture:** In action scenes, did I use `一顿X` percussion and casual visceral language, not literary phrases?
+
+**Measurable invariants (count and verify — do not eyeball):**
+
+20. **Act-balance invariant:** Count narration lines per act (exclude `<refs>` tags, headers, and blank lines). Does `Act 3 line count > Act 2 line count`? If not, the script has FAILED §4.0 and §12 red-line #16 — compress Act 2 (cut emotional setup / side reactions / non-reversal prep beats) and expand Act 3 (give each climax set-piece its own percussion + one-line X-ray reframe) until the invariant holds. Do not submit a climax-starved script.
+21. **No commentary blocks:** Scan for any run of 4+ consecutive lines that does not advance plot (no character action, no event, no spoken line). If found, break it up — keep at most one reframe per beat, move any thesis material about the whole movie into CLOSING. See §6.12.
+22. **No filmmaking praise:** Search the draft for compliments on `调度`, `镜头`, `剪辑`, `配乐`, `特效`, `慢镜头`, `导演`, or `打戏拍得`. Delete every one. The narrator never reviews the craft; he reviews the story. See §6.13.

@@ -207,6 +207,44 @@ def _extract_golden_paragraph(genre_text: str, max_lines: int = 20) -> str | Non
     return "\n".join(lines[:max_lines])
 
 
+def _grounding_section(*, use_digest: bool) -> str:
+    source_term = "the digest's Plot Beats" if use_digest else "the timeline's VISUAL lines"
+    return (
+        "# Grounding requirement (HARD RULE — read twice)\n"
+        "Every narrative sentence you write must be cuttable: the human editor needs to find matching "
+        "footage in the source movie for it. To enforce this, annotate every sentence with the "
+        "visual_segment IDs that show what the sentence describes.\n\n"
+        "**Format** — place a <refs>...</refs> tag on its own line directly ABOVE each sentence:\n\n"
+        "```\n"
+        "<refs>visual:031, visual:033-035</refs>\n"
+        "故事开场，老猜每天送女儿去溜冰场学习。\n\n"
+        "<refs>visual:050-052</refs>\n"
+        "直到那天，雪山下的小镇发生了一起绑架案。\n"
+        "```\n\n"
+        "**Rules:**\n"
+        "- One <refs> line per sentence. A sentence is a clause ending in 。！？.\n"
+        "- A sentence may cite multiple IDs (comma-separated). Use a dash for consecutive ranges: "
+        "`visual:033-035` means 033, 034, and 035.\n"
+        f"- Only cite visual:NNN IDs that ACTUALLY appear in {source_term}. Do NOT invent IDs.\n"
+        "- If you cannot find at least one visual_segment that depicts what a sentence describes, "
+        "DROP that sentence. Brevity beats invention. A sentence with no footage breaks the edit.\n"
+        "- The <refs> lines are metadata for the editor — they are stripped before TTS. Keep them on "
+        "their own lines, NEVER inline within the narration prose.\n"
+        "- The structural markers ([TITLE], [HOOK], [ACT N - ...], [CLOSING]) do not need <refs>. "
+        "Only the narration sentences inside them do.\n"
+        "- For an opening hook line that talks about the movie as a whole, cite one or two "
+        "representative shots; do not cite dozens.\n\n"
+        "**Concrete-noun rule — read this too:** stick to nouns, objects, locations, and "
+        "subject-verb-object directions that appear in the cited visual_segments' summaries, "
+        "on-screen text, character labels, or in the subtitles. Do NOT introduce weapons, "
+        "vehicles, props, settings, or who-acts-on-whom relationships that are not in the "
+        "source material. If the source says 'person holds a gun', do not write 'knife'. If "
+        "the source describes A grabbing B, do not write that B grabs A. When the source is "
+        "ambiguous about the direction, narrate vaguely ('two men struggle') rather than "
+        "guessing a specific direction.\n"
+    )
+
+
 def build_story_prompt(
     *,
     style_text: str,
@@ -215,6 +253,7 @@ def build_story_prompt(
     movie_title: str = "",
     synopsis_text: str | None = None,
     genre_text: str | None = None,
+    genre_rules_text: str | None = None,
     target_minutes: float | None = None,
     chars_per_minute: int = 250,
 ) -> str:
@@ -229,7 +268,9 @@ def build_story_prompt(
     if synopsis_text is not None and synopsis_text.strip():
         sections.append(
             "# Source Material: Movie Synopsis and Cast\n"
-            "Treat this synopsis as authoritative high-level context for names, relationships, motive, and full-story continuity.\n"
+            "Use this synopsis ONLY to look up character names and relationships. "
+            "It may describe off-screen plot points the movie never shows — those have no footage "
+            "and must NOT appear in the script.\n"
             "<<<SYNOPSIS_START>>>\n"
             f"{synopsis_text.strip()}\n"
             "<<<SYNOPSIS_END>>>"
@@ -251,7 +292,7 @@ def build_story_prompt(
             "# Source Material: Chronological Movie Timeline\n"
             "This timeline contains VISUAL segments (what happens on screen) and SUBTITLE segments (what characters say).\n"
             "<<<MOVIE_TIMELINE_START>>>\n"
-            f"{timeline_text.strip()}\n"
+            f"{timeline_text.strip()}\n" 
             "<<<MOVIE_TIMELINE_END>>>"
         )
 
@@ -278,19 +319,26 @@ def build_story_prompt(
         )
     task_lines.extend([
         "- Retell the whole movie from beginning to end.",
-        "- Make the script easy to follow even though the source material is fragmented notes.",
+        "- Narrate AROUND gaps in the source material. Do not invent footage, characters, dialogue, "
+        "or plot points that are not present in the source material — the video editor needs to find "
+        "matching footage for every sentence, and invented content has no footage.",
         "- Prioritize motive, causality, reversals, emotional movement, and payoff over flat scene listing.",
         "- Use the style's deeper storytelling logic, not just its wording.",
         "- If the style file defines naming rules, narrator stance, hook strategy, or ending pattern, follow those rules.",
     ])
     sections.append("\n".join(task_lines))
 
+    sections.append(_grounding_section(use_digest=use_digest))
+
     if use_digest:
         sections.append(
             "# How to use the source material\n"
             "- The style file defines the narrator's soul, pace, rhythm, humor, and storytelling logic.\n"
-            "- The synopsis, when provided, is the best guide to character names and relationships.\n"
+            "- The synopsis, when provided, is ONLY for clarifying character names and relationships. "
+            "Do NOT use the synopsis to add plot points that are not in the digest — those plot points have no footage.\n"
             "- The plot digest contains structured story beats with causal reasoning — use these to build BECAUSE-chains in your narration.\n"
+            "- Each Plot Beat in the digest cites visual_segment IDs (镜头: visual:NNN, ...). "
+            "Those IDs are what you cite in <refs> for each sentence — see the grounding requirement below.\n"
             "- The 名场面 (Reviewable Moments) section highlights scenes that deserve detailed, vivid narration — do not skip them.\n"
             "- The 权力结构 (Power Map) helps you frame the story as a system of control and rebellion.\n"
             "- Preserve key dialogue from the digest when it serves the narration.\n"
@@ -300,14 +348,15 @@ def build_story_prompt(
         sections.append(
             "# How to use the source material\n"
             "- The style file defines the narrator's soul, pace, rhythm, humor, and storytelling logic.\n"
-            "- The synopsis, when provided, is the best high-level guide to plot continuity, character identity, relationships, and motive.\n"
+            "- The synopsis, when provided, is ONLY for clarifying character names and relationships. "
+            "Do NOT use the synopsis to add plot points that are not in the timeline — those plot points have no footage.\n"
             "- The movie timeline is already mixed in chronological order line by line.\n"
-            "- VISUAL lines tell you what is happening on screen.\n"
+            "- VISUAL lines tell you what is happening on screen. Each starts with its visual_segment ID (e.g. `visual:031 | ...`); "
+            "these IDs are what you cite in <refs> for each sentence — see the grounding requirement below.\n"
             "- SUBTITLE lines tell you what characters literally say.\n"
             "- Use both together so you can reconstruct the whole movie without watching it.\n"
-            "- Use the synopsis to keep the overall story coherent, especially when the timeline notes are fragmented or locally ambiguous.\n"
             "- Prefer subtitles for exact spoken content and visual lines for action, staging, on-screen text, and non-verbal beats.\n"
-            "- Do not mention timestamps, visual segments, subtitles, JSON, or source notes in the final answer."
+            "- Do not mention timestamps, JSON, or source notes in the final answer (visual:NNN IDs in <refs> are the only exception)."
         )
 
     sections.append(
@@ -316,6 +365,16 @@ def build_story_prompt(
         f"{style_text.strip()}\n"
         "<<<STYLE_RULEBOOK_END>>>"
     )
+
+    if genre_rules_text is not None and genre_rules_text.strip():
+        sections.append(
+            "# Genre focus\n"
+            "Genre-specific emphasis layered on top of the style rulebook. The style defines the "
+            "narrator's voice; these rules tell you what to weight for this particular genre.\n"
+            "<<<GENRE_RULES_START>>>\n"
+            f"{genre_rules_text.strip()}\n"
+            "<<<GENRE_RULES_END>>>"
+        )
 
     if genre_text is not None and genre_text.strip():
         sections.append(
@@ -345,6 +404,7 @@ def build_story_prompt(
         "- Output only the final script.\n"
         "- Use the act structure headers defined in the Style Rulebook "
         "(e.g. [TITLE], [HOOK], [ACT 1 - SETUP], etc.). No additional sub-headings beyond those.\n"
+        "- Every narration sentence is preceded by its own <refs>...</refs> line per the grounding requirement.\n"
         "- No JSON.\n"
         "- No bullet points inside act prose.\n"
         "- No analysis before or after the script.\n"
@@ -364,6 +424,7 @@ def build_digest_prompt(
     timeline_text: str,
     movie_title: str = "",
     synopsis_text: str | None = None,
+    genre_rules_text: str | None = None,
     target_minutes: float = 12.0,
 ) -> str:
     """Assemble the Pass 1 digest prompt."""
@@ -400,6 +461,16 @@ def build_digest_prompt(
             "<<<SYNOPSIS_END>>>"
         )
 
+    if genre_rules_text is not None and genre_rules_text.strip():
+        sections.append(
+            "# Genre focus\n"
+            "Read this before the timeline. It tells you which beats deserve "
+            "extra detail in the digest and which can be compressed.\n"
+            "<<<GENRE_RULES_START>>>\n"
+            f"{genre_rules_text.strip()}\n"
+            "<<<GENRE_RULES_END>>>"
+        )
+
     sections.append(
         "# Chronological Movie Timeline\n"
         "This timeline contains VISUAL segments (what happens on screen) and "
@@ -428,13 +499,18 @@ def build_digest_prompt(
         "the real leverage?\n\n"
         "## 剧情脉络 (Plot Beats)\n"
         "List 30-50 major story beats in chronological order. For EACH beat:\n"
-        "- 事件: What happens (2-3 sentences, vivid and specific)\n"
+        "- 镜头: Comma-separated visual_segment IDs from the timeline that show this beat "
+        "(e.g. `visual:031, visual:033-035`). REQUIRED. The reviewer uses these IDs to ground "
+        "every sentence — a beat without 镜头 cannot be safely retold.\n"
+        "- 事件: What happens (2-3 sentences, vivid and specific). Describe ONLY what the cited "
+        "visual segments actually show; do not extrapolate beyond them.\n"
         "- 因果: Why this happens / what it causes (the causal chain)\n"
         "- 台词: Key dialogue if any (quote the most impactful lines verbatim)\n"
         "- 情绪: Emotional register (tension / humor / horror / tenderness / etc.)\n\n"
         "IMPORTANT: Be detailed enough that someone who has never seen the movie "
         "can retell the FULL story. Each major scene transition should be a "
-        "separate beat. Do NOT merge multiple scenes into one vague beat.\n\n"
+        "separate beat. Do NOT merge multiple scenes into one vague beat. "
+        "If a stretch of the timeline has no clear footage, SKIP it rather than inventing a beat.\n\n"
         "## 名场面 (Reviewable Moments)\n"
         "List 10-15 moments a movie reviewer would love to describe:\n"
         "- Visually absurd or striking images\n"
@@ -445,8 +521,8 @@ def build_digest_prompt(
         "- Action sequences with interesting choreography\n"
         "- Emotional gut-punches\n"
         "- Unintentionally funny moments\n\n"
-        "For each moment, include 2-4 sentences of vivid detail — enough for "
-        "the reviewer to narrate it as if they watched it.\n\n"
+        "For each moment, include the supporting visual_segment IDs (镜头: visual:NNN, ...) "
+        "followed by 2-4 sentences of vivid detail describing ONLY what those segments show.\n\n"
         "## 核心矛盾 (Core Conflict & Themes)\n"
         "- What is this movie really about? (1-2 sentences)\n"
         "- What is the central irony or contradiction?\n"
@@ -487,13 +563,17 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Stage 1 visual_segments.json. Required unless --plot-digest is used in story mode.")
     parser.add_argument("--subtitles-txt", type=Path,
                         help="Stage 1 subtitles.txt. Required unless --plot-digest is used in story mode.")
+    parser.add_argument("--style", type=Path,
+                        help="Style markdown file. Required in story mode; optional in --digest mode "
+                             "(used only to locate the genre rules file).")
+    parser.add_argument("--genre",
+                        help="Optional genre name. In story mode loads styles/genres/<style>/<genre>.txt "
+                             "as a rhythm example. In both modes, also loads <genre>.rules.md as a "
+                             "genre-specific focus rulebook when present.")
 
     # Story-mode-only options
-    parser.add_argument("--style", type=Path,
-                        help="Style markdown file. Required in story mode.")
     parser.add_argument("--plot-digest", type=Path,
                         help="Pass 1 plot digest file. When provided in story mode, switches to digest mode.")
-    parser.add_argument("--genre", help="Optional genre name. Loads styles/genres/<style>/<genre>.txt as a rhythm example.")
     return parser
 
 
@@ -501,10 +581,19 @@ def _resolve_optional(path: Path | None) -> Path | None:
     return path.expanduser().resolve() if path is not None else None
 
 
+def _find_genre_asset(style_path: Path, genre: str, filename: str) -> Path | None:
+    for parent in ("genres", "genre"):
+        candidate = style_path.parent / parent / style_path.stem / filename
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _run_digest(args) -> int:
     visual_segments_path = _resolve_optional(args.visual_segments)
     subtitles_txt_path = _resolve_optional(args.subtitles_txt)
     synopsis_path = _resolve_optional(args.synopsis)
+    style_path = _resolve_optional(args.style)
     out_path = args.out.expanduser().resolve()
 
     if visual_segments_path is None or subtitles_txt_path is None:
@@ -528,10 +617,17 @@ def _run_digest(args) -> int:
         print("Error: The merged movie timeline is empty", file=sys.stderr)
         return 1
 
+    genre_rules_text: str | None = None
+    if args.genre and style_path is not None:
+        rules_file = _find_genre_asset(style_path, args.genre, f"{args.genre}.rules.md")
+        if rules_file is not None:
+            genre_rules_text = _read_text(rules_file)
+
     prompt_text = build_digest_prompt(
         timeline_text=timeline_text,
         movie_title=args.movie_title,
         synopsis_text=synopsis_text,
+        genre_rules_text=genre_rules_text,
         target_minutes=args.target_minutes if args.target_minutes is not None else 12.0,
     )
 
@@ -596,14 +692,17 @@ def _run_story(args) -> int:
             return 1
 
     genre_text = None
+    genre_rules_text = None
     if args.genre:
-        genre_file = style_path.parent / "genres" / style_path.stem / f"{args.genre}.txt"
-        if not genre_file.exists():
-            genre_file = style_path.parent / "genre" / style_path.stem / f"{args.genre}.txt"
-        if genre_file.exists():
-            genre_text = _read_text(genre_file)
+        example_file = _find_genre_asset(style_path, args.genre, f"{args.genre}.txt")
+        if example_file is not None:
+            genre_text = _read_text(example_file)
         else:
-            print(f"Warning: Genre example not found at {genre_file}", file=sys.stderr)
+            print(f"Warning: Genre example not found for {args.genre!r} under {style_path.parent}", file=sys.stderr)
+
+        rules_file = _find_genre_asset(style_path, args.genre, f"{args.genre}.rules.md")
+        if rules_file is not None:
+            genre_rules_text = _read_text(rules_file)
 
     prompt_text = build_story_prompt(
         style_text=style_text,
@@ -612,6 +711,7 @@ def _run_story(args) -> int:
         movie_title=args.movie_title,
         synopsis_text=synopsis_text,
         genre_text=genre_text,
+        genre_rules_text=genre_rules_text,
         target_minutes=args.target_minutes,
         chars_per_minute=chars_per_minute,
     )

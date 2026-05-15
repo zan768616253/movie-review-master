@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from app.pipeline.stage_2_build_prompt import (
+    build_digest_prompt,
     build_story_prompt as build_prompt,
     build_timeline_entries,
     main,
@@ -57,8 +58,12 @@ def test_build_prompt_emphasizes_deep_style_transfer() -> None:
     assert "Do not merely borrow wording, catchphrases" in prompt
     assert "soul: narrator mindset, value system, pace, rhythm, humor" in prompt
     assert "Write one complete script for Demo Movie" in prompt
-    assert "best high-level guide to plot continuity, character identity, relationships, and motive" in prompt
-    assert "Treat this synopsis as authoritative high-level context" in prompt
+    assert "Use this synopsis ONLY to look up character names and relationships" in prompt
+    assert "synopsis, when provided, is ONLY for clarifying character names and relationships" in prompt
+    assert "Grounding requirement" in prompt
+    assert "<refs>visual:031, visual:033-035</refs>" in prompt
+    assert "DROP that sentence" in prompt
+    assert "Every narration sentence is preceded by its own <refs>...</refs> line" in prompt
     assert "<<<STYLE_RULEBOOK_START>>>" in prompt
     assert "<<<SYNOPSIS_START>>>" in prompt
     assert "<<<MOVIE_TIMELINE_START>>>" in prompt
@@ -83,6 +88,101 @@ def test_render_timeline_normalizes_multiline_text() -> None:
     assert "hero looks up / and freezes" in timeline
     assert "on-screen text: warning / zone" in timeline
     assert "别动 / 马上停下" in timeline
+
+
+def test_build_prompt_injects_genre_rules_when_provided() -> None:
+    prompt = build_prompt(
+        style_text="# Demo Style",
+        timeline_text="[VISUAL 00:00:00.000 -> 00:00:02.000] visual:001 | opening image",
+        movie_title="Demo Movie",
+        genre_rules_text="# Action focus\nPrioritize fight choreography over flat scene listing.",
+    )
+
+    assert "# Genre focus" in prompt
+    assert "<<<GENRE_RULES_START>>>" in prompt
+    assert "Prioritize fight choreography" in prompt
+    # Genre focus must sit between the style rulebook and the genre example (when present)
+    assert prompt.index("<<<STYLE_RULEBOOK_END>>>") < prompt.index("<<<GENRE_RULES_START>>>")
+
+
+def test_build_prompt_omits_genre_rules_section_when_absent() -> None:
+    prompt = build_prompt(
+        style_text="# Demo Style",
+        timeline_text="[VISUAL 00:00:00.000 -> 00:00:02.000] visual:001 | opening image",
+        movie_title="Demo Movie",
+    )
+
+    assert "# Genre focus" not in prompt
+    assert "<<<GENRE_RULES_START>>>" not in prompt
+
+
+def test_build_digest_prompt_injects_genre_rules_before_timeline() -> None:
+    prompt = build_digest_prompt(
+        timeline_text="[VISUAL 00:00:00.000 -> 00:00:02.000] visual:001 | opening image",
+        movie_title="Demo Movie",
+        genre_rules_text="# Action focus\nDigest must prioritise fight beats.",
+    )
+
+    assert "# Genre focus" in prompt
+    assert "Digest must prioritise fight beats." in prompt
+    assert prompt.index("<<<GENRE_RULES_END>>>") < prompt.index("<<<MOVIE_TIMELINE_START>>>")
+
+
+def test_main_loads_genre_rules_file(tmp_path: Path) -> None:
+    style_path = tmp_path / "demo-style.md"
+    style_path.write_text("# Demo Style\n", encoding="utf-8")
+
+    rules_dir = tmp_path / "genres" / "demo-style"
+    rules_dir.mkdir(parents=True)
+    (rules_dir / "Action.rules.md").write_text(
+        "# Action focus\nUNIQUE_RULES_MARKER fight emphasis.\n",
+        encoding="utf-8",
+    )
+
+    visual_segments_path = tmp_path / "visual_segments.json"
+    visual_segments_path.write_text(
+        json.dumps(
+            [
+                {
+                    "start": "00:00:00.000",
+                    "end": "00:00:04.000",
+                    "summary": "a fight breaks out",
+                    "ocr_text": "",
+                    "characters": ["Hero"],
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    subtitles_txt_path = tmp_path / "subtitles.txt"
+    subtitles_txt_path.write_text(
+        "[00:00:01.000 -> 00:00:02.000] 来啊\n",
+        encoding="utf-8",
+    )
+
+    output_path = tmp_path / "story_prompt.txt"
+    exit_code = main(
+        [
+            "--style",
+            str(style_path),
+            "--visual-segments",
+            str(visual_segments_path),
+            "--subtitles-txt",
+            str(subtitles_txt_path),
+            "--movie-title",
+            "Demo",
+            "--genre",
+            "Action",
+            "--out",
+            str(output_path),
+        ]
+    )
+
+    assert exit_code == 0
+    written = output_path.read_text(encoding="utf-8")
+    assert "UNIQUE_RULES_MARKER fight emphasis." in written
+    assert "<<<GENRE_RULES_START>>>" in written
 
 
 def test_main_writes_prompt_file(tmp_path: Path) -> None:

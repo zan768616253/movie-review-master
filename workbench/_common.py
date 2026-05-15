@@ -39,11 +39,13 @@ class Paths:
     stage1_dir: Path
     stage2_dir: Path
     stage3_dir: Path
+    stage4_dir: Path
 
     # Stage 1 — visuals + subtitles
     visual_segments: Path
     subtitles_text: Path
     subtitles_json: Path
+    thumbnails_dir: Path
 
     # Stage 2 — prompts + script
     digest_prompt: Path
@@ -55,6 +57,9 @@ class Paths:
     voiceover_mp3: Path
     voiceover_srt: Path
     voiceover_manifest: Path
+
+    # Stage 4 — editor cheatsheet
+    cheatsheet_html: Path
 
     # Voice reference assets (live with the style)
     voice_reference_dir: Path
@@ -112,6 +117,7 @@ def build_paths(config: dict) -> Paths:
     stage1_dir = work_dir / "stage1"
     stage2_dir = work_dir / "stage2"
     stage3_dir = work_dir / "stage3"
+    stage4_dir = work_dir / "stage4"
 
     tag = style.stem
     voiceover_basename = f"voiceover_{tag}"
@@ -128,9 +134,11 @@ def build_paths(config: dict) -> Paths:
         stage1_dir=stage1_dir,
         stage2_dir=stage2_dir,
         stage3_dir=stage3_dir,
+        stage4_dir=stage4_dir,
         visual_segments=stage1_dir / "visual_segments.json",
         subtitles_text=stage1_dir / "subtitles.txt",
         subtitles_json=stage1_dir / "subtitles.json",
+        thumbnails_dir=stage1_dir / "thumbnails",
         digest_prompt=stage2_dir / "digest_prompt.txt",
         plot_digest=stage2_dir / "plot_digest.txt",
         story_prompt=stage2_dir / "story_prompt.txt",
@@ -138,6 +146,7 @@ def build_paths(config: dict) -> Paths:
         voiceover_mp3=stage3_dir / f"{voiceover_basename}.mp3",
         voiceover_srt=stage3_dir / f"{voiceover_basename}.srt",
         voiceover_manifest=stage3_dir / f"{voiceover_basename}.manifest.json",
+        cheatsheet_html=stage4_dir / "editor_cheatsheet.html",
         voice_reference_dir=voice_reference_dir,
         voice_reference_audio=voice_reference_dir / "clone_reference.mp3",
         voice_reference_text=voice_reference_dir / "clone_reference.txt",
@@ -146,7 +155,7 @@ def build_paths(config: dict) -> Paths:
 
 
 def ensure_stage_dirs(paths: Paths) -> None:
-    for d in (paths.stage0_dir, paths.stage1_dir, paths.stage2_dir, paths.stage3_dir):
+    for d in (paths.stage0_dir, paths.stage1_dir, paths.stage2_dir, paths.stage3_dir, paths.stage4_dir):
         d.mkdir(parents=True, exist_ok=True)
 
 

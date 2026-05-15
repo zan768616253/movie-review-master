@@ -20,6 +20,10 @@ from typing import Any, Optional, Sequence
 import numpy as np
 
 from app.pipeline.common.json_io import dump_json
+from app.pipeline.common.script_contract import (
+    load_visual_segments,
+    timestamp_to_seconds,
+)
 from app.pipeline.common.subtitle_utils import (
     TimedChunk,
     build_subtitle_cues,
@@ -55,6 +59,26 @@ STRUCTURAL_MARKER_RE = re.compile(r"^\[(?P<label>TITLE|HOOK|CLOSING|ACT[^\]]*)\]
 ANCHOR_LINE_RE = re.compile(r"^\[ANCHOR\s+(?P<body>.*)\]$")
 ANCHOR_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？；])")
+REFS_LINE_RE = re.compile(r"^\s*<refs>\s*(?P<body>.+?)\s*</refs>\s*$", re.IGNORECASE)
+REFS_INLINE_RE = re.compile(r"<refs>.*?</refs>", re.IGNORECASE | re.DOTALL)
+REF_TOKEN_RE = re.compile(r"(?:visual:)?\s*(\d+)\s*(?:[-–—]\s*(\d+))?", re.IGNORECASE)
+
+
+@dataclass
+class Segment:
+    """One ref-scoped narration paragraph inside a chunk.
+
+    A segment is the prose under one ``<refs>`` annotation in the script.
+    Carries the visual_segment IDs the LLM cited as its grounding, and —
+    once resolved against ``visual_segments.json`` — the source-movie time
+    ranges those IDs map to. The editor cheatsheet renders one card per
+    segment.
+    """
+
+    text: str
+    refs: list[str] = field(default_factory=list)
+    ranges_s: list[tuple[float, float]] = field(default_factory=list)
+    unknown_refs: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -64,8 +88,105 @@ class Chunk:
     index: int
     section: str
     text: str
+    segments: list[Segment] = field(default_factory=list)
     ranges: list[tuple[str, str]] = field(default_factory=list)
     characters: list[str] = field(default_factory=list)
+
+
+def parse_refs_body(body: str) -> list[str]:
+    """Expand a <refs> body into normalized visual:NNN IDs (deduped, ordered)."""
+    ids: list[str] = []
+    seen: set[str] = set()
+    for match in REF_TOKEN_RE.finditer(body):
+        try:
+            start = int(match.group(1))
+            end_raw = match.group(2)
+            end = int(end_raw) if end_raw else start
+        except (TypeError, ValueError):
+            continue
+        if end < start:
+            start, end = end, start
+        for n in range(start, end + 1):
+            seg_id = f"visual:{n:03d}"
+            if seg_id not in seen:
+                seen.add(seg_id)
+                ids.append(seg_id)
+    return ids
+
+
+def strip_inline_refs(text: str) -> str:
+    """Remove any stray <refs>...</refs> substrings from prose (safety net)."""
+    return REFS_INLINE_RE.sub("", text)
+
+
+def build_visual_segment_lookup(
+    visual_segments: list[dict[str, Any]],
+) -> dict[str, tuple[float, float]]:
+    """Map ``visual:NNN`` IDs to ``(start_s, end_s)`` in the source movie."""
+    lookup: dict[str, tuple[float, float]] = {}
+    for segment in visual_segments:
+        seg_id = str(segment.get("id") or "").strip()
+        if not seg_id:
+            continue
+        try:
+            start_s = timestamp_to_seconds(str(segment["start"]))
+            end_s = timestamp_to_seconds(str(segment["end"]))
+        except (KeyError, ValueError):
+            continue
+        if end_s <= start_s:
+            continue
+        lookup[seg_id] = (round(start_s, 3), round(end_s, 3))
+    return lookup
+
+
+def resolve_segment_refs(
+    chunks: list[Chunk],
+    lookup: dict[str, tuple[float, float]],
+) -> tuple[int, int, list[str]]:
+    """Populate every Segment's ``ranges_s`` from the visual-segment lookup.
+
+    Returns ``(resolved_count, dropped_count, sample_unknown_refs)`` for
+    logging. Refs that don't exist in the lookup are recorded on the
+    segment's ``unknown_refs`` list so callers can warn without blowing up.
+    """
+    resolved = 0
+    dropped = 0
+    sample_unknown: list[str] = []
+    for chunk in chunks:
+        for segment in chunk.segments:
+            ranges: list[tuple[float, float]] = []
+            unknown: list[str] = []
+            for ref in segment.refs:
+                hit = lookup.get(ref)
+                if hit is None:
+                    unknown.append(ref)
+                    dropped += 1
+                    if len(sample_unknown) < 10:
+                        sample_unknown.append(ref)
+                    continue
+                ranges.append(hit)
+                resolved += 1
+            segment.ranges_s = ranges
+            segment.unknown_refs = unknown
+    return resolved, dropped, sample_unknown
+
+
+def report_grounding_diagnostics(chunks: list[Chunk]) -> None:
+    """Print a quick grounding report so the editor knows what to expect."""
+    total_segments = sum(len(chunk.segments) for chunk in chunks)
+    ungrounded = sum(
+        1 for chunk in chunks for seg in chunk.segments if not seg.refs
+    )
+    if not total_segments:
+        return
+    grounded = total_segments - ungrounded
+    print(f"[grounding] {grounded}/{total_segments} segments have <refs>")
+    if ungrounded:
+        print(
+            f"[grounding] WARNING: {ungrounded} segment(s) have no <refs> "
+            "— those sentences have no footage hints in the cheatsheet.",
+            file=sys.stderr,
+        )
 
 
 @dataclass(frozen=True)
@@ -166,36 +287,53 @@ def parse_anchor_line(body: str) -> tuple[list[tuple[str, str]], list[str]]:
 
 
 def parse_script_chunks(script_text: str) -> list[Chunk]:
-    """Split a script into spoken chunks.
+    """Split a script into spoken chunks with grounded ref segments.
 
-    Each structural block after `[HOOK]` becomes one chunk. `[ANCHOR ...]`
-    lines attach range / character metadata to the surrounding section
-    without contributing to the spoken text.
+    Each structural block after ``[HOOK]`` becomes one ``Chunk``. Inside a
+    chunk, every ``<refs>visual:NNN, ...</refs>`` line on its own opens a
+    new ``Segment``; prose lines accumulate into the current segment until
+    the next ``<refs>`` line or section marker. Prose that appears before
+    any ``<refs>`` becomes an orphan segment with empty ``refs``.
+
+    Any stray ``<refs>...</refs>`` substrings inline within prose are
+    stripped before the text reaches TTS. The legacy ``[ANCHOR ...]`` form
+    is still accepted and attaches ranges/characters at the chunk level.
     """
     lines = [raw.strip() for raw in script_text.splitlines()]
 
     chunks: list[Chunk] = []
     current_section: Optional[str] = None
-    pending_lines: list[str] = []
+    pending_segments: list[Segment] = []
     pending_ranges: list[tuple[str, str]] = []
     pending_characters: list[str] = []
+    current_segment: Segment = Segment(text="")
     in_script = False
 
+    def commit_segment() -> None:
+        nonlocal current_segment
+        if current_segment.text:
+            pending_segments.append(current_segment)
+        current_segment = Segment(text="")
+
     def flush() -> None:
-        nonlocal pending_lines, pending_ranges, pending_characters
-        if pending_lines:
+        nonlocal pending_segments, pending_ranges, pending_characters, current_segment
+        commit_segment()
+        if pending_segments:
+            chunk_text = "\n".join(seg.text for seg in pending_segments if seg.text)
             chunks.append(
                 Chunk(
                     index=len(chunks) + 1,
                     section=current_section or "SCRIPT",
-                    text="\n".join(pending_lines),
+                    text=chunk_text,
+                    segments=pending_segments,
                     ranges=pending_ranges,
                     characters=pending_characters,
                 )
             )
-        pending_lines = []
+        pending_segments = []
         pending_ranges = []
         pending_characters = []
+        current_segment = Segment(text="")
 
     for line in lines:
         if not line:
@@ -219,6 +357,12 @@ def parse_script_chunks(script_text: str) -> list[Chunk]:
             current_section = marker
             continue
 
+        refs_match = REFS_LINE_RE.match(line)
+        if refs_match is not None:
+            commit_segment()
+            current_segment = Segment(text="", refs=parse_refs_body(refs_match.group("body")))
+            continue
+
         anchor_match = ANCHOR_LINE_RE.match(line)
         if anchor_match is not None:
             anchor_ranges, anchor_characters = parse_anchor_line(anchor_match.group("body"))
@@ -227,7 +371,12 @@ def parse_script_chunks(script_text: str) -> list[Chunk]:
                 pending_characters = anchor_characters
             continue
 
-        pending_lines.append(line)
+        prose = strip_inline_refs(line).strip()
+        if not prose:
+            continue
+        current_segment.text = (
+            f"{current_segment.text}\n{prose}" if current_segment.text else prose
+        )
 
     flush()
     return chunks
@@ -519,6 +668,18 @@ def concat_and_normalize(
     return audio_ranges
 
 
+def _segment_payload(segment: Segment) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "text": segment.text,
+        "refs": list(segment.refs),
+    }
+    if segment.ranges_s:
+        payload["ranges_s"] = [list(r) for r in segment.ranges_s]
+    if segment.unknown_refs:
+        payload["unknown_refs"] = list(segment.unknown_refs)
+    return payload
+
+
 def write_manifest(
     chunks: list[Chunk],
     audio_ranges: list[tuple[float, float]],
@@ -531,6 +692,7 @@ def write_manifest(
             "ranges": [list(r) for r in chunk.ranges],
             "characters": list(chunk.characters),
             "text": chunk.text,
+            "segments": [_segment_payload(seg) for seg in chunk.segments],
             "audio_start_s": start_s,
             "audio_end_s": end_s,
         }
@@ -624,6 +786,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--script", type=Path, required=True,
                         help="Input script text file. Supports anchored or plain structural scripts.")
+    parser.add_argument(
+        "--visual-segments",
+        type=Path,
+        default=None,
+        help=(
+            "Optional Stage 1 visual_segments.json. When provided, the manifest's "
+            "segments resolve each <refs> ID to a source-movie time range, so the "
+            "editor can jump directly from a narration sentence to its footage."
+        ),
+    )
     parser.add_argument(
         "--style",
         type=Path,
@@ -748,6 +920,25 @@ def main(
         chunks = parse_script_chunks(script_text)
         print_chunk_summary(script_path, chunks)
         validate_script_input(script_path, script_text, chunks)
+
+        visual_segments_path = resolve_optional_path(args.visual_segments)
+        if visual_segments_path is not None:
+            if not visual_segments_path.exists():
+                raise FileNotFoundError(f"Visual segments file not found: {visual_segments_path}")
+            visual_segments = load_visual_segments(visual_segments_path)
+            lookup = build_visual_segment_lookup(visual_segments)
+            resolved, dropped, sample_unknown = resolve_segment_refs(chunks, lookup)
+            print(
+                f"[grounding] visual segments: {len(visual_segments)} loaded, "
+                f"{resolved} ref(s) resolved, {dropped} unknown"
+            )
+            if sample_unknown:
+                preview = ", ".join(sample_unknown[:5])
+                print(
+                    f"[grounding] WARNING: dropped unknown ref(s) — sample: {preview}",
+                    file=sys.stderr,
+                )
+        report_grounding_diagnostics(chunks)
 
         output_dir.mkdir(parents=True, exist_ok=True)
         output_tag = resolve_output_tag(style_path, args.tag)

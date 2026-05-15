@@ -28,10 +28,63 @@ from pathlib import Path
 from app.pipeline.common.json_io import load_json
 
 
+_TIMESTAMP_TOKEN_PATTERN = r"(?:\d{1,2}:\d{2}:\d{2}(?:[.,]\d+)?|\d{1,2}:\d{2}(?:[.,]\d+)?|\d+(?:[.,]\d+)?)"
+_SIMPLE_TIMESTAMP_RE = re.compile(rf"^\s*{_TIMESTAMP_TOKEN_PATTERN}\s*$")
+_TIMESTAMP_RANGE_RE = re.compile(
+    rf"^\s*(?P<start>{_TIMESTAMP_TOKEN_PATTERN})\s*-\s*(?P<end>{_TIMESTAMP_TOKEN_PATTERN})\s*$"
+)
+
+
 def normalize_timestamp(ts: str | None) -> str | None:
     if ts is None:
         return None
     return ts.replace(",", ".")
+
+
+def _is_simple_timestamp(value: object) -> bool:
+    return isinstance(value, str) and _SIMPLE_TIMESTAMP_RE.match(value) is not None
+
+
+def _split_timestamp_range(value: object) -> tuple[str, str] | None:
+    if not isinstance(value, str):
+        return None
+    match = _TIMESTAMP_RANGE_RE.match(value)
+    if match is None:
+        return None
+    start = normalize_timestamp(match.group("start"))
+    end = normalize_timestamp(match.group("end"))
+    if start is None or end is None:
+        return None
+    return start, end
+
+
+def normalize_visual_segment_timestamps(segment: dict[str, object]) -> dict[str, object]:
+    """Repair common VLM range formatting errors in Stage 1 segments.
+
+    Gemini occasionally emits a full ``start - end`` range in one field
+    (usually ``start``) while still populating the other field normally.
+    Downstream stages expect separate timestamp fields, so normalize the
+    segment before merge/validation consume it.
+    """
+    normalized = segment
+    start_range = _split_timestamp_range(segment.get("start"))
+    end_range = _split_timestamp_range(segment.get("end"))
+
+    if start_range is not None:
+        if normalized is segment:
+            normalized = dict(segment)
+        normalized["start"] = start_range[0]
+        if not _is_simple_timestamp(segment.get("end")):
+            normalized["end"] = start_range[1]
+
+    if end_range is not None:
+        if normalized is segment:
+            normalized = dict(segment)
+        if not _is_simple_timestamp(segment.get("start")):
+            normalized["start"] = end_range[0]
+        normalized["end"] = end_range[1]
+
+    return normalized
 
 
 def timestamp_to_seconds(ts: str) -> float:
@@ -202,6 +255,7 @@ def validate_visual_segments(
     validated: list[dict[str, object]] = []
 
     for segment in segments:
+        segment = normalize_visual_segment_timestamps(segment)
         try:
             start_s = timestamp_to_seconds(str(segment["start"]))
             end_s = timestamp_to_seconds(str(segment["end"]))
@@ -242,7 +296,14 @@ def probe_media_duration(media_path: Path) -> float:
         str(media_path),
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+        )
     except FileNotFoundError as exc:
         raise RuntimeError(
             f"Unable to determine media duration for {media_path}: ffprobe was not found on PATH. "

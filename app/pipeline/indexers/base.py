@@ -8,6 +8,7 @@ from typing import Dict, List
 
 from app.pipeline.common.script_contract import (
     get_video_duration,
+    normalize_visual_segment_timestamps,
     seconds_to_timestamp,
     timestamp_to_seconds,
 )
@@ -46,6 +47,7 @@ def merge_segments(all_chunks_results: List[List[Dict]], chunk_duration_s: float
     for i, chunk_results in enumerate(all_chunks_results):
         offset = i * chunk_duration_s
         for seg in chunk_results:
+            seg = normalize_visual_segment_timestamps(seg)
             start_s = timestamp_to_seconds(seg["start"]) + offset
             end_s = timestamp_to_seconds(seg["end"]) + offset
             seg["start"] = seconds_to_timestamp(start_s)
@@ -81,9 +83,15 @@ def detect_shot_boundaries(video_path: Path, threshold: float = 0.3) -> List[flo
         "-f", "null",
         "-",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     cuts: List[float] = []
-    for line in result.stderr.splitlines():
+    for line in (result.stderr or "").splitlines():
         match = _PTS_TIME_RE.search(line)
         if match:
             cuts.append(float(match.group(1)))
