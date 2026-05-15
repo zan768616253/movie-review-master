@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
@@ -80,7 +80,7 @@ def load_scene_markers(path: Path) -> SceneMarkersDocument:
         if curr_start <= prev_end:
             raise ValueError(
                 f"scenes {prev.id!r} and {curr.id!r} have overlapping visual_id_range "
-                f"({prev.visual_id_range[1]} >= {curr.visual_id_range[0]})"
+                f"({curr.visual_id_range[0]!r} <= {prev.visual_id_range[1]!r})"
             )
 
     return SceneMarkersDocument(character_glossary=glossary, scenes=scenes)

@@ -88,6 +88,27 @@ def test_load_scene_markers_rejects_overlapping_visual_id_ranges(tmp_path: Path)
         load_scene_markers(path)
 
 
+def test_load_scene_markers_rejects_touching_visual_id_ranges(tmp_path: Path) -> None:
+    """End of scene:01 == start of scene:02 means the same visual is claimed twice."""
+    path = _write_doc(tmp_path, {
+        "character_glossary": [],
+        "scenes": [
+            {
+                "id": "scene:01", "label": "a", "act_tag": "SETUP",
+                "visual_id_range": ["visual:001", "visual:010"],
+                "time_range": ["00:00:00.000", "00:01:00.000"], "hook": "a",
+            },
+            {
+                "id": "scene:02", "label": "b", "act_tag": "ESCALATION",
+                "visual_id_range": ["visual:010", "visual:020"],
+                "time_range": ["00:01:00.000", "00:02:00.000"], "hook": "b",
+            },
+        ],
+    })
+    with pytest.raises(ValueError, match="overlap"):
+        load_scene_markers(path)
+
+
 def test_scenes_by_act_tag_groups_correctly() -> None:
     doc = SceneMarkersDocument(
         character_glossary=[],
