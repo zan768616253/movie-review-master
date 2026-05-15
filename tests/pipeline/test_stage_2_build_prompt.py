@@ -185,6 +185,77 @@ def test_main_loads_genre_rules_file(tmp_path: Path) -> None:
     assert "<<<GENRE_RULES_START>>>" in written
 
 
+def test_main_builds_outline_prompt_when_outline_flag_set(tmp_path: Path) -> None:
+    visual_segments_path = tmp_path / "visual_segments.json"
+    visual_segments_path.write_text(json.dumps([
+        {"start": "00:00:00.000", "end": "00:00:04.000", "summary": "x",
+         "ocr_text": "", "characters": []}
+    ]), encoding="utf-8")
+    subtitles_txt_path = tmp_path / "subtitles.txt"
+    subtitles_txt_path.write_text("[00:00:01.000 -> 00:00:02.000] hello\n", encoding="utf-8")
+
+    output_path = tmp_path / "outline_prompt.txt"
+    rc = main([
+        "--outline",
+        "--visual-segments", str(visual_segments_path),
+        "--subtitles-txt", str(subtitles_txt_path),
+        "--out", str(output_path),
+        "--movie-title", "Demo",
+    ])
+    assert rc == 0
+    written = output_path.read_text(encoding="utf-8")
+    assert "scene_markers.json" in written or "JSON" in written
+    assert "CLIMAX" in written  # act-tag inventory must be in the prompt
+
+
+def test_main_builds_chunked_digest_writes_three_files(tmp_path: Path) -> None:
+    # Minimal valid scene_markers.json.
+    scene_markers_path = tmp_path / "scene_markers.json"
+    scene_markers_path.write_text(json.dumps({
+        "character_glossary": [],
+        "scenes": [
+            {"id": "scene:01", "label": "a", "act_tag": "SETUP",
+             "visual_id_range": ["visual:001", "visual:001"],
+             "time_range": ["00:00:00.000", "00:00:04.000"], "hook": "a"},
+            {"id": "scene:02", "label": "b", "act_tag": "CLIMAX",
+             "visual_id_range": ["visual:002", "visual:002"],
+             "time_range": ["00:00:04.000", "00:00:08.000"], "hook": "b"},
+            {"id": "scene:03", "label": "c", "act_tag": "CLOSING",
+             "visual_id_range": ["visual:003", "visual:003"],
+             "time_range": ["00:00:08.000", "00:00:12.000"], "hook": "c"},
+        ],
+    }, ensure_ascii=False), encoding="utf-8")
+    visual_segments_path = tmp_path / "visual_segments.json"
+    visual_segments_path.write_text(json.dumps([
+        {"id": "visual:001", "start": "00:00:00.000", "end": "00:00:04.000",
+         "summary": "x", "ocr_text": "", "characters": []},
+        {"id": "visual:002", "start": "00:00:04.000", "end": "00:00:08.000",
+         "summary": "y", "ocr_text": "", "characters": []},
+        {"id": "visual:003", "start": "00:00:08.000", "end": "00:00:12.000",
+         "summary": "z", "ocr_text": "", "characters": []},
+    ]), encoding="utf-8")
+    subtitles_txt_path = tmp_path / "subtitles.txt"
+    subtitles_txt_path.write_text("", encoding="utf-8")
+
+    out_path = tmp_path / "digest_prompt.txt"
+    rc = main([
+        "--digest", "--chunked",
+        "--scene-markers", str(scene_markers_path),
+        "--visual-segments", str(visual_segments_path),
+        "--subtitles-txt", str(subtitles_txt_path),
+        "--out", str(out_path),
+        "--movie-title", "Demo",
+    ])
+    assert rc == 0
+    front = tmp_path / "digest_prompt.front.txt"
+    climax = tmp_path / "digest_prompt.climax.txt"
+    tail = tmp_path / "digest_prompt.tail.txt"
+    assert front.is_file() and climax.is_file() and tail.is_file()
+    assert "scene:01" in front.read_text(encoding="utf-8")
+    assert "scene:02" in climax.read_text(encoding="utf-8")
+    assert "scene:03" in tail.read_text(encoding="utf-8")
+
+
 def test_main_writes_prompt_file(tmp_path: Path) -> None:
     style_path = tmp_path / "demo-style.md"
     style_path.write_text("# Demo Style\nUse hard hooks.\n", encoding="utf-8")
