@@ -190,6 +190,88 @@ def test_extract_missing_thumbnails_skips_existing_and_invokes_ffmpeg(tmp_path: 
     assert "12.000" in calls[0]
 
 
+def test_extract_missing_thumbnails_requests_cuda_decode_when_available(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    thumbnails_dir = tmp_path / "thumbs"
+    shots = {
+        "visual:001": ShotInfo(
+            seg_id="visual:001", start_s=10.0, end_s=14.0, summary="", ocr_text="", characters=[],
+        ),
+    }
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr("app.pipeline.stage_4_build_cheatsheet.cuda_decode_available", lambda: True)
+
+    def fake_run(cmd, *, check=True, capture_output=True, text=True):  # type: ignore[no-untyped-def]
+        calls.append(list(cmd))
+        Path(cmd[-1]).write_bytes(b"\xff\xd8\xff")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    extracted, skipped, errors = extract_missing_thumbnails(
+        video=tmp_path / "video.mkv",
+        shots=shots,
+        thumbnails_dir=thumbnails_dir,
+        workers=1,
+        run_cmd=fake_run,
+    )
+
+    assert extracted == 1
+    assert skipped == 0
+    assert errors == []
+    assert calls == [[
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel", "error",
+        "-hwaccel", "cuda",
+        "-ss", "12.000",
+        "-i", str(tmp_path / "video.mkv"),
+        "-frames:v", "1",
+        "-vf", "scale=320:-2",
+        "-q:v", "5",
+        "-y",
+        str(thumbnails_dir / "visual_001.jpg"),
+    ]]
+
+
+def test_extract_missing_thumbnails_falls_back_to_cpu_when_cuda_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    thumbnails_dir = tmp_path / "thumbs"
+    shots = {
+        "visual:001": ShotInfo(
+            seg_id="visual:001", start_s=10.0, end_s=14.0, summary="", ocr_text="", characters=[],
+        ),
+    }
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr("app.pipeline.stage_4_build_cheatsheet.cuda_decode_available", lambda: True)
+
+    def fake_run(cmd, *, check=True, capture_output=True, text=True):  # type: ignore[no-untyped-def]
+        calls.append(list(cmd))
+        if "-hwaccel" in cmd:
+            raise subprocess.CalledProcessError(1, cmd, stderr="CUDA decode failed")
+        Path(cmd[-1]).write_bytes(b"\xff\xd8\xff")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    extracted, skipped, errors = extract_missing_thumbnails(
+        video=tmp_path / "video.mkv",
+        shots=shots,
+        thumbnails_dir=thumbnails_dir,
+        workers=1,
+        run_cmd=fake_run,
+    )
+
+    assert extracted == 1
+    assert skipped == 0
+    assert errors == []
+    assert len(calls) == 2
+    assert "-hwaccel" in calls[0]
+    assert "-hwaccel" not in calls[1]
+
+
 def test_main_skips_thumbnails_when_flag_set(tmp_path: Path) -> None:
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(json.dumps(_sample_manifest()), encoding="utf-8")

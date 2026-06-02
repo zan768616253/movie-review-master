@@ -6,6 +6,18 @@
         "Bash(*)",
         "Read(*)",
         "Write(*)"
+    ],
+    "deny": [
+        "Read(./movies/**)",
+        "Read(./workbench/work/**)",
+        "Read(./styles/voice-assets/**)",
+        "Read(./movie_review_master.egg-info/**)",
+        "Read(./.pytest_cache/**)",
+        "Read(**/__pycache__/**)",
+        "Read(./.venv/**)",
+        "Read(**/*.mp3)",
+        "Read(**/*.mp4)",
+        "Read(**/*.wav)"
     ]
   },
   "enabledPlugins": {

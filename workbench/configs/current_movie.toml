@@ -1,12 +1,12 @@
-# Pipeline config for "Jujutsu Kaisen 0".
+# Pipeline config for "The Roundup: Punishment".
 # Paths are relative to the repo root.
 
 [common]
-movie_slug    = "jujutsu_kaisen_0"
-movie_dir     = "movies/呪術回戦0"
-movie_title   = "呪術回戦0 (Jujutsu Kaisen 0)"
-video_file    = "呪術回戦0.mkv"
-subtitle_file = "呪術回戦0.srt"
+movie_slug    = "the_roundup_punishment"
+movie_dir     = "movies/犯罪都市4"
+movie_title   = "犯罪都市4 (The Roundup: Punishment)"
+video_file    = "犯罪都市4.mp4"
+subtitle_file = "犯罪都市4.ass"
 style_path    = "styles/niu-shu.md"
 genre         = "Action"
 

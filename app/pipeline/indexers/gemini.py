@@ -87,9 +87,8 @@ class GeminiStrategy(ChunkedVisualIndexerStrategy):
         else:
             codec = "libx264"
             video_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "28"]
-        cmd = [
-            "ffmpeg", "-y", "-loglevel", "error",
-            *hwaccel_decode_args(codec),
+        hwaccel_args = hwaccel_decode_args(codec)
+        base_cmd = [
             "-ss", str(start_s), "-t", str(duration_s),
             "-i", str(video_path),
             "-vf", build_timestamp_drawtext_filter(),
@@ -97,7 +96,22 @@ class GeminiStrategy(ChunkedVisualIndexerStrategy):
             "-c:a", "aac", "-b:a", "128k",
             str(out_path),
         ]
-        subprocess.run(cmd, check=True)
+        cmd = ["ffmpeg", "-y", "-loglevel", "error", *hwaccel_args, *base_cmd]
+        run_kwargs = {
+            "check": True,
+            "capture_output": True,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+        }
+        try:
+            subprocess.run(cmd, **run_kwargs)
+        except subprocess.CalledProcessError:
+            if not hwaccel_args:
+                raise
+            print(f"CUDA decode failed for {out_path.name}; retrying chunk extraction on CPU.")
+            fallback_cmd = ["ffmpeg", "-y", "-loglevel", "error", *base_cmd]
+            subprocess.run(fallback_cmd, **run_kwargs)
 
     def _index_chunk(self, video_chunk_path: Path) -> List[Dict]:
         client = self._create_client()

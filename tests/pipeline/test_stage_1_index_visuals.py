@@ -1,5 +1,6 @@
 import os
 import json
+import subprocess
 import time
 from types import SimpleNamespace
 from pathlib import Path
@@ -338,6 +339,52 @@ class TestGeminiStrategy:
 
         assert [segment["summary"] for segment in results] == ["chunk-0", "chunk-1"]
         assert results[1]["start"] == "00:07:00.000"
+
+    @patch("app.pipeline.indexers.gemini.hwaccel_decode_args", return_value=["-hwaccel", "cuda"])
+    @patch("app.pipeline.indexers.gemini.nvenc_available", return_value=True)
+    @patch("app.pipeline.indexers.gemini.subprocess.run")
+    def test_extract_chunk_falls_back_to_cpu_when_cuda_decode_fails(
+        self,
+        mock_run,
+        mock_nvenc,
+        mock_hwaccel,
+        tmp_path,
+    ):
+        strategy = GeminiStrategy(api_key="fake")
+
+        def fake_run(cmd, **kwargs):
+            if "-hwaccel" in cmd:
+                raise subprocess.CalledProcessError(1, cmd, stderr="CUDA decode failed")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        mock_run.side_effect = fake_run
+
+        with patch(
+            "app.pipeline.indexers.gemini.build_timestamp_drawtext_filter",
+            return_value="drawtext=mock",
+        ):
+            strategy._extract_chunk(
+                tmp_path / "movie.mp4",
+                start_s=10.0,
+                duration_s=20.0,
+                out_path=tmp_path / "chunk.mp4",
+            )
+
+        assert mock_run.call_count == 2
+
+        first_call = mock_run.call_args_list[0]
+        second_call = mock_run.call_args_list[1]
+        second_cmd = second_call.args[0]
+        assert first_call.args[0][:5] == ["ffmpeg", "-y", "-loglevel", "error", "-hwaccel"]
+        assert "-hwaccel" not in second_cmd
+        vf_index = second_cmd.index("-vf")
+        assert second_cmd[vf_index:vf_index + 8] == [
+            "-vf", "drawtext=mock",
+            "-c:v", "h264_nvenc", "-preset", "p1", "-pix_fmt", "yuv420p",
+        ]
+        assert second_cmd[-1] == str(tmp_path / "chunk.mp4")
+        assert first_call.kwargs["encoding"] == "utf-8"
+        assert first_call.kwargs["errors"] == "replace"
 
 
 def test_stage0_parser_requires_synopsis_and_characters_dir():

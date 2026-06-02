@@ -31,6 +31,7 @@ from app.pipeline.common.script_contract import (
     seconds_to_timestamp,
     timestamp_to_seconds,
 )
+from app.pipeline.common.video_encoder import cuda_decode_available
 
 
 THUMB_WIDTH = 320
@@ -89,10 +90,8 @@ def _extract_one_thumbnail(
     if out_path.exists():
         return None
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel", "error",
+    hwaccel_args = ["-hwaccel", "cuda"] if cuda_decode_available() else []
+    base_args = [
         "-ss", f"{max(at_s, 0.0):.3f}",
         "-i", str(video),
         "-frames:v", "1",
@@ -101,11 +100,31 @@ def _extract_one_thumbnail(
         "-y",
         str(out_path),
     ]
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel", "error",
+        *hwaccel_args,
+        *base_args,
+    ]
     try:
         run_cmd(cmd, check=True, capture_output=True, text=True)
     except FileNotFoundError as exc:
         return f"ffmpeg not on PATH: {exc}"
     except subprocess.CalledProcessError as exc:
+        if hwaccel_args:
+            fallback_cmd = [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel", "error",
+                *base_args,
+            ]
+            try:
+                run_cmd(fallback_cmd, check=True, capture_output=True, text=True)
+                return None
+            except subprocess.CalledProcessError as fallback_exc:
+                details = (fallback_exc.stderr or "").strip() or f"exit {fallback_exc.returncode}"
+                return details
         details = (exc.stderr or "").strip() or f"exit {exc.returncode}"
         return details
     return None
@@ -442,6 +461,8 @@ def main(
 
         thumbnails_present: set[str] = set()
         if not args.skip_thumbnails:
+            decode_mode = "CUDA decode with CPU fallback" if cuda_decode_available() else "CPU"
+            print(f"[cheatsheet] thumbnail decode: {decode_mode}")
             extracted, skipped, errors = extract_missing_thumbnails(
                 video=video_path,
                 shots=referenced_shots,
