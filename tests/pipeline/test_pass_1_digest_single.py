@@ -22,6 +22,44 @@ def test_digest_prompt_without_scene_markers_uses_legacy_flat_structure() -> Non
     assert "Plot Beats" in prompt or "剧情脉络" in prompt
 
 
+def test_digest_prompt_defaults_have_no_series_sections() -> None:
+    """Movie mode (no prior context, no carryover request) must be unchanged."""
+    prompt = build_digest_prompt(
+        timeline_text="[VISUAL ...] visual:001 | x",
+        movie_title="Demo",
+    )
+    assert "Previously in the series" not in prompt
+    assert "承上启下" not in prompt
+
+
+def test_digest_prompt_injects_prior_context_as_no_footage_background() -> None:
+    prompt = build_digest_prompt(
+        timeline_text="[VISUAL ...] visual:001 | x",
+        movie_title="Demo EP2",
+        prior_context_text="第 1 集 回顾：主角发现了诅咒。",
+    )
+    assert "Previously in the series" in prompt
+    assert "第 1 集 回顾：主角发现了诅咒。" in prompt
+    # Must warn the model not to cite footage for prior events.
+    assert "do NOT cite footage" in prompt or "do not cite footage" in prompt
+
+
+def test_digest_prompt_requests_carryover_only_when_asked() -> None:
+    without = build_digest_prompt(
+        timeline_text="[VISUAL ...] visual:001 | x",
+        movie_title="Demo",
+        request_carryover=False,
+    )
+    assert "承上启下" not in without
+
+    with_carryover = build_digest_prompt(
+        timeline_text="[VISUAL ...] visual:001 | x",
+        movie_title="Demo EP1",
+        request_carryover=True,
+    )
+    assert "承上启下" in with_carryover
+
+
 def test_digest_prompt_with_scene_markers_uses_scene_structure_and_act_targets() -> None:
     doc = SceneMarkersDocument(
         character_glossary=[

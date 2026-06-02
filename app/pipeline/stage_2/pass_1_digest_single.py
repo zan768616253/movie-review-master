@@ -12,6 +12,16 @@ from __future__ import annotations
 
 from app.pipeline.stage_2.scene_markers import SceneMarkersDocument
 
+# Series carryover instruction, appended to the digest output when the harness
+# requests it (every series episode). Harvested into series_context.md and
+# injected as background into the next episode.
+_CARRYOVER_SECTION = (
+    "## 承上启下 (Continuity Carryover) — 写给下一集\n"
+    "用 3-5 句中文总结本集结束时的故事状态：主要角色各自的处境、尚未解决的悬念、"
+    "以及留给下一集的钩子。这是观众进入下一集前必须记住的内容。"
+    "（这一段是给系列下一集用的背景，不需要镜头号 visual:NNN。）"
+)
+
 # Per-tag beat targets — these are the act-balance safeguards.
 _ACT_BEAT_TARGETS: tuple[tuple[str, str], ...] = (
     ("HOOK",       "1-2"),
@@ -72,6 +82,8 @@ def build_digest_prompt(
     synopsis_text: str | None = None,
     genre_rules_text: str | None = None,
     scene_markers: SceneMarkersDocument | None = None,
+    prior_context_text: str | None = None,
+    request_carryover: bool = False,
     target_minutes: float = 12.0,
 ) -> str:
     """Assemble the Pass 1 digest prompt.
@@ -79,6 +91,13 @@ def build_digest_prompt(
     When ``scene_markers`` is provided, the digest is required to be organized by scene with
     strict per-tag beat targets (recommended path). Without scene markers, the legacy flat
     "30-50 beats in chronological order" structure is used (backward compat).
+
+    Series support (both default to off, so movie prompts are unchanged):
+
+    - ``prior_context_text`` — "story so far" from earlier episodes, injected as
+      no-footage background (episodes ≥ 2).
+    - ``request_carryover`` — when True, append the ``## 承上启下`` instruction so the
+      digest ends with a short summary the harness harvests for the next episode.
     """
     movie_label = movie_title.strip() or "Unknown movie"
     use_scenes = scene_markers is not None and len(scene_markers.scenes) > 0
@@ -112,6 +131,18 @@ def build_digest_prompt(
             "<<<SYNOPSIS_START>>>\n"
             f"{synopsis_text.strip()}\n"
             "<<<SYNOPSIS_END>>>"
+        )
+
+    if prior_context_text is not None and prior_context_text.strip():
+        sections.append(
+            "# Previously in the series\n"
+            "Background from earlier episodes. Use it ONLY to recognize returning characters "
+            "(keep their established names) and to understand ongoing threads. These events are "
+            "NOT in this episode's timeline — do NOT create beats for them and do NOT cite footage "
+            "(visual:NNN) for them. Your digest covers THIS episode only.\n"
+            "<<<SERIES_SO_FAR_START>>>\n"
+            f"{prior_context_text.strip()}\n"
+            "<<<SERIES_SO_FAR_END>>>"
         )
 
     if genre_rules_text is not None and genre_rules_text.strip():
@@ -209,6 +240,9 @@ def build_digest_prompt(
             "- The emotional aftertaste\n"
             "- Any post-credits scene or final twist"
         )
+
+    if request_carryover:
+        output_format = output_format + "\n\n" + _CARRYOVER_SECTION
 
     sections.append(output_format)
     return "\n\n".join(sections).rstrip() + "\n"
