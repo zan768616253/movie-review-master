@@ -85,11 +85,25 @@ def build_parser() -> argparse.ArgumentParser:
                              "genre-specific focus rulebook when present.")
     parser.add_argument("--plot-digest", type=Path,
                         help="Pass 1 plot digest file. When provided in story mode, switches to digest mode.")
+    parser.add_argument("--prior-context", type=Path,
+                        help="Series 'story so far' (prior episodes). In --digest mode it is injected "
+                             "as no-footage background; in story mode it activates [RECAP] recap mode.")
+    parser.add_argument("--series-carryover", action="store_true",
+                        help="In --digest mode, append the 承上启下 carryover section that every series "
+                             "episode emits for the next one.")
     return parser
 
 
 def _resolve_optional(path: Path | None) -> Path | None:
     return path.expanduser().resolve() if path is not None else None
+
+
+def _load_prior_context(path: Path | None) -> str | None:
+    resolved = _resolve_optional(path)
+    if resolved is None or not resolved.exists():
+        return None
+    text = resolved.read_text(encoding="utf-8").strip()
+    return text or None
 
 
 def _find_genre_asset(style_path: Path, genre: str, filename: str) -> Path | None:
@@ -179,6 +193,7 @@ def _run_digest(args) -> int:
     subtitles = load_subtitles(subs_path)
     synopsis_text = _read_text(syn_path) if syn_path else None
     genre_rules_text = _load_genre_rules_for_digest(style_path, args.genre)
+    prior_context_text = _load_prior_context(args.prior_context)
     target_minutes = args.target_minutes if args.target_minutes is not None else 12.0
 
     if args.chunked:
@@ -189,6 +204,8 @@ def _run_digest(args) -> int:
             movie_title=args.movie_title,
             synopsis_text=synopsis_text,
             genre_rules_text=genre_rules_text,
+            prior_context_text=prior_context_text,
+            request_carryover=args.series_carryover,
             target_minutes=target_minutes,
         )
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -208,6 +225,8 @@ def _run_digest(args) -> int:
         synopsis_text=synopsis_text,
         genre_rules_text=genre_rules_text,
         scene_markers=scene_doc,
+        prior_context_text=prior_context_text,
+        request_carryover=args.series_carryover,
         target_minutes=target_minutes,
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -280,6 +299,7 @@ def _run_story(args) -> int:
         if rules_file is not None:
             genre_rules_text = _read_text(rules_file)
 
+    prior_context_text = _load_prior_context(args.prior_context)
     prompt_text = build_story_prompt(
         style_text=style_text,
         timeline_text=timeline_text,
@@ -288,6 +308,7 @@ def _run_story(args) -> int:
         synopsis_text=synopsis_text,
         genre_text=genre_text,
         genre_rules_text=genre_rules_text,
+        prior_context_text=prior_context_text,
         target_minutes=args.target_minutes,
         chars_per_minute=chars_per_minute,
     )

@@ -311,3 +311,77 @@ def test_main_writes_prompt_file(tmp_path: Path) -> None:
     assert "A hidden family secret drives the plot." in written
     assert "a woman opens a hidden door" in written
     assert "门后有人" in written
+
+
+def _write_minimal_timeline_inputs(tmp_path: Path) -> tuple[Path, Path]:
+    visual_segments_path = tmp_path / "visual_segments.json"
+    visual_segments_path.write_text(json.dumps([
+        {"id": "visual:001", "start": "00:00:00.000", "end": "00:00:04.000",
+         "summary": "x", "ocr_text": "", "characters": []},
+    ]), encoding="utf-8")
+    subtitles_txt_path = tmp_path / "subtitles.txt"
+    subtitles_txt_path.write_text("", encoding="utf-8")
+    return visual_segments_path, subtitles_txt_path
+
+
+def test_main_digest_prior_context_and_carryover(tmp_path: Path) -> None:
+    visual_segments_path, subtitles_txt_path = _write_minimal_timeline_inputs(tmp_path)
+    prior_path = tmp_path / "prior_context.md"
+    prior_path.write_text("第 1 集 回顾：主角发现了诅咒。", encoding="utf-8")
+
+    out_path = tmp_path / "digest_prompt.txt"
+    rc = main([
+        "--digest",
+        "--visual-segments", str(visual_segments_path),
+        "--subtitles-txt", str(subtitles_txt_path),
+        "--prior-context", str(prior_path),
+        "--series-carryover",
+        "--out", str(out_path),
+        "--movie-title", "Demo EP2",
+    ])
+    assert rc == 0
+    written = out_path.read_text(encoding="utf-8")
+    assert "Previously in the series" in written
+    assert "第 1 集 回顾：主角发现了诅咒。" in written
+    assert "承上启下" in written
+
+
+def test_main_story_prior_context_emits_recap(tmp_path: Path) -> None:
+    style_path = tmp_path / "niu-shu.md"
+    style_path.write_text("# Demo Style\nUse hard hooks.\n", encoding="utf-8")
+    digest_path = tmp_path / "plot_digest.txt"
+    digest_path.write_text("## 剧情脉络\n- beat one\n", encoding="utf-8")
+    prior_path = tmp_path / "prior_context.md"
+    prior_path.write_text("第 1 集 回顾：黑帮大佬重生回到十六岁。", encoding="utf-8")
+
+    out_path = tmp_path / "story_prompt.txt"
+    rc = main([
+        "--style", str(style_path),
+        "--plot-digest", str(digest_path),
+        "--prior-context", str(prior_path),
+        "--out", str(out_path),
+        "--movie-title", "Demo EP2",
+    ])
+    assert rc == 0
+    written = out_path.read_text(encoding="utf-8")
+    assert "[RECAP]" in written
+    assert "第 1 集 回顾：黑帮大佬重生回到十六岁。" in written
+    assert "<refs>recap</refs>" in written
+
+
+def test_main_story_without_prior_context_has_no_recap(tmp_path: Path) -> None:
+    style_path = tmp_path / "niu-shu.md"
+    style_path.write_text("# Demo Style\n", encoding="utf-8")
+    digest_path = tmp_path / "plot_digest.txt"
+    digest_path.write_text("## 剧情脉络\n- beat one\n", encoding="utf-8")
+
+    out_path = tmp_path / "story_prompt.txt"
+    rc = main([
+        "--style", str(style_path),
+        "--plot-digest", str(digest_path),
+        "--out", str(out_path),
+        "--movie-title", "Demo",
+    ])
+    assert rc == 0
+    written = out_path.read_text(encoding="utf-8")
+    assert "Episode recap opening" not in written
