@@ -1149,6 +1149,7 @@ This style uses **short, staccato lines** — one breath per line. As a result, 
 
 - Write **continuous narration prose** under each act header. No bullet points or sub-headers within acts.
 - The act headers `[HOOK]`, `[ACT 1 - SETUP]`, etc. are structural markers for human review. They are stripped from the final voiceover.
+- For a TV-series episode after the first, the opener is `[RECAP]` instead of `[HOOK]` — a 前情提要 bridge ending on a forward tease. It is treated exactly like `[HOOK]` (the same opening narrated block); its sentences use `<refs>recap</refs>` since the footage comes from a prior episode. The voice, pacing, and act balance are otherwise unchanged.
 - The `[TITLE]` line becomes the video title.
 - Introduce archetype names naturally within the narration (e.g., `男主永强是个老实巴交的打工人`), not in a separate character roster.
 - The total script should read as one continuous performance when the act headers are removed.

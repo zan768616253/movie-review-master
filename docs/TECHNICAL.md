@@ -116,6 +116,28 @@ Visual-indexer implementation for Stage 1:
 - `gemini.py` — Gemini 3 Flash backend.
 - `shared.py` — shared utilities (chunk extraction, prompt assembly).
 
+### Series support (TV / anime)
+
+- `app/pipeline/series_context.py` — pure, string-only continuity helpers:
+  `extract_continuity_section` (pull the digest's `## 承上启下` body),
+  `update_series_context` (insert/replace a per-episode block, idempotent,
+  sorted), `assemble_prior_context` (concatenate blocks for episodes `< N`).
+- `workbench/_common.py` — series resolution: `is_series_config`,
+  `series_episode_common` (synthesizes a movie-shaped `common` with
+  `movie_slug = "<series_slug>/ep<NN>"` so `build_paths` nests the work dir),
+  `series_context_file`, `load_active_config` (prefers a non-empty
+  `current_series.toml`), and `resolve_run_context` (the single entry every step
+  calls; returns `RunContext`). `build_paths` honors an optional
+  `synopsis_file` override (default `synopsis.md`).
+- Stage 2 builders accept `prior_context_text` (digest background / story recap
+  source) and `request_carryover` (digest `## 承上启下`); the CLI exposes
+  `--prior-context` and `--series-carryover`.
+- `[RECAP]` is a structural opener recognized by `stage_3_generate_audio.py`
+  (treated like `[HOOK]`) and `stage_2/post_validate.py` (which also exempts the
+  `<refs>recap</refs>` sentinel from grounding checks).
+- Per-series work dir: `workbench/work/<series_slug>/series_context.md` plus
+  `workbench/work/<series_slug>/ep<NN>/stage0..4/`.
+
 ### `app/pipeline/common/script_contract.py`
 
 Time helpers and Stage 1 trust boundary. Public surface:

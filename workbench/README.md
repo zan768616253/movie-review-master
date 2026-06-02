@@ -60,6 +60,38 @@ conda run -n py312_machine_learning --no-capture-output python workbench/step_3_
 # 4. Open the MP3 + SRT (and the source movie) in 剪映 for the manual edit.
 ```
 
+## Series mode (TV / anime)
+
+Copy `configs/_series_template.toml` to `configs/current_series.toml` and fill in
+the `[[episodes]]` list plus `active_episode`. While `current_series.toml` exists
+and is non-empty, every step runs in series mode for the active episode; delete
+or rename it to return to movie mode. The run commands are unchanged.
+
+```bash
+# Edit active_episode in current_series.toml, then run the same steps:
+conda run -n py312_machine_learning --no-capture-output python workbench/step_1_prepare_inputs.py
+conda run -n py312_machine_learning --no-capture-output python workbench/step_2_build_prompt.py   # repeat per pass
+conda run -n py312_machine_learning --no-capture-output python workbench/step_3_generate_audio.py
+conda run -n py312_machine_learning --no-capture-output python workbench/step_4_build_cheatsheet.py
+# Bump active_episode and repeat for the next episode.
+```
+
+Layout: episodes nest under the series, with shared inputs at the series root.
+
+```
+movies/<series_dir>/
+  synopsis.md  characters/      # shared by all episodes
+  EP01.mp4  EP01.ass  EP02.mp4  EP02.ass  ...
+workbench/work/<series_slug>/
+  series_context.md             # running story-so-far (auto-seeded from each digest)
+  ep01/  ep02/  ...             # per-episode stage0..4, same as a movie
+```
+
+Continuity is harvested from each episode's `## 承上启下` digest section into
+`series_context.md` once `plot_digest.txt` is filled, then injected into later
+episodes' prompts. Episodes after the first open with a `[RECAP]` block whose
+sentences use `<refs>recap</refs>` (the editor pulls prior-episode footage).
+
 ## Switching movies
 
 Overwrite `workbench/configs/current_movie.toml` with the movie you want to

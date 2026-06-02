@@ -51,6 +51,34 @@ The contract between automated and manual stages is intentionally simple:
 Step 2 produces a voiceover MP3 + matching SRT cues. Everything else is
 human judgment in the editor.
 
+### Series mode (TV / anime, multi-episode)
+
+A TV series is processed one episode at a time, each episode reusing the full
+pipeline (Stage 0–4) under its own work dir. A thin series layer adds
+cross-episode continuity:
+
+- **Active config.** `workbench/configs/current_series.toml` lists episodes
+  (`[[episodes]]`) and an `active_episode` pointer. When present, every step runs
+  in series mode for that episode; bump the pointer to advance. Without it, the
+  steps fall back to `current_movie.toml` (movie mode). Commands are identical in
+  both modes.
+- **Per-episode work dir.** `workbench/work/<series_slug>/ep<NN>/stage0..4/`.
+  `synopsis.md` and `characters/` live once at the series root and are shared by
+  every episode (an episode may override the synopsis via `synopsis_file`).
+- **Running continuity.** Pass 1's digest ends with a `## 承上启下` carryover.
+  Once an episode's `plot_digest.txt` is filled, the harness harvests that section
+  into `workbench/work/<series_slug>/series_context.md`. From episode 2 on, the
+  prior episodes' context is injected as **no-footage background** into the digest
+  and story prompts (so returning characters keep their names and causal chains
+  span episodes, without inventing footage).
+- **Recap opener.** Episode 1 opens with `[HOOK]` as usual. Episodes 2+ open with
+  `[RECAP]` instead — a 前情提要 bridge ending on a forward tease. Recap sentences
+  carry the `<refs>recap</refs>` sentinel (no footage in this episode; the editor
+  pulls prior-episode B-roll), which post-validation does not flag. `[RECAP]` is
+  treated exactly like `[HOOK]` by Stage 3 (one opening narrated chunk).
+- **Merge.** Per-episode MP3/SRT are assembled into one binge video in 剪映,
+  cutting on the recap seams. There is no automatic concatenation.
+
 ## 5. Core Concepts
 
 ### Source Movie & Subtitle Source

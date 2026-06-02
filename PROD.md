@@ -42,6 +42,16 @@ because that's where the operator's editing skill lives.
 Step 4 is the only manual data step. Steps 0–3 are fully automated; the
 user only handles the LLM paste-paste in step 2.
 
+### Series workflow (TV / anime, multi-episode)
+
+Instead of `current_movie.toml`, write `workbench/configs/current_series.toml`
+(copy `_series_template.toml`) listing each episode and an `active_episode`
+pointer. Drop the episode files plus a shared `synopsis.md` and `characters/`
+under `movies/<series_dir>/`. Run the same Steps 0–4 for the active episode,
+then bump `active_episode` and repeat. The pipeline carries a running
+"story-so-far" forward, and each episode after the first opens with a spoken
+前情提要 recap. Assemble the per-episode outputs into one binge video in 剪映.
+
 ## 3. Inputs
 
 | Input | Format | Notes |
