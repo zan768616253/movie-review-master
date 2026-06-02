@@ -22,6 +22,7 @@ load_dotenv(REPO_ROOT / ".env")
 WORKBENCH_ROOT = REPO_ROOT / "workbench"
 WORK_ROOT = WORKBENCH_ROOT / "work"
 DEFAULT_CONFIG = "configs/current_movie.toml"
+SERIES_CONFIG = "configs/current_series.toml"
 
 
 @dataclass
@@ -108,6 +109,137 @@ def load_config(config_path: str | Path) -> dict:
         return tomllib.load(f)
 
 
+# --- Series (multi-episode) support -------------------------------------------
+#
+# A series config (configs/current_series.toml) has a [common] table with a
+# `series_slug` plus an `[[episodes]]` array and an `active_episode` pointer.
+# Each episode is processed like a movie: `series_episode_common` synthesizes a
+# movie-shaped `common` dict so the existing `build_paths` produces an
+# episode-nested work dir (work/<series_slug>/ep<NN>/...).
+
+
+def is_series_config(config: dict) -> bool:
+    common = config.get("common", {})
+    episodes = config.get("episodes")
+    return bool(common.get("series_slug")) and isinstance(episodes, list) and len(episodes) > 0
+
+
+def series_episodes(config: dict) -> list[dict]:
+    return list(config.get("episodes", []))
+
+
+def active_episode_no(config: dict) -> int:
+    return int(config["common"]["active_episode"])
+
+
+def episode_entry(config: dict, episode_no: int) -> dict:
+    for episode in series_episodes(config):
+        if int(episode.get("episode_no", -1)) == episode_no:
+            return episode
+    available = [episode.get("episode_no") for episode in series_episodes(config)]
+    raise ValueError(
+        f"episode_no={episode_no} not found in current_series.toml (have: {available})"
+    )
+
+
+def series_episode_common(config: dict, episode_no: int) -> dict:
+    """Synthesize a movie-shaped config for one episode.
+
+    The resulting `common.movie_slug` is ``<series_slug>/ep<NN>`` so `build_paths`
+    nests the work dir under the series. `[tools]` and other top-level tables are
+    carried through; the `episodes` array is dropped.
+    """
+    common = config["common"]
+    episode = episode_entry(config, episode_no)
+    series_slug = common["series_slug"]
+    series_title = common.get("series_title", series_slug)
+    title = (episode.get("title") or "").strip() or f"{series_title} 第{episode_no}集"
+
+    new_common: dict[str, Any] = {
+        "movie_slug": f"{series_slug}/ep{episode_no:02d}",
+        "movie_dir": common["series_dir"],
+        "movie_title": title,
+        "video_file": episode["video_file"],
+        "subtitle_file": episode["subtitle_file"],
+        "style_path": common["style_path"],
+    }
+    for key in ("genre", "digest_mode", "target_seconds"):
+        if key in common:
+            new_common[key] = common[key]
+    if episode.get("synopsis_file"):
+        new_common["synopsis_file"] = episode["synopsis_file"]
+
+    result = {key: value for key, value in config.items() if key not in ("common", "episodes")}
+    result["common"] = new_common
+    return result
+
+
+def series_context_file(config: dict) -> Path:
+    """Path to the running continuity file at the series root."""
+    return WORK_ROOT / config["common"]["series_slug"] / "series_context.md"
+
+
+def load_active_config() -> tuple[dict, bool]:
+    """Load the active config, preferring a non-empty series config.
+
+    Returns ``(config, is_series)``. Series mode is selected only when
+    ``configs/current_series.toml`` exists, is non-empty, and parses as a series
+    config; otherwise the movie config is used.
+    """
+    series_path = WORKBENCH_ROOT / SERIES_CONFIG
+    if series_path.is_file() and series_path.read_text(encoding="utf-8").strip():
+        series_cfg = load_config(SERIES_CONFIG)
+        if is_series_config(series_cfg):
+            return series_cfg, True
+    return load_config(DEFAULT_CONFIG), False
+
+
+@dataclass
+class RunContext:
+    """What every step needs to run, resolved from the active config.
+
+    In series mode ``cfg`` is the synthesized per-episode (movie-shaped) config —
+    so banners and `build_paths` consumers work uniformly — while ``series_cfg``
+    holds the original series document for continuity handling.
+    """
+
+    cfg: dict
+    paths: Paths
+    is_series: bool
+    episode_no: int | None
+    series_context_path: Path | None
+    series_cfg: dict | None
+
+
+def resolve_run_context(ensure_dirs: bool = True) -> RunContext:
+    config, is_series = load_active_config()
+    if is_series:
+        episode_no = active_episode_no(config)
+        episode_cfg = series_episode_common(config, episode_no)
+        paths = build_paths(episode_cfg)
+        ctx = RunContext(
+            cfg=episode_cfg,
+            paths=paths,
+            is_series=True,
+            episode_no=episode_no,
+            series_context_path=series_context_file(config),
+            series_cfg=config,
+        )
+    else:
+        paths = build_paths(config)
+        ctx = RunContext(
+            cfg=config,
+            paths=paths,
+            is_series=False,
+            episode_no=None,
+            series_context_path=None,
+            series_cfg=None,
+        )
+    if ensure_dirs:
+        ensure_stage_dirs(paths)
+    return ctx
+
+
 def build_paths(config: dict) -> Paths:
     common = config["common"]
 
@@ -131,7 +263,7 @@ def build_paths(config: dict) -> Paths:
         video=movie_dir / common["video_file"],
         subtitle_srt=movie_dir / common["subtitle_file"],
         style=style,
-        synopsis=movie_dir / "synopsis.md",
+        synopsis=movie_dir / common.get("synopsis_file", "synopsis.md"),
         characters_dir=movie_dir / "characters",
         stage0_dir=stage0_dir,
         stage1_dir=stage1_dir,

@@ -44,5 +44,5 @@ transcribe = "app.tools.transcribe_audio:main"
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-q"
-testpaths = ["tests/pipeline", "tests/tools"]
+testpaths = ["tests/pipeline", "tests/tools", "tests/workbench"]
 pythonpath = ["."]
