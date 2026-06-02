@@ -55,7 +55,7 @@ DEFAULT_TOP_K = 40
 DEFAULT_REPETITION_PENALTY = 1.1
 DEFAULT_MAX_NEW_TOKENS = 1024
 
-STRUCTURAL_MARKER_RE = re.compile(r"^\[(?P<label>TITLE|HOOK|CLOSING|ACT[^\]]*)\]$")
+STRUCTURAL_MARKER_RE = re.compile(r"^\[(?P<label>TITLE|HOOK|RECAP|CLOSING|ACT[^\]]*)\]$")
 ANCHOR_LINE_RE = re.compile(r"^\[ANCHOR\s+(?P<body>.*)\]$")
 ANCHOR_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？；])")
@@ -289,7 +289,8 @@ def parse_anchor_line(body: str) -> tuple[list[tuple[str, str]], list[str]]:
 def parse_script_chunks(script_text: str) -> list[Chunk]:
     """Split a script into spoken chunks with grounded ref segments.
 
-    Each structural block after ``[HOOK]`` becomes one ``Chunk``. Inside a
+    Each structural block from the opener (``[HOOK]``, or ``[RECAP]`` for series
+    episodes) onward becomes one ``Chunk``. Inside a
     chunk, every ``<refs>visual:NNN, ...</refs>`` line on its own opens a
     new ``Segment``; prose lines accumulate into the current segment until
     the next ``<refs>`` line or section marker. Prose that appears before
@@ -343,7 +344,9 @@ def parse_script_chunks(script_text: str) -> list[Chunk]:
         if marker == "TITLE":
             continue
 
-        if marker == "HOOK":
+        if marker in ("HOOK", "RECAP"):
+            # [RECAP] is the series-episode opener (replaces [HOOK]); both turn
+            # narration capture on and become the first spoken chunk.
             flush()
             current_section = marker
             in_script = True

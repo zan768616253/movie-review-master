@@ -74,6 +74,47 @@ def test_parse_script_chunks_with_refs_builds_per_sentence_segments() -> None:
     assert act.segments[0].text == "故事开场，老猜每天送女儿去溜冰场学习。"
 
 
+def test_parse_script_chunks_recap_opens_the_script_like_hook() -> None:
+    """A series episode opens with [RECAP] instead of [HOOK]; the script must not
+    be skipped, and the recap becomes the first chunk."""
+    script_text = """
+[TITLE]
+咒术回战 第2集
+
+[RECAP]
+<refs>recap</refs>
+上一集，主角发现自己被诅咒缠身。
+
+[ACT 1 - SETUP]
+<refs>visual:001</refs>
+本集开场。
+"""
+
+    chunks = parse_script_chunks(script_text)
+
+    assert len(chunks) == 2
+    recap = chunks[0]
+    assert recap.section == "RECAP"
+    assert recap.text == "上一集，主角发现自己被诅咒缠身。"
+    assert chunks[1].section == "ACT 1 - SETUP"
+
+
+def test_parse_script_chunks_recap_sentinel_yields_no_ranges() -> None:
+    """`<refs>recap</refs>` carries no visual IDs, so the spoken prose has empty refs."""
+    script_text = """
+[RECAP]
+<refs>recap</refs>
+前情提要：黑帮大佬重生回到十六岁。
+"""
+
+    chunks = parse_script_chunks(script_text)
+
+    assert len(chunks) == 1
+    assert chunks[0].section == "RECAP"
+    assert chunks[0].segments[0].text == "前情提要：黑帮大佬重生回到十六岁。"
+    assert chunks[0].segments[0].refs == []
+
+
 def test_parse_script_chunks_handles_orphan_prose_before_refs() -> None:
     script_text = """
 [HOOK]
