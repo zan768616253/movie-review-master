@@ -74,6 +74,47 @@ def test_build_chunked_digest_prompts_returns_three_prompts_each_with_chunk_labe
         assert "CLIMAX" in prompt and "4-6" in prompt
 
 
+def _series_doc() -> SceneMarkersDocument:
+    return SceneMarkersDocument(
+        character_glossary=[],
+        scenes=[
+            _make_scene("scene:01", "SETUP",  "visual:001", "visual:010"),
+            _make_scene("scene:02", "CLIMAX", "visual:011", "visual:020"),
+            _make_scene("scene:03", "CLOSING", "visual:021", "visual:025"),
+        ],
+    )
+
+
+def _series_visuals() -> list[dict[str, object]]:
+    return [
+        {"id": f"visual:{i:03d}", "start": f"00:00:{i:02d}.000",
+         "end": f"00:00:{i+1:02d}.000", "summary": "x", "ocr_text": "", "characters": []}
+        for i in range(1, 26)
+    ]
+
+
+def test_chunked_prior_context_appears_in_every_chunk() -> None:
+    prompts = build_chunked_digest_prompts(
+        scene_markers=_series_doc(), visual_segments=_series_visuals(), subtitles=[],
+        movie_title="Demo EP2",
+        prior_context_text="第 1 集 回顾：主角发现了诅咒。",
+    )
+    for label, prompt in prompts.items():
+        assert "Previously in the series" in prompt, label
+        assert "第 1 集 回顾：主角发现了诅咒。" in prompt, label
+
+
+def test_chunked_carryover_only_in_tail() -> None:
+    prompts = build_chunked_digest_prompts(
+        scene_markers=_series_doc(), visual_segments=_series_visuals(), subtitles=[],
+        movie_title="Demo EP1",
+        request_carryover=True,
+    )
+    assert "承上启下" not in prompts["front"]
+    assert "承上启下" not in prompts["climax"]
+    assert "承上启下" in prompts["tail"]
+
+
 def test_concatenate_digest_chunks_preserves_chunk_order() -> None:
     replies = {
         "tail":   "## tail content\n",

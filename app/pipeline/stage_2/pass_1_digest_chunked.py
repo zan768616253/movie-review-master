@@ -91,9 +91,17 @@ def build_chunked_digest_prompts(
     movie_title: str = "",
     synopsis_text: str | None = None,
     genre_rules_text: str | None = None,
+    prior_context_text: str | None = None,
+    request_carryover: bool = False,
     target_minutes: float = 12.0,
 ) -> dict[str, str]:
-    """Build the three chunked Pass 1 prompts. Returns a dict keyed by CHUNK_ORDER."""
+    """Build the three chunked Pass 1 prompts. Returns a dict keyed by CHUNK_ORDER.
+
+    ``prior_context_text`` (series episodes ≥ 2) is threaded into every chunk so
+    returning characters stay consistent. ``request_carryover`` only attaches the
+    ``承上启下`` instruction to the ``tail`` chunk, so the concatenated digest ends
+    with exactly one carryover section.
+    """
     front, climax, tail = partition_scenes(scene_markers)
     chunks: list[tuple[str, list[SceneMarker]]] = [
         ("front", front), ("climax", climax), ("tail", tail),
@@ -114,6 +122,8 @@ def build_chunked_digest_prompts(
             synopsis_text=synopsis_text,
             genre_rules_text=genre_rules_text,
             scene_markers=chunk_doc,
+            prior_context_text=prior_context_text,
+            request_carryover=request_carryover and label == "tail",
             target_minutes=target_minutes,
         )
     return out
