@@ -53,6 +53,31 @@ def _grounding_section(*, use_digest: bool) -> str:
     )
 
 
+def _recap_directive() -> str:
+    return (
+        "# Episode recap opening (REQUIRED — this is a series episode)\n"
+        "This is NOT the first episode, so open with a [RECAP] block instead of [HOOK]:\n"
+        "- In 2-4 short sentences, remind the viewer where the story left off, drawn from the "
+        "'Previously in the series' context above. Speak in the narrator's voice — a vivid bridge, "
+        "not a dry summary.\n"
+        "- End the recap with ONE forward-pull line that teases what THIS episode is about.\n"
+        "- The recap describes PRIOR episodes, which have NO footage in this episode. So every recap "
+        "sentence is tagged with the sentinel `<refs>recap</refs>` on its own line (NOT a visual:NNN "
+        "id). The editor will cut prior-episode footage there.\n"
+        "- Example:\n"
+        "```\n"
+        "[RECAP]\n"
+        "<refs>recap</refs>\n"
+        "上一集，主角发现自己被诅咒缠身。\n"
+        "<refs>recap</refs>\n"
+        "而真正的敌人，才刚刚现身。\n"
+        "```\n"
+        "- After [RECAP], continue with [ACT 1 - ...] and the rest of the structure as normal. Do "
+        "NOT also write a separate [HOOK] block — the recap is this episode's opener.\n"
+        "- Every NON-recap sentence still obeys the hard grounding rule below (real visual:NNN ids)."
+    )
+
+
 def build_story_prompt(
     *,
     style_text: str,
@@ -62,6 +87,7 @@ def build_story_prompt(
     synopsis_text: str | None = None,
     genre_text: str | None = None,
     genre_rules_text: str | None = None,
+    prior_context_text: str | None = None,
     target_minutes: float | None = None,
     chars_per_minute: int = 250,
 ) -> str:
@@ -69,6 +95,7 @@ def build_story_prompt(
         raise ValueError("Either timeline_text or digest_text must be provided")
 
     use_digest = digest_text is not None
+    recap_mode = bool(prior_context_text and prior_context_text.strip())
     movie_label = movie_title.strip() or "Unknown movie"
 
     sections: list[str] = []
@@ -82,6 +109,17 @@ def build_story_prompt(
             "<<<SYNOPSIS_START>>>\n"
             f"{synopsis_text.strip()}\n"
             "<<<SYNOPSIS_END>>>"
+        )
+
+    if recap_mode:
+        sections.append(
+            "# Previously in the series (recap source)\n"
+            "Use this to write the [RECAP] opening. It summarizes earlier episodes. Do NOT fold these "
+            "prior events into this episode's main narration — they have no footage here; they belong "
+            "only in the [RECAP] block (tagged <refs>recap</refs>).\n"
+            "<<<SERIES_SO_FAR_START>>>\n"
+            f"{prior_context_text.strip()}\n"
+            "<<<SERIES_SO_FAR_END>>>"
         )
 
     if use_digest:
@@ -135,6 +173,9 @@ def build_story_prompt(
         "- If the style file defines naming rules, narrator stance, hook strategy, or ending pattern, follow those rules.",
     ])
     sections.append("\n".join(task_lines))
+
+    if recap_mode:
+        sections.append(_recap_directive())
 
     sections.append(_grounding_section(use_digest=use_digest))
 
@@ -207,11 +248,12 @@ def build_story_prompt(
                 "Do NOT write long compound paragraphs."
             )
 
+    opener_example = "[TITLE], [RECAP], [ACT 1 - SETUP]" if recap_mode else "[TITLE], [HOOK], [ACT 1 - SETUP]"
     sections.append(
         "# Output requirements\n"
         "- Output only the final script.\n"
         "- Use the act structure headers defined in the Style Rulebook "
-        "(e.g. [TITLE], [HOOK], [ACT 1 - SETUP], etc.). No additional sub-headings beyond those.\n"
+        f"(e.g. {opener_example}, etc.). No additional sub-headings beyond those.\n"
         "- Every narration sentence is preceded by its own <refs>...</refs> line per the grounding requirement.\n"
         "- No JSON.\n"
         "- No bullet points inside act prose.\n"
