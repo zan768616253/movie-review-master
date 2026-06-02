@@ -97,6 +97,41 @@ def test_range_expansion_recognises_dash_form() -> None:
     assert report.flagged == []
 
 
+def test_recap_sentinel_sentences_are_not_flagged() -> None:
+    """A series episode opens with a [RECAP] block whose sentences cite the
+    `recap` sentinel (footage comes from a prior episode). These are
+    intentionally ungrounded and must not be flagged."""
+    script = (
+        "[RECAP]\n"
+        "<refs>recap</refs>\n"
+        "上一集，主角发现自己被诅咒缠身。\n"
+        "<refs>recap</refs>\n"
+        "而反派的真身仍未现身。\n"
+        "[ACT 1 - SETUP]\n"
+        "<refs>visual:001</refs>\n"
+        "本集开场。\n"
+    )
+    report = validate_script(
+        script_text=script,
+        scene_markers=_scene_doc(),
+        all_visual_ids=_visual_ids([f"visual:{i:03d}" for i in range(1, 11)]),
+    )
+    assert report.total_sentences == 3
+    assert report.flagged == []
+
+
+def test_naked_recap_sentence_without_sentinel_is_still_flagged() -> None:
+    """Dropping the sentinel entirely is an error — recap prose with no <refs>
+    at all is still flagged so the operator cannot silently lose grounding."""
+    script = "[RECAP]\n上一集发生了很多事。\n"
+    report = validate_script(
+        script_text=script,
+        scene_markers=_scene_doc(),
+        all_visual_ids=_visual_ids(["visual:001"]),
+    )
+    assert any("missing <refs>" in f.issue.lower() for f in report.flagged)
+
+
 def test_report_writes_json_file_with_expected_schema(tmp_path: Path) -> None:
     script = "<refs>visual:999</refs>\n这一句引用了不存在的 ID。\n"
     report = validate_script(

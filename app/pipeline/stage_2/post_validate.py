@@ -17,7 +17,7 @@ from app.pipeline.stage_2.scene_markers import SceneMarkersDocument
 _REFS_LINE_RE = re.compile(r"<refs>([^<]*)</refs>")
 _SENTENCE_END_RE = re.compile(r"[。！？!?]\s*$")
 _VISUAL_ID_RE = re.compile(r"visual:(\d+)(?:-(\d+))?")
-_ACT_HEADER_RE = re.compile(r"^\[(TITLE|HOOK|ACT [1-4][^\]]*|CLOSING)\]\s*$")
+_ACT_HEADER_RE = re.compile(r"^\[(TITLE|HOOK|RECAP|ACT [1-4][^\]]*|CLOSING)\]\s*$")
 
 
 @dataclass(frozen=True)
@@ -80,17 +80,30 @@ def validate_script(
 
     lines = script_text.split("\n")
     last_refs: list[str] | None = None
+    recap_exempt = False
     for index, raw in enumerate(lines, start=1):
         line = raw.strip()
         if not line:
             last_refs = None
+            recap_exempt = False
             continue
         if _ACT_HEADER_RE.match(line):
             last_refs = None
+            recap_exempt = False
             continue
         refs_match = _REFS_LINE_RE.match(line)
         if refs_match:
-            last_refs = _expand_visual_refs(refs_match.group(1))
+            body = refs_match.group(1)
+            expanded = _expand_visual_refs(body)
+            if not expanded and body.strip():
+                # A non-visual sentinel (e.g. <refs>recap</refs>) marks the next
+                # sentence intentionally ungrounded — footage comes from a prior
+                # episode. Skip grounding checks but still count it.
+                last_refs = None
+                recap_exempt = True
+            else:
+                last_refs = expanded
+                recap_exempt = False
             continue
 
         # Not refs, not header, not blank → candidate narration.
@@ -99,6 +112,11 @@ def validate_script(
 
         total_sentences += 1
         sentence_refs = last_refs if last_refs is not None else []
+
+        if recap_exempt:
+            recap_exempt = False
+            last_refs = None
+            continue
 
         if last_refs is None:
             flagged.append(FlaggedSentence(
