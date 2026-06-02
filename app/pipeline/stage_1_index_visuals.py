@@ -12,7 +12,7 @@ from typing import Sequence
 
 from app.pipeline.common.json_io import dump_json
 from app.pipeline.common.script_contract import get_video_duration, validate_visual_segments
-from app.pipeline.indexers import GeminiStrategy
+from app.pipeline.stage_1 import GeminiStrategy
 
 
 DEFAULT_INDEX_WORKERS = 5

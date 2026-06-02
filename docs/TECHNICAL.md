@@ -25,17 +25,18 @@ movie-review-master/
       stage_0_generate_subtitles.py # (optional) faster-whisper SRT when no human subtitle exists
       stage_1_index_visuals.py     # shot detection (auto)
       stage_1_parse_subtitles.py   # subtitle parse (auto)
-      stage_2_build_prompt.py      # LLM prompt builder (story default; --digest pass 1)
-      stage_3_generate_audio.py    # TTS the manual script -> MP3 + SRT + manifest
-      indexers/                    # Gemini VLM strategy
+      stage_1/                     # Stage 1 visual-indexer strategy (Gemini VLM)
         base.py
         gemini.py
         shared.py
-      common/
+      stage_2_build_prompt.py      # LLM prompt builder (story default; --digest pass 1)
+      stage_2/                     # Stage 2 multi-pass internals + series_context.py (continuity)
+      stage_3_generate_audio.py    # TTS the manual script -> MP3 + SRT + manifest
+      common/                      # shared across stages
         json_io.py
         script_contract.py         # time helpers, visual-segment validation
         subtitle_utils.py          # SRT cue rendering
-        video_encoder.py           # ffmpeg hwaccel helpers (used by indexers)
+        video_encoder.py           # ffmpeg hwaccel helpers (used by Stage 1 indexer)
     tools/
       prepare_voice_reference.py   # one-time voice-clone reference prep
       transcribe_audio.py          # one-time Whisper transcription helper
@@ -108,7 +109,7 @@ TTS the final manual script with Qwen3 voice cloning. Produces:
 Sampling resolves CLI > `voice_clone.toml` (per-style) > built-in defaults.
 Entry point: `generate-script-audio`. Test-covered.
 
-### `app/pipeline/indexers/`
+### `app/pipeline/stage_1/`
 
 Visual-indexer implementation for Stage 1:
 
@@ -118,7 +119,7 @@ Visual-indexer implementation for Stage 1:
 
 ### Series support (TV / anime)
 
-- `app/pipeline/series_context.py` — pure, string-only continuity helpers:
+- `app/pipeline/stage_2/series_context.py` — pure, string-only continuity helpers:
   `extract_continuity_section` (pull the digest's `## 承上启下` body),
   `update_series_context` (insert/replace a per-episode block, idempotent,
   sorted), `assemble_prior_context` (concatenate blocks for episodes `< N`).

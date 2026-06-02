@@ -36,7 +36,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import banner, fail, resolve_run_context
 
-from app.pipeline.series_context import (
+from app.pipeline.stage_2.series_context import (
     assemble_prior_context,
     extract_continuity_section,
     update_series_context,

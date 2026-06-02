@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.pipeline.stage_1_index_visuals import build_parser
-from app.pipeline.indexers.base import (
+from app.pipeline.stage_1.base import (
     detect_shot_boundaries,
     seconds_to_timestamp,
     snap_to_shot_boundaries,
@@ -17,8 +17,8 @@ from app.pipeline.indexers.base import (
     merge_segments,
 )
 from app.pipeline.common.script_contract import validate_visual_segments
-from app.pipeline.indexers.shared import build_prompt
-from app.pipeline.indexers.gemini import GeminiStrategy
+from app.pipeline.stage_1.shared import build_prompt
+from app.pipeline.stage_1.gemini import GeminiStrategy
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +191,7 @@ class TestSnapToShotBoundaries:
 
 
 class TestDetectShotBoundaries:
-    @patch("app.pipeline.indexers.base.subprocess.run")
+    @patch("app.pipeline.stage_1.base.subprocess.run")
     def test_uses_utf8_decoding_for_ffmpeg_output(self, mock_run, tmp_path):
         mock_run.return_value = SimpleNamespace(
             stderr="frame=1 pts_time:1.25\nframe=2 pts_time:2.5\n"
@@ -203,7 +203,7 @@ class TestDetectShotBoundaries:
         assert mock_run.call_args.kwargs["encoding"] == "utf-8"
         assert mock_run.call_args.kwargs["errors"] == "replace"
 
-    @patch("app.pipeline.indexers.base.subprocess.run")
+    @patch("app.pipeline.stage_1.base.subprocess.run")
     def test_missing_stderr_returns_no_cuts_instead_of_crashing(self, mock_run, tmp_path):
         mock_run.return_value = SimpleNamespace(stderr=None)
 
@@ -230,9 +230,9 @@ def _build_fake_gemini_client(response_text: str) -> MagicMock:
 
 
 class TestGeminiStrategy:
-    @patch("app.pipeline.indexers.gemini.detect_shot_boundaries", return_value=[])
-    @patch("app.pipeline.indexers.gemini.genai")
-    @patch("app.pipeline.indexers.gemini.get_video_duration")
+    @patch("app.pipeline.stage_1.gemini.detect_shot_boundaries", return_value=[])
+    @patch("app.pipeline.stage_1.gemini.genai")
+    @patch("app.pipeline.stage_1.gemini.get_video_duration")
     @patch.object(GeminiStrategy, "_extract_chunk")
     def test_index_video_splits_and_merges(
         self, mock_extract, mock_duration, mock_genai, mock_boundaries, tmp_path,
@@ -256,9 +256,9 @@ class TestGeminiStrategy:
         assert results[0]["start"] == "00:00:00.000"
         assert results[1]["start"] == "00:07:00.000"
 
-    @patch("app.pipeline.indexers.gemini.detect_shot_boundaries", return_value=[])
-    @patch("app.pipeline.indexers.gemini.genai")
-    @patch("app.pipeline.indexers.gemini.get_video_duration")
+    @patch("app.pipeline.stage_1.gemini.detect_shot_boundaries", return_value=[])
+    @patch("app.pipeline.stage_1.gemini.genai")
+    @patch("app.pipeline.stage_1.gemini.get_video_duration")
     @patch.object(GeminiStrategy, "_extract_chunk")
     def test_prompt_contract_covers_timestamps_characters_and_dialogue_skip(
         self, mock_extract, mock_duration, mock_genai, mock_boundaries, tmp_path,
@@ -283,9 +283,9 @@ class TestGeminiStrategy:
         assert "visually re-identify" in prompt_text
         assert "NEVER guess" in prompt_text
 
-    @patch("app.pipeline.indexers.gemini.detect_shot_boundaries", return_value=[])
-    @patch("app.pipeline.indexers.gemini.genai")
-    @patch("app.pipeline.indexers.gemini.get_video_duration")
+    @patch("app.pipeline.stage_1.gemini.detect_shot_boundaries", return_value=[])
+    @patch("app.pipeline.stage_1.gemini.genai")
+    @patch("app.pipeline.stage_1.gemini.get_video_duration")
     @patch.object(GeminiStrategy, "_extract_chunk")
     def test_index_video_persists_and_reuses_chunk_segments(
         self, mock_extract, mock_duration, mock_genai, mock_boundaries, tmp_path,
@@ -312,12 +312,12 @@ class TestGeminiStrategy:
 
         with patch.object(strategy, "_extract_chunk", side_effect=AssertionError("should not extract")), \
              patch.object(strategy, "_index_chunk", side_effect=AssertionError("should not reindex")), \
-             patch("app.pipeline.indexers.gemini.detect_shot_boundaries", side_effect=AssertionError("should not detect")):
+             patch("app.pipeline.stage_1.gemini.detect_shot_boundaries", side_effect=AssertionError("should not detect")):
             second_results = strategy.index_video(tmp_path / "movie.mp4", tmp_idx_dir)
 
         assert second_results == first_results
 
-    @patch("app.pipeline.indexers.gemini.get_video_duration", return_value=600.0)
+    @patch("app.pipeline.stage_1.gemini.get_video_duration", return_value=600.0)
     def test_index_video_parallel_preserves_chunk_order(self, mock_duration, tmp_path):
         tmp_idx_dir = tmp_path / "tmp"
         tmp_idx_dir.mkdir()
@@ -340,9 +340,9 @@ class TestGeminiStrategy:
         assert [segment["summary"] for segment in results] == ["chunk-0", "chunk-1"]
         assert results[1]["start"] == "00:07:00.000"
 
-    @patch("app.pipeline.indexers.gemini.hwaccel_decode_args", return_value=["-hwaccel", "cuda"])
-    @patch("app.pipeline.indexers.gemini.nvenc_available", return_value=True)
-    @patch("app.pipeline.indexers.gemini.subprocess.run")
+    @patch("app.pipeline.stage_1.gemini.hwaccel_decode_args", return_value=["-hwaccel", "cuda"])
+    @patch("app.pipeline.stage_1.gemini.nvenc_available", return_value=True)
+    @patch("app.pipeline.stage_1.gemini.subprocess.run")
     def test_extract_chunk_falls_back_to_cpu_when_cuda_decode_fails(
         self,
         mock_run,
@@ -360,7 +360,7 @@ class TestGeminiStrategy:
         mock_run.side_effect = fake_run
 
         with patch(
-            "app.pipeline.indexers.gemini.build_timestamp_drawtext_filter",
+            "app.pipeline.stage_1.gemini.build_timestamp_drawtext_filter",
             return_value="drawtext=mock",
         ):
             strategy._extract_chunk(
@@ -492,7 +492,7 @@ def test_strategy_without_synopsis_keeps_conservative_rule():
     assert "NEVER guess from general knowledge" in strategy.prompt
 
 
-@patch("app.pipeline.indexers.gemini.genai")
+@patch("app.pipeline.stage_1.gemini.genai")
 def test_index_chunk_deletes_uploaded_file_when_json_parse_fails(mock_genai, tmp_path):
     mock_client = _build_fake_gemini_client("not valid json")
     mock_genai.Client.return_value = mock_client
@@ -505,7 +505,7 @@ def test_index_chunk_deletes_uploaded_file_when_json_parse_fails(mock_genai, tmp
     mock_client.files.delete.assert_called_once()
 
 
-@patch("app.pipeline.indexers.gemini.genai")
+@patch("app.pipeline.stage_1.gemini.genai")
 def test_index_chunk_uploads_face_gallery_and_cleans_up_all_files(mock_genai, tmp_path):
     mock_client = _build_fake_gemini_client(json.dumps([]))
     mock_genai.Client.return_value = mock_client

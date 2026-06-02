@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.pipeline.series_context import (
+from app.pipeline.stage_2.series_context import (
     assemble_prior_context,
     extract_continuity_section,
     update_series_context,
