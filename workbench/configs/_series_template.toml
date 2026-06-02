@@ -1,0 +1,40 @@
+# Template for a TV series / anime. Copy to current_series.toml and fill in.
+# When current_series.toml is present and non-empty, the step scripts run in
+# series mode (one episode at a time); delete/rename it to return to movie mode
+# (current_movie.toml). Paths are relative to the repo root.
+
+[common]
+series_slug    = "TODO_short_slug_no_spaces"   # work dir: workbench/work/<series_slug>/ep<NN>/
+series_dir     = "movies/TODO_series_folder"    # holds synopsis.md + characters/ (shared by all episodes)
+series_title   = "TODO Series Display Title"
+style_path     = "styles/niu-shu.md"
+genre          = "Action"
+
+# The episode every step operates on. Bump this to advance, then re-run the steps.
+active_episode = 1
+
+# Stage 2 digest mode (per episode, same meaning as a movie):
+#   "single"  (default) — one LLM call for Pass 1
+#   "chunked" — three LLM calls (front/climax/tail) for very long episodes
+digest_mode    = "single"
+
+# Soft hint for prompt builders: per-episode review length in seconds.
+target_seconds = 720.0
+
+# One [[episodes]] block per episode. video_file / subtitle_file live under series_dir.
+[[episodes]]
+episode_no    = 1
+title         = "第1集 起"
+video_file    = "EP01.mp4"
+subtitle_file = "EP01.ass"
+# synopsis_file = "EP01.synopsis.md"   # optional per-episode synopsis; defaults to series synopsis.md
+
+[[episodes]]
+episode_no    = 2
+title         = "第2集 承"
+video_file    = "EP02.mp4"
+subtitle_file = "EP02.ass"
+
+# Optional per-series TTS overrides, identical to the movie config.
+# [tools.generate_script_audio]
+# temperature = 0.65

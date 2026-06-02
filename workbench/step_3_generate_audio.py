@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import DEFAULT_CONFIG, banner, build_paths, ensure_stage_dirs, fail, get_tool_value, load_config
+from _common import banner, fail, get_tool_value, resolve_run_context
 
 from app.pipeline.stage_3_generate_audio import main as stage_3_main
 
@@ -29,9 +29,8 @@ _OVERRIDES = (
 
 
 def run() -> int:
-    cfg = load_config(DEFAULT_CONFIG)
-    paths = build_paths(cfg)
-    ensure_stage_dirs(paths)
+    ctx = resolve_run_context()
+    cfg, paths = ctx.cfg, ctx.paths
 
     if not paths.script.is_file() or not paths.script.read_text(encoding="utf-8").strip():
         return fail(f"script is empty or missing: {paths.script}")

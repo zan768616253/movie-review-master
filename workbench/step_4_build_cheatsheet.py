@@ -18,15 +18,14 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import DEFAULT_CONFIG, banner, build_paths, ensure_stage_dirs, fail, load_config
+from _common import banner, fail, resolve_run_context
 
 from app.pipeline.stage_4_build_cheatsheet import main as stage_4_main
 
 
 def run() -> int:
-    cfg = load_config(DEFAULT_CONFIG)
-    paths = build_paths(cfg)
-    ensure_stage_dirs(paths)
+    ctx = resolve_run_context()
+    cfg, paths = ctx.cfg, ctx.paths
 
     if not paths.voiceover_manifest.is_file():
         return fail(f"voiceover manifest not found: {paths.voiceover_manifest}")

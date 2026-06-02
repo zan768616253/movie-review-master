@@ -14,14 +14,14 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import DEFAULT_CONFIG, banner, build_paths, fail, load_config
+from _common import banner, fail, resolve_run_context
 
 from app.pipeline.stage_0_generate_subtitles import main as stage_0_main
 
 
 def run() -> int:
-    cfg = load_config(DEFAULT_CONFIG)
-    paths = build_paths(cfg)
+    ctx = resolve_run_context(ensure_dirs=False)
+    cfg, paths = ctx.cfg, ctx.paths
 
     if not paths.movie_dir.is_dir():
         return fail(f"movie folder not found: {paths.movie_dir}")

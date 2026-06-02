@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import DEFAULT_CONFIG, banner, build_paths, ensure_stage_dirs, fail, load_config
+from _common import banner, fail, resolve_run_context
 
 from app.pipeline.common.script_contract import seconds_to_timestamp
 from app.pipeline.stage_1_index_visuals import main as stage_1_index_visuals_main
@@ -65,9 +65,8 @@ def _run_parse_subtitles(paths) -> int:
 
 
 def run() -> int:
-    cfg = load_config(DEFAULT_CONFIG)
-    paths = build_paths(cfg)
-    ensure_stage_dirs(paths)
+    ctx = resolve_run_context()
+    paths = ctx.paths
 
     rc = _run_index_visuals(paths)
     if rc:

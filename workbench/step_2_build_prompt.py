@@ -19,6 +19,12 @@ Override the auto-detection with one of these flags to force-rerun a step:
     --outline   regenerate outline_prompt.txt
     --digest    regenerate digest_prompt.txt
     --story     regenerate story_prompt.txt
+
+Series mode (current_series.toml present): the active episode is processed like
+a movie, plus continuity wiring. Every episode's digest requests a 承上启下
+carryover that is harvested into series_context.md once plot_digest.txt is
+filled; from episode 2 on, the prior episodes' context is injected into the
+digest (background) and story (which then opens with a [RECAP] block).
 """
 
 from __future__ import annotations
@@ -28,8 +34,13 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import DEFAULT_CONFIG, banner, build_paths, ensure_stage_dirs, fail, load_config
+from _common import banner, fail, resolve_run_context
 
+from app.pipeline.series_context import (
+    assemble_prior_context,
+    extract_continuity_section,
+    update_series_context,
+)
 from app.pipeline.stage_2_build_prompt import main as stage_2_main
 
 
@@ -73,6 +84,62 @@ def detect_next_step(scene_markers: Path, plot_digest: Path, script: Path) -> st
     return "done"
 
 
+# --- Series continuity --------------------------------------------------------
+
+
+def _write_prior_context(ctx) -> Path | None:
+    """Assemble prior episodes' context into stage2/prior_context.md.
+
+    Returns the file path, or ``None`` when there is nothing prior (episode 1 or
+    movie mode), in which case no --prior-context is passed.
+    """
+    if not ctx.is_series or not ctx.episode_no or ctx.episode_no <= 1:
+        return None
+    series_md = ""
+    if ctx.series_context_path and ctx.series_context_path.is_file():
+        series_md = ctx.series_context_path.read_text(encoding="utf-8")
+    prior = assemble_prior_context(series_md, ctx.episode_no)
+    if not prior.strip():
+        print(
+            "NOTE: no prior-episode continuity found in "
+            f"{ctx.series_context_path} — episode {ctx.episode_no} will run without a recap."
+        )
+        return None
+    out = ctx.paths.stage2_dir / "prior_context.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(prior, encoding="utf-8")
+    return out
+
+
+def _harvest_continuity(ctx) -> None:
+    """Once this episode's plot_digest.txt is filled, extract its 承上启下 section
+    into series_context.md so later episodes can recap it. Idempotent per episode."""
+    if not ctx.is_series or not ctx.episode_no or ctx.series_context_path is None:
+        return
+    if not _is_filled(ctx.paths.plot_digest):
+        return
+
+    carryover = extract_continuity_section(ctx.paths.plot_digest.read_text(encoding="utf-8"))
+    if carryover is None:
+        carryover = (
+            "（待补充：本集 digest 缺少 ## 承上启下 段落，请手动填写本集结束时的剧情状态、"
+            "未解悬念与留给下一集的钩子。）"
+        )
+        print(
+            f"WARNING: plot_digest.txt for 第 {ctx.episode_no} 集 has no '## 承上启下' section; "
+            f"wrote a placeholder block into {ctx.series_context_path} — edit it by hand."
+        )
+
+    series_md = ""
+    if ctx.series_context_path.is_file():
+        series_md = ctx.series_context_path.read_text(encoding="utf-8")
+    title = ctx.cfg["common"].get("movie_title", "")
+    updated = update_series_context(series_md, ctx.episode_no, title, carryover)
+    ctx.series_context_path.parent.mkdir(parents=True, exist_ok=True)
+    ctx.series_context_path.write_text(updated, encoding="utf-8")
+    print(f"Updated series continuity: {ctx.series_context_path} (第 {ctx.episode_no} 集)")
+
+
 def _print_next_steps(
     *,
     prompt_file: Path,
@@ -99,7 +166,8 @@ def _print_next_steps(
     print("─" * 70)
 
 
-def _run_outline(cfg, paths) -> int:
+def _run_outline(ctx) -> int:
+    cfg, paths = ctx.cfg, ctx.paths
     rc = _common_inputs_present(paths)
     if rc is not None:
         return rc
@@ -130,7 +198,8 @@ def _run_outline(cfg, paths) -> int:
     return rc
 
 
-def _run_digest(cfg, paths) -> int:
+def _run_digest(ctx) -> int:
+    cfg, paths = ctx.cfg, ctx.paths
     rc = _common_inputs_present(paths)
     if rc is not None:
         return rc
@@ -172,6 +241,13 @@ def _run_digest(cfg, paths) -> int:
         args.extend(["--target-minutes", str(target_minutes)])
     if digest_mode == "chunked":
         args.append("--chunked")
+    if ctx.is_series:
+        # Every series episode emits a carryover; episodes >1 also see prior context.
+        args.append("--series-carryover")
+        prior = _write_prior_context(ctx)
+        if prior is not None:
+            args.extend(["--prior-context", str(prior)])
+            print(f"prior context   : {prior}")
     rc = stage_2_main(args)
     if rc != 0:
         return rc
@@ -205,7 +281,8 @@ def _run_digest(cfg, paths) -> int:
     return rc
 
 
-def _run_story(cfg, paths) -> int:
+def _run_story(ctx) -> int:
+    cfg, paths = ctx.cfg, ctx.paths
     if not paths.style.is_file():
         return fail(f"style file not found: {paths.style}")
 
@@ -250,6 +327,11 @@ def _run_story(cfg, paths) -> int:
     target_minutes = _target_minutes(cfg)
     if target_minutes is not None:
         args.extend(["--target-minutes", str(target_minutes)])
+    if ctx.is_series:
+        prior = _write_prior_context(ctx)
+        if prior is not None:
+            args.extend(["--prior-context", str(prior)])
+            print(f"prior context   : {prior} (story opens with [RECAP])")
     rc = stage_2_main(args)
     if rc == 0:
         _print_next_steps(
@@ -261,7 +343,8 @@ def _run_story(cfg, paths) -> int:
     return rc
 
 
-def _report_done(cfg, paths) -> int:
+def _report_done(ctx) -> int:
+    cfg, paths = ctx.cfg, ctx.paths
     banner(f"Stage 2 — already complete for {cfg['common']['movie_title']}")
     print("All three reply files are filled:")
     print(f"  scene_markers : {paths.scene_markers}")
@@ -288,25 +371,27 @@ def run(argv: list[str] | None = None) -> int:
                       help="Force-regenerate the Pass 2 story prompt.")
     args = parser.parse_args(argv)
 
-    cfg = load_config(DEFAULT_CONFIG)
-    paths = build_paths(cfg)
-    ensure_stage_dirs(paths)
+    ctx = resolve_run_context()
+    if ctx.is_series:
+        print(f"[series mode] {ctx.cfg['common']['movie_title']} · 第 {ctx.episode_no} 集")
+        # Keep series_context.md current once this episode's digest is filled.
+        _harvest_continuity(ctx)
 
     if args.outline:
-        return _run_outline(cfg, paths)
+        return _run_outline(ctx)
     if args.digest:
-        return _run_digest(cfg, paths)
+        return _run_digest(ctx)
     if args.story:
-        return _run_story(cfg, paths)
+        return _run_story(ctx)
 
-    next_step = detect_next_step(paths.scene_markers, paths.plot_digest, paths.script)
+    next_step = detect_next_step(ctx.paths.scene_markers, ctx.paths.plot_digest, ctx.paths.script)
     if next_step == "outline":
-        return _run_outline(cfg, paths)
+        return _run_outline(ctx)
     if next_step == "digest":
-        return _run_digest(cfg, paths)
+        return _run_digest(ctx)
     if next_step == "story":
-        return _run_story(cfg, paths)
-    return _report_done(cfg, paths)
+        return _run_story(ctx)
+    return _report_done(ctx)
 
 
 if __name__ == "__main__":
