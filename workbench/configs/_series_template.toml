@@ -1,9 +1,10 @@
-# Template for a TV series / anime. Copy to current_series.toml and fill in.
-# When current_series.toml is present and non-empty, the step scripts run in
-# series mode (one episode at a time); delete/rename it to return to movie mode
-# (current_movie.toml). Paths are relative to the repo root.
+# Template for a TV series / anime. Copy to current.toml and fill in.
+# `mode = "series"` is what puts the steps in episode mode — switching back to a
+# movie is just copying _movie_template.toml over current.toml. Paths are
+# relative to the repo root.
 
 [common]
+mode           = "series"                      # explicit: this is a series run
 series_slug    = "TODO_short_slug_no_spaces"   # work dir: workbench/work/<series_slug>/ep<NN>/
 series_dir     = "movies/TODO_series_folder"    # holds synopsis.md + characters/ (shared by all episodes)
 series_title   = "TODO Series Display Title"

@@ -57,11 +57,12 @@ A TV series is processed one episode at a time, each episode reusing the full
 pipeline (Stage 0–4) under its own work dir. A thin series layer adds
 cross-episode continuity:
 
-- **Active config.** `workbench/configs/current_series.toml` lists episodes
-  (`[[episodes]]`) and an `active_episode` pointer. When present, every step runs
-  in series mode for that episode; bump the pointer to advance. Without it, the
-  steps fall back to `current_movie.toml` (movie mode). Commands are identical in
-  both modes.
+- **Active config.** There is one active config, `workbench/configs/current.toml`,
+  and `[common].mode` (`"movie"` | `"series"`) is the explicit source of truth —
+  the steps never guess from filenames. A series config sets `mode = "series"`,
+  lists episodes (`[[episodes]]`), and carries an `active_episode` pointer; bump
+  the pointer to advance. Copy `_movie_template.toml` or `_series_template.toml`
+  over `current.toml` to switch kinds. Commands are identical in both modes.
 - **Per-episode work dir.** `workbench/work/<series_slug>/ep<NN>/stage0..4/`.
   `synopsis.md` and `characters/` live once at the series root and are shared by
   every episode (an episode may override the synopsis via `synopsis_file`).

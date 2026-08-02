@@ -44,8 +44,8 @@ user only handles the LLM paste-paste in step 2.
 
 ### Series workflow (TV / anime, multi-episode)
 
-Instead of `current_movie.toml`, write `workbench/configs/current_series.toml`
-(copy `_series_template.toml`) listing each episode and an `active_episode`
+Copy `_series_template.toml` to `workbench/configs/current.toml` (it sets
+`[common].mode = "series"`) and list each episode plus an `active_episode`
 pointer. Drop the episode files plus a shared `synopsis.md` and `characters/`
 under `movies/<series_dir>/`. Run the same Steps 0–4 for the active episode,
 then bump `active_episode` and repeat. The pipeline carries a running

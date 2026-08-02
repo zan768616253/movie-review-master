@@ -1,1 +1,1 @@
-../../rules/environment.rules.md
+../../.rules/environment.instructions.md

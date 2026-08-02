@@ -1,7 +1,9 @@
-# Pipeline config for "The Roundup: Punishment".
+# Active pipeline config. Copy from _movie_template.toml or _series_template.toml.
+# `mode` below is the explicit source of truth — the steps never guess from filenames.
 # Paths are relative to the repo root.
 
 [common]
+mode          = "movie"          # "movie" | "series"
 movie_slug    = "the_roundup_punishment"
 movie_dir     = "movies/犯罪都市4"
 movie_title   = "犯罪都市4 (The Roundup: Punishment)"

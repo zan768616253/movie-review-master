@@ -21,8 +21,8 @@ load_dotenv(REPO_ROOT / ".env")
 
 WORKBENCH_ROOT = REPO_ROOT / "workbench"
 WORK_ROOT = WORKBENCH_ROOT / "work"
-DEFAULT_CONFIG = "configs/current_movie.toml"
-SERIES_CONFIG = "configs/current_series.toml"
+DEFAULT_CONFIG = "configs/current.toml"
+LEGACY_MOVIE_CONFIG = "configs/current_movie.toml"  # pre-mode-field fallback
 
 
 @dataclass
@@ -111,7 +111,7 @@ def load_config(config_path: str | Path) -> dict:
 
 # --- Series (multi-episode) support -------------------------------------------
 #
-# A series config (configs/current_series.toml) has a [common] table with a
+# A series config (mode = "series") has a [common] table with a
 # `series_slug` plus an `[[episodes]]` array and an `active_episode` pointer.
 # Each episode is processed like a movie: `series_episode_common` synthesizes a
 # movie-shaped `common` dict so the existing `build_paths` produces an
@@ -138,7 +138,7 @@ def episode_entry(config: dict, episode_no: int) -> dict:
             return episode
     available = [episode.get("episode_no") for episode in series_episodes(config)]
     raise ValueError(
-        f"episode_no={episode_no} not found in current_series.toml (have: {available})"
+        f"episode_no={episode_no} not found in the active series config (have: {available})"
     )
 
 
@@ -179,19 +179,37 @@ def series_context_file(config: dict) -> Path:
     return WORK_ROOT / config["common"]["series_slug"] / "series_context.md"
 
 
-def load_active_config() -> tuple[dict, bool]:
-    """Load the active config, preferring a non-empty series config.
+def _active_config_path() -> str:
+    """The single active config. Prefer ``current.toml``; fall back to the legacy
+    ``current_movie.toml`` so a pre-mode-field movie setup keeps working."""
+    if (WORKBENCH_ROOT / DEFAULT_CONFIG).is_file():
+        return DEFAULT_CONFIG
+    if (WORKBENCH_ROOT / LEGACY_MOVIE_CONFIG).is_file():
+        return LEGACY_MOVIE_CONFIG
+    return DEFAULT_CONFIG  # surfaces a clear FileNotFoundError on open
 
-    Returns ``(config, is_series)``. Series mode is selected only when
-    ``configs/current_series.toml`` exists, is non-empty, and parses as a series
-    config; otherwise the movie config is used.
+
+def load_active_config() -> tuple[dict, bool]:
+    """Load the single active config; the mode is declared explicitly.
+
+    ``[common].mode`` (``"movie"`` | ``"series"``) is the source of truth — the
+    harness never guesses from which config file happens to exist. ``mode``
+    defaults to ``"movie"`` when absent (back-compat). Returns ``(config, is_series)``.
     """
-    series_path = WORKBENCH_ROOT / SERIES_CONFIG
-    if series_path.is_file() and series_path.read_text(encoding="utf-8").strip():
-        series_cfg = load_config(SERIES_CONFIG)
-        if is_series_config(series_cfg):
-            return series_cfg, True
-    return load_config(DEFAULT_CONFIG), False
+    config = load_config(_active_config_path())
+    common = config.get("common", {})
+    mode = str(common.get("mode", "movie")).strip().lower()
+    if mode not in ("movie", "series"):
+        raise ValueError(
+            f'[common].mode must be "movie" or "series" (got {common.get("mode")!r}); '
+            f"set it in workbench/{_active_config_path()}"
+        )
+    if mode == "series" and not is_series_config(config):
+        raise ValueError(
+            'mode = "series" requires `series_slug` and a non-empty [[episodes]] list '
+            "in the active config"
+        )
+    return config, mode == "series"
 
 
 @dataclass

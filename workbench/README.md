@@ -7,9 +7,10 @@ corresponds to one phase of the workflow described in
 ```
 workbench/
   configs/
-    current_movie.toml       # active movie config (always read by every step)
-    _template.toml           # copy this when adding a new movie
-    backup/                  # archived per-movie configs
+    current.toml             # the single active config (every step reads it); [common].mode = "movie" | "series"
+    _movie_template.toml     # copy to current.toml for a movie
+    _series_template.toml    # copy to current.toml for a TV series
+    backup/                  # archived per-title configs
   _common.py                    # config loader, paths, helpers
   step_0_generate_subtitles.py  # ▶ (optional) faster-whisper SRT; skipped if movie folder already has .srt/.ass
   step_1_prepare_inputs.py      # ▶ index visuals + parse subtitles
@@ -62,13 +63,15 @@ conda run -n py312_machine_learning --no-capture-output python workbench/step_3_
 
 ## Series mode (TV / anime)
 
-Copy `configs/_series_template.toml` to `configs/current_series.toml` and fill in
-the `[[episodes]]` list plus `active_episode`. While `current_series.toml` exists
-and is non-empty, every step runs in series mode for the active episode; delete
-or rename it to return to movie mode. The run commands are unchanged.
+Copy `configs/_series_template.toml` to `configs/current.toml` and fill in the
+`[[episodes]]` list plus `active_episode`. Because the copied template sets
+`[common].mode = "series"`, every step runs in series mode for the active
+episode — no filename magic. Switch back to a movie by copying
+`_movie_template.toml` over `current.toml` (`mode = "movie"`). The run commands
+are unchanged in both modes.
 
 ```bash
-# Edit active_episode in current_series.toml, then run the same steps:
+# Edit active_episode in current.toml, then run the same steps:
 conda run -n py312_machine_learning --no-capture-output python workbench/step_1_prepare_inputs.py
 conda run -n py312_machine_learning --no-capture-output python workbench/step_2_build_prompt.py   # repeat per pass
 conda run -n py312_machine_learning --no-capture-output python workbench/step_3_generate_audio.py
@@ -92,10 +95,12 @@ Continuity is harvested from each episode's `## 承上启下` digest section int
 episodes' prompts. Episodes after the first open with a `[RECAP]` block whose
 sentences use `<refs>recap</refs>` (the editor pulls prior-episode footage).
 
-## Switching movies
+## Switching titles
 
-Overwrite `workbench/configs/current_movie.toml` with the movie you want to
-run. Keep the previous one under `configs/backup/` if you want to come back.
+Overwrite `workbench/configs/current.toml` with the movie (or series) you want
+to run — copy from `_movie_template.toml` / `_series_template.toml`. Keep the
+previous one under `configs/backup/` if you want to come back. `[common].mode`
+tells you (and every step) which kind of run it is.
 
 Each new movie folder needs:
 

@@ -1,7 +1,8 @@
-# Template for the active movie. Copy to current_movie.toml and fill in.
+# Template for a single movie. Copy to current.toml and fill in.
 # Paths are relative to the repo root.
 
 [common]
+mode          = "movie"                          # explicit: this is a movie run
 movie_slug    = "TODO_short_slug_no_spaces"      # used as workbench/work/<slug>/
 movie_dir     = "movies/TODO_movie_folder_name"
 movie_title   = "TODO Display Title"

@@ -117,3 +117,53 @@ def test_build_paths_movie_synopsis_unchanged() -> None:
 def test_series_context_file_lives_at_series_root() -> None:
     path = _common.series_context_file(_series_cfg())
     assert path.as_posix().endswith("work/jjk_s3/series_context.md")
+
+
+# --- load_active_config: explicit mode, no filename guessing -------------------
+
+
+def _write_active(tmp_path, monkeypatch, body: str) -> None:
+    cfgdir = tmp_path / "configs"
+    cfgdir.mkdir(parents=True, exist_ok=True)
+    (cfgdir / "current.toml").write_text(body, encoding="utf-8")
+    monkeypatch.setattr(_common, "WORKBENCH_ROOT", tmp_path)
+
+
+def test_load_active_config_movie_mode(tmp_path, monkeypatch) -> None:
+    _write_active(tmp_path, monkeypatch,
+        '[common]\nmode = "movie"\nmovie_slug = "x"\nmovie_dir = "movies/x"\n'
+        'movie_title = "X"\nvideo_file = "x.mp4"\nsubtitle_file = "x.srt"\n'
+        'style_path = "styles/niu-shu.md"\n')
+    _cfg, is_series = _common.load_active_config()
+    assert is_series is False
+
+
+def test_load_active_config_series_mode(tmp_path, monkeypatch) -> None:
+    _write_active(tmp_path, monkeypatch,
+        '[common]\nmode = "series"\nseries_slug = "s"\nseries_dir = "movies/s"\n'
+        'series_title = "S"\nstyle_path = "styles/niu-shu.md"\nactive_episode = 1\n\n'
+        '[[episodes]]\nepisode_no = 1\nvideo_file = "EP01.mp4"\nsubtitle_file = "EP01.ass"\n')
+    _cfg, is_series = _common.load_active_config()
+    assert is_series is True
+
+
+def test_load_active_config_defaults_to_movie_when_mode_absent(tmp_path, monkeypatch) -> None:
+    _write_active(tmp_path, monkeypatch, '[common]\nmovie_slug = "x"\n')
+    _cfg, is_series = _common.load_active_config()
+    assert is_series is False
+
+
+def test_load_active_config_invalid_mode_raises(tmp_path, monkeypatch) -> None:
+    import pytest
+
+    _write_active(tmp_path, monkeypatch, '[common]\nmode = "tv"\n')
+    with pytest.raises(ValueError, match="mode"):
+        _common.load_active_config()
+
+
+def test_load_active_config_series_mode_without_episodes_raises(tmp_path, monkeypatch) -> None:
+    import pytest
+
+    _write_active(tmp_path, monkeypatch, '[common]\nmode = "series"\nseries_slug = "s"\n')
+    with pytest.raises(ValueError, match="episodes"):
+        _common.load_active_config()
